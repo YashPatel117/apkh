@@ -80,3 +80,23 @@ export async function searchNotes(searchQuery: string) {
   const res = await webApi.get(`/notes/search?search=${searchQuery}`);
   return res.data as INote[];
 }
+
+export type AiSearchResponse = {
+  query: string;
+  answer: string;
+  confidence: string;
+  references: {
+    note_id: string;
+    note_title: string;
+    source_type: string;
+    source_name?: string;
+    source_page?: number;
+    excerpt: string;
+    similarity_score: number;
+  }[];
+};
+
+export async function aiSearchNotes(searchQuery: string) {
+  const res = await webApi.post(`/notes/ai-search`, { query: searchQuery });
+  return res.data as AiSearchResponse;
+}

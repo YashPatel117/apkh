@@ -14,6 +14,8 @@ import {
 import { NotesService } from './notes.service';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
+import { AiSearchDto } from './dto/ai-search.dto';
+import { SearchService } from 'src/search/search.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -23,7 +25,10 @@ import { JwtToken, JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
 @ApiBearerAuth()
 @Controller('notes')
 export class NotesController {
-  constructor(private readonly notesService: NotesService) {}
+  constructor(
+    private readonly notesService: NotesService,
+    private readonly searchService: SearchService,
+  ) {}
 
   /** CREATE */
   @Post()
@@ -82,6 +87,17 @@ export class NotesController {
     @Query('search') search: string,
   ) {
     return this.notesService.searchNotes(userId, search);
+  }
+
+  /** AI SEARCH (RAG) */
+  @Post('ai-search')
+  @ApiBody({ type: AiSearchDto })
+  async aiSearch(
+    @JwtToken() token: string,
+    @JwtTokenUserId() userId: string,
+    @Body() aiSearchDto: AiSearchDto,
+  ) {
+    return this.searchService.performAiSearch(token, userId, aiSearchDto.query);
   }
 
   /** READ ONE */

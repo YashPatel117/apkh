@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+PyJWT
+cryptography
+httpx
+google-genai
+beautifulsoup4
+PyMuPDF
+pytesseract
+Pillow
+python-docx
+openpyxl
+tiktoken
+python-dotenv
+python-multipart

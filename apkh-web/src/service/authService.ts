@@ -16,3 +16,13 @@ export async function profile() {
   const res = await webApi.get("/users/profile");
   return res.data;
 }
+
+export async function register(data: { name: string; email: string; password: string }) {
+  const res = await axios.post("http://localhost:3000/auth/register", data);
+  return res.data;
+}
+
+export async function resetPassword(data: { email: string; password: string }) {
+  const res = await axios.post("http://localhost:3000/auth/reset-password", data);
+  return res.data;
+}

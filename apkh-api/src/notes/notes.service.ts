@@ -8,12 +8,14 @@ import { Model } from 'mongoose';
 import { ApiResponseDto } from 'src/common/dto/api/response';
 import { FileService } from 'src/file/file.service';
 import { NoteResponse } from './dto/response.dto';
+import { SearchService } from 'src/search/search.service';
 
 @Injectable()
 export class NotesService {
   constructor(
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
     private readonly fileService: FileService,
+    private readonly searchService: SearchService,
   ) {}
 
   /** CREATE */
@@ -43,6 +45,16 @@ export class NotesService {
         );
         result.files = notefiles.files;
       }
+
+      // Trigger AI ingestion (fire-and-forget)
+      this.searchService.triggerIngestion(
+        token,
+        note._id as string,
+        userId,
+        note.title,
+        note.content,
+        result.files,
+      );
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error: unknown) {
@@ -143,6 +155,20 @@ export class NotesService {
         result.files = fileNames.files;
       }
 
+      // Get all current files for re-indexing
+      const currentFiles = await this.fileService.getNoteFiles(_id);
+      const allFiles = currentFiles?.files || result.files;
+
+      // Trigger AI re-ingestion (fire-and-forget)
+      this.searchService.triggerIngestion(
+        token,
+        _id,
+        userId,
+        note.title,
+        note.content,
+        allFiles,
+      );
+
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error) {
       throw new HttpException(error, HttpStatus.BAD_REQUEST);
@@ -159,6 +185,9 @@ export class NotesService {
 
       // Delete related files
       await this.fileService.removeNoteFiles(token, _id);
+
+      // Delete AI chunks
+      await this.searchService.deleteChunks(_id);
 
       return new ApiResponseDto<NoteDocument>().ok(note);
     } catch (error) {

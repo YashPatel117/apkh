@@ -1,55 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAppDispatch, useAppSelector } from "@/store/hook";
-import { setUser, setToken, logout } from "@/store/slices/authSlice";
-import { login, profile } from "@/service/authService";
+import { useState } from "react";
+import { resetPassword } from "@/service/authService";
 import { useRouter } from "next/navigation";
-import { jwtDecode } from "jwt-decode";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { TextField, Button } from "@mui/material";
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const dispatch = useAppDispatch();
   const router = useRouter();
-  const { user } = useAppSelector((state) => state.auth);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const data = await login(email, password);
-      const fetchedUser = await profile();
-      dispatch(setToken(data.data)); // "data.data" is the token
-      dispatch(setUser(fetchedUser));
-      router.push("/notes");
+      await resetPassword({ email, password });
+      alert("Password reset successfully! Please login with your new password.");
+      router.push("/login");
     } catch (err) {
-      alert("Login failed");
+      alert("Password reset failed. Please ensure the email is correct.");
       setIsLoading(false);
     }
   };
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    dispatch(logout());
-  };
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      const decoded = jwtDecode(token);
-      const currentTime = Date.now() / 1000;
-      if (decoded.exp && decoded.exp < currentTime) handleLogout();
-      else {
-        dispatch(setToken(token));
-        router.push("/notes"); // layout will fetch user
-      }
-    }
-  }, []);
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-50 transition-colors duration-300 px-4 relative overflow-hidden">
@@ -69,12 +44,12 @@ export default function LoginPage() {
             animate={{ scale: 1 }}
             className="text-3xl font-extrabold text-gray-800 tracking-tight"
           >
-            Welcome Back
+            Reset Password
           </motion.h1>
-          <p className="text-gray-500 mt-2">Log in to your account to continue</p>
+          <p className="text-gray-500 mt-2">Enter your email and new password</p>
         </div>
 
-        <form onSubmit={handleLogin} className="flex flex-col gap-5">
+        <form onSubmit={handleReset} className="flex flex-col gap-5">
           <TextField
             label="Email Address"
             variant="outlined"
@@ -92,7 +67,7 @@ export default function LoginPage() {
             }}
           />
           <TextField
-            label="Password"
+            label="New Password"
             variant="outlined"
             type="password"
             value={password}
@@ -108,16 +83,7 @@ export default function LoginPage() {
             }}
           />
 
-          <div className="flex justify-end mt-[-10px]">
-            <Link 
-              href="/reset-password" 
-              className="text-sm text-blue-600 hover:underline transition-all"
-            >
-              Forgot Password?
-            </Link>
-          </div>
-
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="mt-2">
             <Button
               type="submit"
               variant="contained"
@@ -127,15 +93,15 @@ export default function LoginPage() {
               disabled={isLoading}
               className="py-3 rounded-lg font-bold shadow-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
             >
-              {isLoading ? "Logging in..." : "Login"}
+              {isLoading ? "Resetting..." : "Reset Password"}
             </Button>
           </motion.div>
         </form>
 
         <div className="mt-6 text-center text-gray-500">
-          Don't have an account?{" "}
-          <Link href="/register" className="text-blue-600 font-semibold hover:underline">
-            Sign up
+          Remember your password?{" "}
+          <Link href="/login" className="text-blue-600 font-semibold hover:underline">
+            Log in
           </Link>
         </div>
       </motion.div>

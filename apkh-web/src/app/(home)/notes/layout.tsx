@@ -5,6 +5,8 @@ import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { setNotes } from "@/store/slices/noteSlice";
 import { useEffect } from "react";
 
+let isFetchingNotes = false;
+
 export default function NoteLayout({
   children,
 }: {
@@ -15,14 +17,20 @@ export default function NoteLayout({
 
   useEffect(() => {
     (async () => {
-      const lastUpdatedTime = await getNoteLastUpdatedTime();
-      if (
-        !lastUpdatedTime ||
-        !latestUpdatedAt ||
-        lastUpdatedTime > latestUpdatedAt
-      ) {
-        const notes = await getAllNotes();
-        dispatch(setNotes(notes));
+      if (isFetchingNotes) return;
+      isFetchingNotes = true;
+      try {
+        const lastUpdatedTime = await getNoteLastUpdatedTime();
+        if (
+          !lastUpdatedTime ||
+          !latestUpdatedAt ||
+          lastUpdatedTime > latestUpdatedAt
+        ) {
+          const notes = await getAllNotes();
+          dispatch(setNotes(notes));
+        }
+      } finally {
+        isFetchingNotes = false;
       }
     })();
   }, []);

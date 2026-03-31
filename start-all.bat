@@ -1,17 +1,1 @@
-@echo off
-echo Starting AI-Powered Personal Knowledge Hub...
-
-echo Starting API...
-start "APKH API" cmd /k "cd apkh-api && npm run start:dev"
-
-echo Starting Storage...
-start "APKH Storage" cmd /k "cd apkh-storage && npm start"
-
-echo Starting Web...
-start "APKH Web" cmd /k "cd apkh-web && npm run dev"
-
-echo Starting Search...
-start "APKH Search" cmd /k "cd apkh-search && .\.venv\Scripts\python.exe main.py"
-
-echo All services are starting up in separate windows!
-pause
+wt new-tab --title "API" -d "D:\Learn Projects\AI-Powered-Personal-Knowledge-Hub\apkh-api" cmd /k "npm run start:dev" ; new-tab --title "Storage" -d "D:\Learn Projects\AI-Powered-Personal-Knowledge-Hub\apkh-storage" cmd /k "npm start" ; new-tab --title "Web" -d "D:\Learn Projects\AI-Powered-Personal-Knowledge-Hub\apkh-web" cmd /k "npm run dev" ; new-tab --title "Search" -d "D:\Learn Projects\AI-Powered-Personal-Knowledge-Hub\apkh-search" cmd /k ".\.venv\Scripts\python.exe main.py"
