@@ -1,10 +1,7 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { MongooseModule } from '@nestjs/mongoose';
-import {
-  KnowledgeChunk,
-  KnowledgeChunkSchema,
-} from 'src/common/schema/chunk';
+import { KnowledgeChunk, KnowledgeChunkSchema } from 'src/common/schema/chunk';
 import { SearchService } from './search.service';
 
 @Module({
@@ -17,4 +14,4 @@ import { SearchService } from './search.service';
   providers: [SearchService],
   exports: [SearchService],
 })
-export class SearchModule { }
+export class SearchModule {}

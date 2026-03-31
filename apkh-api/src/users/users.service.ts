@@ -20,7 +20,12 @@ export class UsersService {
     return await this.userModel.findOne({ _id: userId }).exec();
   }
 
-  async updatePassword(email: string, passwordHash: string): Promise<UserDocument | null> {
-    return this.userModel.findOneAndUpdate({ email }, { password: passwordHash }, { new: true }).exec();
+  async updatePassword(
+    email: string,
+    passwordHash: string,
+  ): Promise<UserDocument | null> {
+    return this.userModel
+      .findOneAndUpdate({ email }, { password: passwordHash }, { new: true })
+      .exec();
   }
 }

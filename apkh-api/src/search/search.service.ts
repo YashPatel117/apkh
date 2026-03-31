@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
@@ -35,7 +34,7 @@ export class SearchService {
     private readonly httpService: HttpService,
     @InjectModel(KnowledgeChunk.name)
     private chunkModel: Model<KnowledgeChunkDocument>,
-  ) { }
+  ) {}
 
   /**
    * Trigger ingestion — fire-and-forget.
@@ -151,15 +150,22 @@ export class SearchService {
   /**
    * Execute AI RAG Search flow using memory-based Cosine Similarity
    */
-  async performAiSearch(token: string, userId: string, query: string, topK = 5) {
-    this.logger.log(`Performing AI Search for user ${userId}, query: "${query}"`);
+  async performAiSearch(
+    token: string,
+    userId: string,
+    query: string,
+    topK = 5,
+  ) {
+    this.logger.log(
+      `Performing AI Search for user ${userId}, query: "${query}"`,
+    );
 
     try {
       // 1. Get embedding for the query
       const embedRes$ = this.httpService.post<{ embedding: number[] }>(
         `${SEARCH_API}/ai-search/embed-query`,
         { query },
-        { headers: { Authorization: token } }
+        { headers: { Authorization: token } },
       );
       const embedRes = await firstValueFrom(embedRes$);
       const queryVector = embedRes.data.embedding;
@@ -186,15 +192,18 @@ export class SearchService {
 
       // Filter out low-relevance chunks and sort descending by score
       const MIN_SIMILARITY_THRESHOLD = 0.5;
-      const relevantChunks = scoredChunks.filter(c => c.score >= MIN_SIMILARITY_THRESHOLD);
+      const relevantChunks = scoredChunks.filter(
+        (c) => c.score >= MIN_SIMILARITY_THRESHOLD,
+      );
       relevantChunks.sort((a, b) => b.score - a.score);
-      
+
       const topChunks = relevantChunks.slice(0, topK);
 
       if (topChunks.length === 0) {
         return {
           query,
-          answer: "I couldn't find any information in your notes relevant to your question.",
+          answer:
+            "I couldn't find any information in your notes relevant to your question.",
           confidence: 'low',
           references: [],
         };
@@ -216,8 +225,8 @@ export class SearchService {
         { query, contexts },
         {
           headers: { Authorization: token },
-          timeout: 60000
-        } // RAG calls can take a few seconds
+          timeout: 60000,
+        }, // RAG calls can take a few seconds
       );
       const ragRes = await firstValueFrom(ragRes$);
       const answer = ragRes.data.answer;
