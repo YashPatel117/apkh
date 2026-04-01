@@ -1,23 +1,18 @@
 import Quill from "quill";
+import type { BlotConstructor, Scope } from "parchment";
 
 type FileTokenValue = {
   id: string;
   name: string;
 };
 
-type EmbedBlotConstructor = {
-  new (...args: never[]): unknown;
-  create(value?: unknown): HTMLElement;
-  scope: unknown;
-};
-
-const Embed = Quill.import("blots/embed") as EmbedBlotConstructor;
+const Embed = Quill.import("blots/embed") as BlotConstructor;
 
 export class FileTokenBlot extends Embed {
   static blotName = "fileToken";
   static tagName = "span";
   static className = "file-token";
-  static scope = Embed.scope;
+  static scope = Embed.scope as Scope;
 
   static create(value: FileTokenValue) {
     const node = super.create() as HTMLSpanElement;
@@ -51,4 +46,4 @@ export class FileTokenBlot extends Embed {
   }
 }
 
-Quill.register(FileTokenBlot);
+Quill.register(FileTokenBlot as BlotConstructor);

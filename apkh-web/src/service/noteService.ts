@@ -100,3 +100,16 @@ export async function aiSearchNotes(searchQuery: string) {
   const res = await webApi.post(`/notes/ai-search`, { query: searchQuery });
   return res.data as AiSearchResponse;
 }
+
+export type NoteSummaryResponse = {
+  noteId: string;
+  summary: string;
+  cached: boolean;
+  model: string | null;
+  generatedAt: string | null;
+};
+
+export async function summarizeNote(noteId: string) {
+  const res = await webApi.post(`/notes/${noteId}/summary`);
+  return res.data.data as NoteSummaryResponse;
+}

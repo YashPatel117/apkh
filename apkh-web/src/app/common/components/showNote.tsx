@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
 import { IconButton } from "@mui/material";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
@@ -9,6 +10,9 @@ import { INote } from "../models/note";
 import FileDisplay from "./fileDisplay";
 import { modalStyle } from "../style/modal";
 import { normalizeNoteLinksInHtml } from "../service/noteLinkUtils";
+import { summarizeNote } from "@/service/noteService";
+import axios from "axios";
+import ReactMarkdown from "react-markdown";
 
 interface NoteProps {
   note: INote;
@@ -27,6 +31,15 @@ export const ShowNote: React.FC<NoteProps> = ({
   const [isTruncated, setIsTruncated] = useState(false);
   const [openFile, setOpenFile] = useState(false);
   const [fileName, setFileName] = useState("");
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryText, setSummaryText] = useState("");
+  const [summaryError, setSummaryError] = useState("");
+  const [summaryMeta, setSummaryMeta] = useState<{
+    cached: boolean;
+    model: string | null;
+    generatedAt: string | null;
+  } | null>(null);
 
   const contentRef = useRef<HTMLDivElement>(null);
   const isCollapsed = Boolean(showLinesNumber);
@@ -39,6 +52,13 @@ export const ShowNote: React.FC<NoteProps> = ({
     day: "numeric",
     year: "numeric",
   }).format(new Date(note.updatedAt));
+  const summaryGeneratedLabel = summaryMeta?.generatedAt
+    ? new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(summaryMeta.generatedAt))
+    : "";
 
   useEffect(() => {
     const el = contentRef.current;
@@ -76,6 +96,60 @@ export const ShowNote: React.FC<NoteProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    setSummaryOpen(false);
+    setSummaryLoading(false);
+    setSummaryText("");
+    setSummaryError("");
+    setSummaryMeta(null);
+  }, [note.id, note.updatedAt]);
+
+  const getSummaryErrorMessage = (error: unknown) => {
+    if (axios.isAxiosError(error)) {
+      const apiMessage =
+        error.response?.data?.message ?? error.response?.data?.detail;
+      if (typeof apiMessage === "string" && apiMessage.trim()) {
+        return apiMessage;
+      }
+    }
+
+    if (error instanceof Error && error.message.trim()) {
+      return error.message;
+    }
+
+    return "Couldn't generate the summary right now.";
+  };
+
+  const handleSummaryClick = async () => {
+    if (summaryOpen && (summaryText || summaryError)) {
+      setSummaryOpen(false);
+      return;
+    }
+
+    setSummaryOpen(true);
+
+    if (summaryText || summaryLoading) {
+      return;
+    }
+
+    setSummaryLoading(true);
+    setSummaryError("");
+
+    try {
+      const response = await summarizeNote(note.id);
+      setSummaryText(response.summary);
+      setSummaryMeta({
+        cached: response.cached,
+        model: response.model,
+        generatedAt: response.generatedAt,
+      });
+    } catch (error) {
+      setSummaryError(getSummaryErrorMessage(error));
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
   return (
     <>
       <article className="group mb-5 break-inside-avoid overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(140deg,_rgba(255,255,255,0.95),_rgba(240,249,255,0.95)_58%,_rgba(239,246,255,0.92)_100%)] p-[1px] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_70px_-38px_rgba(2,132,199,0.35)]">
@@ -98,6 +172,14 @@ export const ShowNote: React.FC<NoteProps> = ({
             </div>
 
             <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200/80 bg-white/90 p-1 shadow-sm">
+              <IconButton
+                onClick={handleSummaryClick}
+                className="p-1.5!"
+                size="small"
+                aria-label={`${summaryOpen ? "Hide" : "Show"} summary for ${note.title || "note"}`}
+              >
+                <AutoAwesomeRoundedIcon fontSize="small" />
+              </IconButton>
               <IconButton
                 onClick={onEdit}
                 className="p-1.5!"
@@ -126,6 +208,39 @@ export const ShowNote: React.FC<NoteProps> = ({
               dangerouslySetInnerHTML={{ __html: normalizedContent }}
             />
           </div>
+
+          {summaryOpen && (
+            <section className="mt-4 rounded-[22px] border border-amber-100 bg-[linear-gradient(140deg,_rgba(255,251,235,0.95),_rgba(255,255,255,0.98))] px-4 py-3 shadow-inner">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800 ring-1 ring-amber-200">
+                  AI Summary
+                </span>
+                {summaryMeta && (
+                  <span className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
+                    {summaryMeta.cached ? "From cache" : "Freshly generated"}
+                    {summaryMeta.model ? ` | ${summaryMeta.model}` : ""}
+                    {summaryGeneratedLabel ? ` | ${summaryGeneratedLabel}` : ""}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-3 text-sm leading-6 text-slate-700">
+                {summaryLoading && (
+                  <p className="text-slate-500">Generating summary...</p>
+                )}
+
+                {!summaryLoading && summaryError && (
+                  <p className="text-rose-600">{summaryError}</p>
+                )}
+
+                {!summaryLoading && !summaryError && summaryText && (
+                  <div className="prose">
+                    <ReactMarkdown>{summaryText}</ReactMarkdown>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">

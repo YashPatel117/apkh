@@ -30,6 +30,27 @@ interface IngestResponse {
   status: string;
 }
 
+interface SummarizeResponse {
+  summary: string;
+  tokens_used: number;
+}
+
+interface NoteSummaryGenerationResult {
+  summary: string;
+  model: string | null;
+  cacheable: boolean;
+}
+
+interface SummaryChunkContext {
+  text: string;
+  sourceType: 'note' | 'file';
+  sourceName?: string;
+  sourcePage?: number;
+}
+
+const SUMMARY_CONTEXT_CHAR_LIMIT = 24000;
+const SUMMARY_CONTEXT_MAX_CHUNKS = 36;
+
 @Injectable()
 export class SearchService {
   private readonly logger = new Logger(SearchService.name);
@@ -207,6 +228,169 @@ export class SearchService {
         `Failed to delete chunks for note ${noteId}: ${error.message}`,
       );
     }
+  }
+
+  async generateNoteSummary(
+    token: string,
+    userId: string,
+    note: Pick<NoteDocument, '_id' | 'title' | 'content' | 'category'>,
+    attachedFiles: string[] = [],
+  ): Promise<NoteSummaryGenerationResult> {
+    this.logger.log(`Generating summary for note ${note._id as string}`);
+
+    const activeLlm = await this.usersService.getActiveLlmSettings(userId);
+
+    if (!activeLlm) {
+      return {
+        summary:
+          'Add an active API key in Profile settings to generate AI summaries.',
+        model: null,
+        cacheable: false,
+      };
+    }
+
+    const noteId = note._id as string;
+    const storedChunks = await this.chunkModel
+      .find({
+        noteId: new Types.ObjectId(noteId),
+        userId: new Types.ObjectId(userId),
+      })
+      .sort({ chunkIndex: 1 })
+      .select('text sourceType sourceName sourcePage chunkIndex')
+      .lean()
+      .exec();
+
+    const hasAttachedFiles = attachedFiles.length > 0;
+    const fileChunkCount = storedChunks.filter(
+      (chunk) => chunk.sourceType === 'file',
+    ).length;
+
+    if (
+      !storedChunks.length &&
+      hasAttachedFiles &&
+      !this.supportsSemanticSearch(activeLlm.provider)
+    ) {
+      return {
+        summary:
+          'This note has attachments, but your active AI model does not create indexed file chunks in this app yet. Switch to an OpenAI or Gemini config once to include attachment text in summaries.',
+        model: null,
+        cacheable: false,
+      };
+    }
+
+    if (!storedChunks.length && hasAttachedFiles) {
+      return {
+        summary:
+          'Attachment text is still being indexed for this note. Please try the summary again in a moment.',
+        model: null,
+        cacheable: false,
+      };
+    }
+
+    const summaryContexts = storedChunks.length
+      ? this.buildSummaryContexts(
+        storedChunks.map((chunk) => ({
+          text: chunk.text,
+          sourceType: chunk.sourceType as 'note' | 'file',
+          sourceName: chunk.sourceName,
+          sourcePage: chunk.sourcePage,
+        })),
+        hasAttachedFiles && fileChunkCount === 0,
+      )
+      : [];
+
+    try {
+      const summarizeRes$ = this.httpService.post<SummarizeResponse>(
+        `${SEARCH_API}/ai-search/summarize`,
+        {
+          note_id: noteId,
+          title: note.title,
+          content: note.content,
+          category: note.category,
+          contexts: summaryContexts,
+          api_key: activeLlm.apiKey,
+          model: activeLlm.model,
+        },
+        {
+          headers: { Authorization: token },
+          timeout: 60000,
+        },
+      );
+
+      const summarizeRes = await firstValueFrom(summarizeRes$);
+      const summary = summarizeRes.data.summary?.trim() ?? '';
+      const tokensUsed = summarizeRes.data.tokens_used ?? 0;
+
+      if (tokensUsed > 0) {
+        this.usersService.addTokenUsage(userId, tokensUsed).catch((err) => {
+          this.logger.error(
+            `Failed to track summary token usage for user ${userId}: ${err.message}`,
+          );
+        });
+      }
+
+      return {
+        summary,
+        model: activeLlm.model,
+        cacheable: Boolean(summary),
+      };
+    } catch (error: any) {
+      const serviceDetail = this.extractSearchServiceError(error);
+      if (serviceDetail) {
+        return {
+          summary: serviceDetail,
+          model: null,
+          cacheable: false,
+        };
+      }
+      this.logger.error(
+        `Summary generation failed for note ${note._id as string}: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  private buildSummaryContexts(
+    chunks: SummaryChunkContext[],
+    shouldFlagMissingAttachmentText: boolean,
+  ) {
+    const contexts: string[] = [];
+    let totalChars = 0;
+
+    if (shouldFlagMissingAttachmentText) {
+      const attachmentNote =
+        '[SOURCE: attachment-status]\nThis note has attached files, but no attachment text was indexed from them. Summarize the note content and mention that attachment text was unavailable.';
+      contexts.push(attachmentNote);
+      totalChars += attachmentNote.length;
+    }
+
+    for (const chunk of chunks) {
+      if (!chunk.text?.trim()) {
+        continue;
+      }
+
+      let source = 'Note content';
+      if (chunk.sourceType === 'file') {
+        source = chunk.sourceName ? `Attachment: ${chunk.sourceName}` : 'Attachment';
+        if (chunk.sourcePage) {
+          source += ` | Page ${chunk.sourcePage}`;
+        }
+      }
+
+      const context = `[SOURCE: ${source}]\n${chunk.text.trim()}`;
+      const nextTotal = totalChars + context.length;
+      if (
+        contexts.length >= SUMMARY_CONTEXT_MAX_CHUNKS ||
+        (contexts.length > 0 && nextTotal > SUMMARY_CONTEXT_CHAR_LIMIT)
+      ) {
+        break;
+      }
+
+      contexts.push(context);
+      totalChars = nextTotal;
+    }
+
+    return contexts;
   }
 
   /**

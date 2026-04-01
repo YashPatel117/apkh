@@ -5,13 +5,13 @@ import { useAppSelector, useAppDispatch } from "@/store/hook";
 import { logout, setToken, setUser } from "@/store/slices/authSlice";
 import { jwtDecode } from "jwt-decode";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import React, { useEffect, useState } from "react";
 import Avatar from "@mui/material/Avatar";
 import Link from "next/link";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import Button from "@mui/material/Button";
 import Modal from "@mui/material/Modal";
-import NoteEditor from "../common/components/noteEditor";
 import Box from "@mui/material/Box";
 import {
   createNote,
@@ -31,6 +31,10 @@ import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
 import ReactMarkdown from "react-markdown";
+
+const NoteEditor = dynamic(() => import("../common/components/noteEditor"), {
+  ssr: false,
+});
 
 const confidenceTone: Record<string, { label: string; classes: string }> = {
   high: {

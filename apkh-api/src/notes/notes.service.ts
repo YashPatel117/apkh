@@ -4,19 +4,22 @@ import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Note, NoteDocument } from 'src/common/schema/note';
-import { Model } from 'mongoose';
+import { Summary, SummaryDocument } from 'src/common/schema/summary';
+import { Model, Types } from 'mongoose';
 import { ApiResponseDto } from 'src/common/dto/api/response';
 import { FileService } from 'src/file/file.service';
 import { NoteResponse } from './dto/response.dto';
+import { NoteSummaryResponse } from './dto/summary-response.dto';
 import { SearchService } from 'src/search/search.service';
 
 @Injectable()
 export class NotesService {
   constructor(
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
+    @InjectModel(Summary.name) private summaryModel: Model<SummaryDocument>,
     private readonly fileService: FileService,
     private readonly searchService: SearchService,
-  ) {}
+  ) { }
 
   /** CREATE */
   async create(
@@ -159,6 +162,8 @@ export class NotesService {
       const currentFiles = await this.fileService.getNoteFiles(_id);
       const allFiles = currentFiles?.files || result.files;
 
+      await this.clearSummaryCache(_id, userId);
+
       // Trigger AI re-ingestion (fire-and-forget)
       this.searchService.triggerIngestion(
         token,
@@ -189,6 +194,9 @@ export class NotesService {
       // Delete AI chunks
       await this.searchService.deleteChunks(_id);
 
+      // Delete cached summaries
+      await this.clearSummaryCache(_id, userId);
+
       return new ApiResponseDto<NoteDocument>().ok(note);
     } catch (error) {
       throw new HttpException(error, HttpStatus.BAD_REQUEST);
@@ -208,5 +216,71 @@ export class NotesService {
   async searchNotes(userId: string, q: string) {
     const notes = await this.noteModel.find({ userId, $text: { $search: q } });
     return notes;
+  }
+
+  async summarize(token: string, userId: string, _id: string) {
+    try {
+      const note = await this.noteModel.findOne({ userId, _id }).exec();
+      if (!note) {
+        throw new HttpException('Note not found', HttpStatus.BAD_REQUEST);
+      }
+
+      const noteFiles = await this.fileService.getNoteFiles(note._id as string);
+      const attachedFiles = noteFiles?.files || [];
+      const cachedSummary = await this.summaryModel
+        .findOne({
+          noteId: new Types.ObjectId(_id),
+          userId: new Types.ObjectId(userId),
+        })
+        .exec();
+
+      if (cachedSummary?.summary?.trim()) {
+        return new ApiResponseDto<NoteSummaryResponse>().ok({
+          noteId: _id,
+          summary: cachedSummary.summary,
+          cached: true,
+          model: cachedSummary.summaryModel ?? null,
+          generatedAt: cachedSummary.updatedAt ?? cachedSummary.createdAt ?? null,
+        });
+      }
+
+      const generatedSummary = await this.searchService.generateNoteSummary(
+        token,
+        userId,
+        note,
+        attachedFiles,
+      );
+
+      let generatedAt: Date | null = null;
+      let model = generatedSummary.model;
+
+      if (generatedSummary.cacheable && generatedSummary.summary) {
+        const summaryDoc = cachedSummary ?? new this.summaryModel();
+        summaryDoc.noteId = new Types.ObjectId(_id);
+        summaryDoc.userId = new Types.ObjectId(userId);
+        summaryDoc.summary = generatedSummary.summary;
+        summaryDoc.summaryModel = generatedSummary.model ?? undefined;
+        await summaryDoc.save();
+        generatedAt = summaryDoc.updatedAt ?? summaryDoc.createdAt ?? null;
+        model = summaryDoc.summaryModel ?? null;
+      }
+
+      return new ApiResponseDto<NoteSummaryResponse>().ok({
+        noteId: _id,
+        summary: generatedSummary.summary,
+        cached: false,
+        model,
+        generatedAt,
+      });
+    } catch (error) {
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  private async clearSummaryCache(noteId: string, userId: string) {
+    await this.summaryModel.deleteMany({
+      noteId: new Types.ObjectId(noteId),
+      userId: new Types.ObjectId(userId),
+    });
   }
 }

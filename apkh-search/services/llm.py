@@ -9,6 +9,8 @@ Supported providers (detected by model name prefix):
 
 import logging
 
+from services.html_parser import parse_note_html
+
 logger = logging.getLogger(__name__)
 
 _SYSTEM_INSTRUCTION = (
@@ -21,6 +23,16 @@ _SYSTEM_INSTRUCTION = (
     "'I couldn't find information about this in your notes.'\n"
     "- Do not make up or infer information not explicitly stated in the context.\n"
     "- Be concise. Prefer bullet points for multi-part answers."
+)
+
+_SUMMARY_SYSTEM_INSTRUCTION = (
+    "You summarize one personal note at a time.\n"
+    "Rules:\n"
+    "- Write a compact summary that is easy to scan in the UI.\n"
+    "- Focus on the main ideas, tasks, decisions, dates, and useful links.\n"
+    "- Do not invent details that are not present.\n"
+    "- Keep it under 120 words.\n"
+    "- If the note is mostly empty, say that clearly in one short sentence."
 )
 
 
@@ -154,6 +166,105 @@ async def generate_rag_answer(
         logger.error("LLM call failed [%s/%s]: %s", provider, resolved_model, exc)
         return {
             "answer": "I'm sorry, I encountered an error while formulating the answer.",
+            "tokens_used": 0,
+        }
+
+
+async def generate_note_summary(
+    title: str,
+    category: str,
+    content: str,
+    contexts: list[str],
+    api_key: str,
+    model: str,
+) -> dict:
+    """
+    Generate a concise summary for a single note.
+    """
+    resolved_key = api_key.strip()
+    resolved_model = model.strip()
+
+    if not resolved_key or not resolved_model:
+        return {
+            "summary": "Add an active API key and model in profile settings to generate summaries.",
+            "tokens_used": 0,
+        }
+
+    resolved_title = title.strip()
+    resolved_category = category.strip()
+    resolved_contexts = [context.strip() for context in contexts if context.strip()]
+
+    sections: list[str] = []
+    if resolved_title:
+        sections.append(f"Title: {resolved_title}")
+    if resolved_category:
+        sections.append(f"Category: {resolved_category}")
+
+    if resolved_contexts:
+        sections.append("Indexed Note Context:\n\n" + "\n\n---\n\n".join(resolved_contexts))
+    else:
+        parsed = parse_note_html(content or "")
+        note_text = parsed.text_content.strip()
+
+        if not any([resolved_title, resolved_category, note_text, parsed.links]):
+            return {
+                "summary": "This note is empty, so there is nothing to summarize yet.",
+                "tokens_used": 0,
+            }
+
+        if note_text:
+            sections.append(f"Note Content:\n{note_text}")
+        if parsed.links:
+            link_lines = [
+                f"- {link.get('text') or link.get('href')}: {link.get('href')}"
+                for link in parsed.links
+                if link.get("href")
+            ]
+            if link_lines:
+                sections.append("Links:\n" + "\n".join(link_lines))
+
+    user_prompt = "Summarize this saved note.\n\n" + "\n\n".join(sections)
+
+    try:
+        provider = detect_provider(resolved_model)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return {
+            "summary": "Unsupported model. Please check your AI settings.",
+            "tokens_used": 0,
+        }
+
+    if provider == "gemini":
+        caller = _call_gemini
+    elif provider == "openai":
+        caller = _call_openai
+    else:
+        caller = _call_anthropic
+
+    try:
+        result = await caller(
+            resolved_key,
+            resolved_model,
+            _SUMMARY_SYSTEM_INSTRUCTION,
+            user_prompt,
+        )
+        summary_text = (result.get("answer") or "").strip()
+        if not summary_text:
+            return {
+                "summary": "The note could not be summarized right now.",
+                "tokens_used": result["tokens_used"],
+            }
+        logger.info(
+            "Note summary generated via %s/%s - %s tokens",
+            provider,
+            resolved_model,
+            result["tokens_used"],
+        )
+        return {"summary": summary_text, "tokens_used": result["tokens_used"]}
+    except Exception as exc:
+        logger.error("Note summary failed [%s/%s]: %s", provider, resolved_model, exc)
+        return {
+            "summary": "I'm sorry, I encountered an error while generating the summary.",
             "tokens_used": 0,
         }
 

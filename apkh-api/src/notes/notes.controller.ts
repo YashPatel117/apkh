@@ -100,6 +100,15 @@ export class NotesController {
     return this.searchService.performAiSearch(token, userId, aiSearchDto.query);
   }
 
+  @Post(':id/summary')
+  summarize(
+    @JwtToken() token: string,
+    @JwtTokenUserId() userId: string,
+    @Param('id') id: string,
+  ) {
+    return this.notesService.summarize(token, userId, id);
+  }
+
   /** READ ONE */
   @Get(':id')
   findOne(@JwtTokenUserId() userId: string, @Param('id') id: string) {

@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from services.embedder import generate_single_embedding
-from services.llm import generate_rag_answer, test_llm_connection
+from services.llm import generate_note_summary, generate_rag_answer, test_llm_connection
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,17 @@ class EmbedQueryRequest(BaseModel):
 class RagRequest(BaseModel):
     query: str
     contexts: list[str]
+    api_key: str | None = None
+    apiKey: str | None = None
+    model: str | None = None
+
+
+class SummaryRequest(BaseModel):
+    note_id: str | None = None
+    title: str | None = None
+    category: str | None = None
+    content: str | None = None
+    contexts: list[str] | None = None
     api_key: str | None = None
     apiKey: str | None = None
     model: str | None = None
@@ -91,6 +102,36 @@ async def generate_rag(body: RagRequest):
         model=model,
     )
     return {"answer": result["answer"], "tokens_used": result["tokens_used"]}
+
+
+@router.post("/summarize")
+async def summarize_note(body: SummaryRequest):
+    """
+    Generate a concise summary for a single note.
+    """
+    api_key = body.api_key or body.apiKey
+    model = body.model
+
+    if not api_key or not model:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="api_key and model are required for summary generation.",
+        )
+
+    logger.info(
+        "Generating note summary for note: %s with model %s",
+        body.note_id or "unknown",
+        model,
+    )
+    result = await generate_note_summary(
+        title=body.title or "",
+        category=body.category or "",
+        content=body.content or "",
+        contexts=body.contexts or [],
+        api_key=api_key,
+        model=model,
+    )
+    return {"summary": result["summary"], "tokens_used": result["tokens_used"]}
 
 
 @router.post("/test")
