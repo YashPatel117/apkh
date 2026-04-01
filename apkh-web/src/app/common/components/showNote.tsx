@@ -14,6 +14,9 @@ import { summarizeNote } from "@/service/noteService";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 
+const ATTACHMENT_INDEXING_PENDING_SUMMARY =
+  "Attachment text is still being indexed for this note. Please try the summary again in a moment.";
+
 interface NoteProps {
   note: INote;
   lineLength?: number;
@@ -121,15 +124,23 @@ export const ShowNote: React.FC<NoteProps> = ({
   };
 
   const handleSummaryClick = async () => {
-    if (summaryOpen && (summaryText || summaryError)) {
+    const shouldRefreshPendingSummary =
+      summaryText.trim() === ATTACHMENT_INDEXING_PENDING_SUMMARY;
+
+    if (summaryOpen && (summaryText || summaryError) && !shouldRefreshPendingSummary) {
       setSummaryOpen(false);
       return;
     }
 
     setSummaryOpen(true);
 
-    if (summaryText || summaryLoading) {
+    if ((summaryText && !shouldRefreshPendingSummary) || summaryLoading) {
       return;
+    }
+
+    if (shouldRefreshPendingSummary) {
+      setSummaryText("");
+      setSummaryMeta(null);
     }
 
     setSummaryLoading(true);
