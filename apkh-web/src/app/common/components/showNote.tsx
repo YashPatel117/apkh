@@ -5,10 +5,10 @@ import { IconButton } from "@mui/material";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
-import AttachmentRoundedIcon from "@mui/icons-material/AttachmentRounded";
 import { INote } from "../models/note";
 import FileDisplay from "./fileDisplay";
 import { modalStyle } from "../style/modal";
+import { normalizeNoteLinksInHtml } from "../service/noteLinkUtils";
 
 interface NoteProps {
   note: INote;
@@ -33,6 +33,7 @@ export const ShowNote: React.FC<NoteProps> = ({
   const previewMaxHeight = `${Math.max(lineLength * 2.65, 8.75)}rem`;
   const categoryLabel = note.category?.trim() || "Uncategorized";
   const attachmentCount = note.files.length;
+  const normalizedContent = normalizeNoteLinksInHtml(note.content);
   const updatedLabel = new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -55,7 +56,7 @@ export const ShowNote: React.FC<NoteProps> = ({
     observer.observe(el);
 
     return () => observer.disconnect();
-  }, [note.content, lineLength, showLinesNumber]);
+  }, [lineLength, normalizedContent, showLinesNumber]);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -122,7 +123,7 @@ export const ShowNote: React.FC<NoteProps> = ({
               className="note-rich-content text-sm"
               data-collapsed={isCollapsed && isTruncated}
               style={isCollapsed ? { maxHeight: previewMaxHeight } : undefined}
-              dangerouslySetInnerHTML={{ __html: note.content }}
+              dangerouslySetInnerHTML={{ __html: normalizedContent }}
             />
           </div>
 

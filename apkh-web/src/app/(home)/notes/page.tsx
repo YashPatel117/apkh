@@ -34,7 +34,7 @@ export default function NotesPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-            <div className="rounded-[22px] border border-white/80 bg-white/80 p-2 shadow-sm">
+            <div className="rounded-[22px] border border-white/80 bg-white/80 p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                 Visible Notes
               </p>
@@ -42,7 +42,7 @@ export default function NotesPage() {
                 {filteredNotes.length}
               </p>
             </div>
-            <div className="rounded-[22px] border border-white/80 bg-white/80 p-2 shadow-sm">
+            <div className="rounded-[22px] border border-white/80 bg-white/80 p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                 Categories
               </p>
@@ -50,7 +50,7 @@ export default function NotesPage() {
                 {categoryCount}
               </p>
             </div>
-            <div className="rounded-[22px] border border-white/80 bg-white/80 p-2 shadow-sm">
+            <div className="rounded-[22px] border border-white/80 bg-white/80 p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                 Attachments
               </p>

@@ -11,6 +11,7 @@ import Autocomplete, { createFilterOptions } from "@mui/material/Autocomplete";
 import { Box, Modal } from "@mui/material";
 import { modalStyle } from "../style/modal";
 import FileDisplay from "./fileDisplay";
+import { normalizeNoteLinksInHtml } from "../service/noteLinkUtils";
 
 const filter = createFilterOptions<string>();
 
@@ -77,6 +78,7 @@ export default function NoteEditor({
   const saveClicked = () => {
     const quill = quillRef.current?.getEditor();
     if (!quill) return;
+    const normalizedContent = normalizeNoteLinksInHtml(note.content);
 
     const fileTokens = Array.from(
       quill.root.querySelectorAll<HTMLElement>(".file-token")
@@ -92,7 +94,7 @@ export default function NoteEditor({
         {
           title: note.title,
           category: note.category,
-          content: note.content,
+          content: normalizedContent,
           files: files
             .filter((f) => fileTokens.some((ft) => ft.id === f.id))
             .filter((file) => file.file !== null)

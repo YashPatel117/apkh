@@ -194,7 +194,7 @@ export default function DashboardLayout({
     ? "Searching..."
     : "Ask AI";
   const aiConfigLabel = activeLlmConfig
-    ? `Active AI model: ${activeLlmConfig.llmModel}`
+    ? `Active AI model: ${activeLlmConfig.keyName}(${activeLlmConfig.llmModel})`
     : "No active AI config. Add an API key in Profile to enable answers.";
 
   const confidence =
@@ -270,9 +270,10 @@ export default function DashboardLayout({
                       <h1 className="mt-3 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
                         Ask across your notes and attachments
                       </h1>
-                      <p className="mt-1.5 max-w-xl text-sm leading-6 text-slate-600">
-                        Type to narrow notes instantly, then use AI to synthesize answers grounded in your saved notes, PDFs, and files.
-                      </p>
+                      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100">{statusLabel}</span>
+                        <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700 ring-1 ring-indigo-100">{aiConfigLabel}</span>
+                      </div>
                       {!activeLlmConfig && (
                         <p className="mt-2 text-sm font-medium text-amber-700">
                           No active AI key is set right now. Add and activate one in Profile to enable answers.
@@ -347,11 +348,6 @@ export default function DashboardLayout({
                             Clear
                           </Button>
                         </div>
-                      </div>
-                      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100">{statusLabel}</span>
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">Instant title filtering stays active while you type</span>
-                        <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700 ring-1 ring-indigo-100">{aiConfigLabel}</span>
                       </div>
                     </div>
                   </div>
