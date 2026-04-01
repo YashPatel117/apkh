@@ -1,6 +1,17 @@
 import Quill from "quill";
 
-const Embed = Quill.import("blots/embed") as any;
+type FileTokenValue = {
+  id: string;
+  name: string;
+};
+
+type EmbedBlotConstructor = {
+  new (...args: never[]): unknown;
+  create(value?: unknown): HTMLElement;
+  scope: unknown;
+};
+
+const Embed = Quill.import("blots/embed") as EmbedBlotConstructor;
 
 export class FileTokenBlot extends Embed {
   static blotName = "fileToken";
@@ -8,7 +19,7 @@ export class FileTokenBlot extends Embed {
   static className = "file-token";
   static scope = Embed.scope;
 
-  static create(value: { id: string; name: string }) {
+  static create(value: FileTokenValue) {
     const node = super.create() as HTMLSpanElement;
     node.setAttribute("data-id", value.id);
     node.setAttribute("data-name", value.name);
@@ -20,7 +31,7 @@ export class FileTokenBlot extends Embed {
     node.style.cursor = "pointer";
     node.style.color = "#00796b";
 
-    node.addEventListener("click", (e) => {
+    node.addEventListener("click", () => {
       const fileName = node.getAttribute("data-name");
       const fileId = node.getAttribute("data-id");
       const customEvent = new CustomEvent("file-token-click", {
@@ -40,4 +51,4 @@ export class FileTokenBlot extends Embed {
   }
 }
 
-Quill.register(FileTokenBlot as any);
+Quill.register(FileTokenBlot);

@@ -1,8 +1,21 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../common/schema/user';
 import { EncryptionService } from '../common/utils/encryption.service';
+
+export type LlmProvider = 'gemini' | 'openai' | 'anthropic';
+
+export interface ActiveLlmSettings {
+  keyName: string;
+  apiKey: string;
+  model: string;
+  provider: LlmProvider;
+}
 
 @Injectable()
 export class UsersService {
@@ -89,7 +102,10 @@ export class UsersService {
   }
 
   /** Set a specific config as active by keyName */
-  async setActiveConfig(userId: string, keyName: string): Promise<UserDocument> {
+  async setActiveConfig(
+    userId: string,
+    keyName: string,
+  ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) throw new NotFoundException('User not found');
 
@@ -104,12 +120,16 @@ export class UsersService {
   }
 
   /** Delete a config by keyName */
-  async deleteLlmConfig(userId: string, keyName: string): Promise<UserDocument> {
+  async deleteLlmConfig(
+    userId: string,
+    keyName: string,
+  ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) throw new NotFoundException('User not found');
 
     const idx = user.llmConfigs.findIndex((c) => c.keyName === keyName);
-    if (idx === -1) throw new BadRequestException(`Config "${keyName}" not found`);
+    if (idx === -1)
+      throw new BadRequestException(`Config "${keyName}" not found`);
 
     const wasActive = user.llmConfigs[idx].isActive;
     user.llmConfigs.splice(idx, 1);
@@ -123,25 +143,54 @@ export class UsersService {
   }
 
   /** Get the active config's decrypted key + model (used internally for RAG) */
-  async getLlmSettings(
+  async getActiveLlmSettings(
     userId: string,
-  ): Promise<{ apiKey: string | null; model: string }> {
+  ): Promise<ActiveLlmSettings | null> {
     const user = await this.userModel
       .findById(userId)
       .select('llmConfigs')
       .lean()
       .exec();
 
-    if (!user || !user.llmConfigs?.length) {
-      return { apiKey: null, model: 'gemini-2.5-flash' };
+    if (!user?.llmConfigs?.length) {
+      return null;
     }
 
-    const active =
-      user.llmConfigs.find((c) => c.isActive) ?? user.llmConfigs[0];
+    const active = user.llmConfigs.find((config) => config.isActive);
+    if (!active) {
+      return null;
+    }
 
     return {
+      keyName: active.keyName,
       apiKey: this.encryption.decrypt(active.llmApiKey),
       model: active.llmModel,
+      provider: this.detectProvider(active.llmModel),
     };
+  }
+
+  private detectProvider(model: string): LlmProvider {
+    const normalized = model.toLowerCase();
+
+    if (normalized.startsWith('gemini')) {
+      return 'gemini';
+    }
+
+    if (
+      normalized.startsWith('gpt') ||
+      normalized.startsWith('o1') ||
+      normalized.startsWith('o3') ||
+      normalized.startsWith('o4')
+    ) {
+      return 'openai';
+    }
+
+    if (normalized.startsWith('claude')) {
+      return 'anthropic';
+    }
+
+    throw new BadRequestException(
+      `Unsupported model "${model}". Choose a Gemini, OpenAI, or Claude model.`,
+    );
   }
 }

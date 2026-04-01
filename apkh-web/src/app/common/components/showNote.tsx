@@ -1,16 +1,14 @@
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import React, { useEffect, useRef, useState } from "react";
-import { INote } from "../models/note";
-import CardActions from "@mui/material/CardActions";
-import Button from "@mui/material/Button";
 import Modal from "@mui/material/Modal";
-import FileDisplay from "./fileDisplay";
 import Box from "@mui/material/Box";
-import { modalStyle } from "../style/modal";
 import { IconButton } from "@mui/material";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
+import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import AttachmentRoundedIcon from "@mui/icons-material/AttachmentRounded";
+import { INote } from "../models/note";
+import FileDisplay from "./fileDisplay";
+import { modalStyle } from "../style/modal";
 
 interface NoteProps {
   note: INote;
@@ -25,23 +23,39 @@ export const ShowNote: React.FC<NoteProps> = ({
   onEdit,
   onDelete,
 }) => {
-  const [showLinesNumber, setShowLinesNumber] = useState<number | null>(
-    lineLength
-  );
+  const [showLinesNumber, setShowLinesNumber] = useState<number | null>(lineLength);
   const [isTruncated, setIsTruncated] = useState(false);
   const [openFile, setOpenFile] = useState(false);
   const [fileName, setFileName] = useState("");
 
   const contentRef = useRef<HTMLDivElement>(null);
+  const isCollapsed = Boolean(showLinesNumber);
+  const previewMaxHeight = `${Math.max(lineLength * 2.65, 8.75)}rem`;
+  const categoryLabel = note.category?.trim() || "Uncategorized";
+  const attachmentCount = note.files.length;
+  const updatedLabel = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(note.updatedAt));
 
   useEffect(() => {
-    if (contentRef.current) {
-      requestAnimationFrame(() => {
-        const el = contentRef.current!;
-        setIsTruncated(el.scrollHeight > el.clientHeight);
-      });
-    }
-  }, [note.content, lineLength]);
+    const el = contentRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      setIsTruncated(el.scrollHeight > el.clientHeight + 4);
+    };
+
+    requestAnimationFrame(measure);
+
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+
+    return () => observer.disconnect();
+  }, [note.content, lineLength, showLinesNumber]);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -63,51 +77,78 @@ export const ShowNote: React.FC<NoteProps> = ({
 
   return (
     <>
-      <style>{`
-        .truncated-multi {
-          display: -webkit-box;
-          ${showLinesNumber ? `-webkit-line-clamp: ${showLinesNumber};` : ""}
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-      `}</style>
+      <article className="group mb-5 break-inside-avoid overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(140deg,_rgba(255,255,255,0.95),_rgba(240,249,255,0.95)_58%,_rgba(239,246,255,0.92)_100%)] p-[1px] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_70px_-38px_rgba(2,132,199,0.35)]">
+        <div className="rounded-[27px] bg-white/92 p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700 ring-1 ring-sky-100">
+                  {categoryLabel}
+                </span>
+                {attachmentCount > 0 && (
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
+                    {attachmentCount} attachment{attachmentCount === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+              <h2 className="mt-3 break-words text-lg font-semibold tracking-tight text-slate-900">
+                {note.title || "Untitled note"}
+              </h2>
+            </div>
 
-      <Card className="border ps-3 py-2 rounded-md mb-4 break-inside-avoid">
-        <CardContent className="p-0!">
-          <h2 className="font-semibold mb-2 flex items-center justify-between gap-1.5">
-            <span>{note.title}</span>
-            <div className=" flex gap-1 items-center">
-              <IconButton onClick={onEdit} className="p-1!">
-                <EditNoteRoundedIcon />
+            <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200/80 bg-white/90 p-1 shadow-sm">
+              <IconButton
+                onClick={onEdit}
+                className="p-1.5!"
+                size="small"
+                aria-label={`Edit ${note.title || "note"}`}
+              >
+                <EditNoteRoundedIcon fontSize="small" />
               </IconButton>
-              <IconButton onClick={onDelete} className="p-1!">
-                <DeleteForeverRoundedIcon />
+              <IconButton
+                onClick={onDelete}
+                className="p-1.5!"
+                size="small"
+                aria-label={`Delete ${note.title || "note"}`}
+              >
+                <DeleteForeverRoundedIcon fontSize="small" />
               </IconButton>
             </div>
-          </h2>
-          <div
-            ref={contentRef}
-            className={`text-gray-600 ${
-              showLinesNumber ? "truncated-multi" : ""
-            }`}
-            dangerouslySetInnerHTML={{ __html: note.content }}
-          />
-        </CardContent>
+          </div>
 
-        {lineLength && isTruncated && (
-          <CardActions>
-            <Button
-              onClick={() =>
-                setShowLinesNumber(
-                  showLinesNumber === lineLength ? null : lineLength
-                )
-              }
-            >
-              {showLinesNumber === lineLength ? "See More" : "See Less"}
-            </Button>
-          </CardActions>
-        )}
-      </Card>
+          <div className="mt-4 rounded-[22px] border border-slate-100 bg-slate-50/90 px-4 py-3 shadow-inner">
+            <div
+              ref={contentRef}
+              className="note-rich-content text-sm"
+              data-collapsed={isCollapsed && isTruncated}
+              style={isCollapsed ? { maxHeight: previewMaxHeight } : undefined}
+              dangerouslySetInnerHTML={{ __html: note.content }}
+            />
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 ring-1 ring-slate-200">
+                <AccessTimeRoundedIcon sx={{ fontSize: 14 }} />
+                Updated {updatedLabel}
+              </span>
+            </div>
+
+            {lineLength && (isTruncated || !isCollapsed) && (
+              <button
+                type="button"
+                onClick={() =>
+                  setShowLinesNumber(showLinesNumber === lineLength ? null : lineLength)
+                }
+                className="rounded-full border border-sky-100 bg-sky-50 px-3.5 py-1.5 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100"
+              >
+                {showLinesNumber === lineLength ? "See more" : "See less"}
+              </button>
+            )}
+          </div>
+        </div>
+      </article>
+
       <Modal open={openFile} onClose={() => setOpenFile(false)}>
         <Box sx={modalStyle()}>
           <FileDisplay fileName={fileName} noteId={note.id} />

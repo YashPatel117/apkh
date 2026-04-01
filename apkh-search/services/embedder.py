@@ -1,74 +1,108 @@
 """
-Embedding generator using Google Gemini API.
-Uses gemini-embedding-001 model with output_dimensionality=768.
+Embedding generator using the active user's provider credentials.
+
+Gemini and OpenAI are supported for embeddings. Anthropic models can still be
+used for answer generation, but Anthropic does not currently offer a compatible
+embedding endpoint for this retrieval flow.
 """
 
-import os
 import logging
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+
+from services.llm import detect_provider
 
 logger = logging.getLogger(__name__)
 
-# Ensure .env is loaded independently in case of import ordering issues
-load_dotenv()
+GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
+GEMINI_EMBEDDING_DIMENSIONS = 768
+OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+async def _generate_gemini_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
+    from google import genai
+    from google.genai import types
 
-# Initialize the Gemini client
-GEMINI_KEY = os.getenv("GEMINI_KEY", "GEMINI_KEY")
-EMBEDDING_MODEL = "gemini-embedding-001"
-EMBEDDING_DIMENSIONS = 768
+    client = genai.Client(api_key=api_key)
+    embeddings: list[list[float]] = []
 
-
-def get_client():
-    """Get or create the Gemini client."""
-    return genai.Client(api_key=GEMINI_KEY)
-
-
-async def generate_embeddings(texts: list[str]) -> list[list[float]]:
-    """
-    Generate embeddings for a list of texts using Gemini gemini-embedding-001.
-
-    Args:
-        texts: List of text strings to embed
-
-    Returns:
-        List of embedding vectors (each is list of 768 floats)
-    """
-    if not texts:
-        return []
-
-    client = get_client()
-    embeddings = []
-
-    # Batch in groups of 100 (Gemini supports batching)
     batch_size = 100
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        try:
-            result = client.models.embed_content(
-                model=EMBEDDING_MODEL,
-                contents=batch,
-                config=types.EmbedContentConfig(
-                    output_dimensionality=EMBEDDING_DIMENSIONS,
-                ),
-            )
-            for embedding in result.embeddings:
-                embeddings.append(embedding.values)
+    for index in range(0, len(texts), batch_size):
+        batch = texts[index:index + batch_size]
+        result = client.models.embed_content(
+            model=GEMINI_EMBEDDING_MODEL,
+            contents=batch,
+            config=types.EmbedContentConfig(
+                output_dimensionality=GEMINI_EMBEDDING_DIMENSIONS,
+            ),
+        )
 
-            logger.info(f"Generated embeddings for batch {i // batch_size + 1} "
-                        f"({len(batch)} texts)")
-        except Exception as e:
-            logger.error(f"Embedding generation failed for batch {i // batch_size + 1}: {e}")
-            # Fill with empty vectors for failed batch
-            for _ in batch:
-                embeddings.append([0.0] * EMBEDDING_DIMENSIONS)
+        for embedding in result.embeddings:
+            embeddings.append(embedding.values)
+
+        logger.info(
+            "Generated Gemini embeddings for batch %s (%s texts)",
+            index // batch_size + 1,
+            len(batch),
+        )
 
     return embeddings
 
 
-async def generate_single_embedding(text: str) -> list[float]:
-    """Generate embedding for a single text."""
-    results = await generate_embeddings([text])
-    return results[0] if results else [0.0] * EMBEDDING_DIMENSIONS
+async def _generate_openai_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
+    from openai import AsyncOpenAI
 
+    client = AsyncOpenAI(api_key=api_key)
+    embeddings: list[list[float]] = []
+
+    batch_size = 100
+    for index in range(0, len(texts), batch_size):
+        batch = texts[index:index + batch_size]
+        result = await client.embeddings.create(
+            model=OPENAI_EMBEDDING_MODEL,
+            input=batch,
+        )
+
+        for item in sorted(result.data, key=lambda entry: entry.index):
+            embeddings.append(item.embedding)
+
+        logger.info(
+            "Generated OpenAI embeddings for batch %s (%s texts)",
+            index // batch_size + 1,
+            len(batch),
+        )
+
+    return embeddings
+
+
+async def generate_embeddings(
+    texts: list[str],
+    api_key: str,
+    model: str,
+) -> list[list[float]]:
+    """
+    Generate embeddings for a list of texts using the active user's provider.
+    """
+    if not texts:
+        return []
+
+    resolved_key = api_key.strip()
+    resolved_model = model.strip()
+
+    if not resolved_key or not resolved_model:
+        raise ValueError("api_key and model are required for embedding generation.")
+
+    provider = detect_provider(resolved_model)
+
+    if provider == "gemini":
+        return await _generate_gemini_embeddings(texts, resolved_key)
+
+    if provider == "openai":
+        return await _generate_openai_embeddings(texts, resolved_key)
+
+    raise ValueError(
+        "Anthropic models are not supported for semantic search embeddings yet. "
+        "Use a Gemini or OpenAI config for AI search."
+    )
+
+
+async def generate_single_embedding(text: str, api_key: str, model: str) -> list[float]:
+    """Generate an embedding for a single text."""
+    results = await generate_embeddings([text], api_key, model)
+    return results[0] if results else []

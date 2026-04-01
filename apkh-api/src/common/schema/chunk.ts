@@ -29,8 +29,14 @@ export class KnowledgeChunk {
   @Prop()
   sourcePage: number;
 
+  @Prop({ required: true, enum: ['gemini', 'openai', 'anthropic'] })
+  embeddingProvider: string;
+
+  @Prop({ required: true })
+  embeddingModel: string;
+
   @Prop({ type: [Number], required: true })
-  embedding: number[]; // 768-dim vector from Gemini text-embedding-004
+  embedding: number[];
 }
 
 export const KnowledgeChunkSchema =

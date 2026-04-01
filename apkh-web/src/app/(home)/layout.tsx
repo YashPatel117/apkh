@@ -23,7 +23,7 @@ import { addNote } from "@/store/slices/noteSlice";
 import { modalStyle } from "../common/style/modal";
 import { INote } from "../common/models/note";
 import { NotesContext } from "../common/context/notesContext";
-import { CircularProgress, TextField } from "@mui/material";
+import { CircularProgress, TextField, Tooltip } from "@mui/material";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
@@ -80,6 +80,7 @@ export default function DashboardLayout({
   const { notes } = useAppSelector((state) => state.note);
   const dispatch = useAppDispatch();
   const router = useRouter();
+  const activeLlmConfig = user?.llmConfigs?.find((config) => config.isActive) ?? null;
 
   const handleLogout = () => {
     router.push("/login");
@@ -159,7 +160,7 @@ export default function DashboardLayout({
         setFilteredNotes(filtered.length > 0 ? filtered : []);
         profile()
           .then((updatedUser) => dispatch(setUser(updatedUser)))
-          .catch(() => {});
+          .catch(() => { });
       }
     } catch (error) {
       console.error(error);
@@ -173,13 +174,28 @@ export default function DashboardLayout({
     }
   }
 
+  async function handleAiAction() {
+    if (!activeLlmConfig) {
+      router.push("/profile");
+      return;
+    }
+
+    await handleAiSearch();
+  }
+
   const trimmedSearch = search.trim();
-  const canRunAiSearch = trimmedSearch.length > 3 && !isAiSearching;
+  const canRunAiSearch = !isAiSearching && (!activeLlmConfig || trimmedSearch.length > 3);
   const statusLabel = aiAnswer
     ? `${aiAnswer.references.length} source${aiAnswer.references.length === 1 ? "" : "s"} connected`
     : trimmedSearch
       ? `${filteredNotes.length} note${filteredNotes.length === 1 ? "" : "s"} visible`
       : `${notes.length} note${notes.length === 1 ? "" : "s"} ready`;
+  const aiActionLabel = isAiSearching
+    ? "Searching..."
+    : "Ask AI";
+  const aiConfigLabel = activeLlmConfig
+    ? `Active AI model: ${activeLlmConfig.llmModel}`
+    : "No active AI config. Add an API key in Profile to enable answers.";
 
   const confidence =
     (aiAnswer && confidenceTone[aiAnswer.confidence]) || confidenceTone.medium;
@@ -223,11 +239,10 @@ export default function DashboardLayout({
                       <span className="p-name font-medium text-slate-700">{user.name}</span>
                     </button>
                     <div
-                      className={`absolute right-0 z-50 mt-2 w-44 origin-top rounded-2xl bg-white shadow-lg transition-all duration-300 ${
-                        openProfileMenu
-                          ? "scale-y-100 border border-slate-200 opacity-100"
-                          : "scale-y-0 border-0 opacity-0"
-                      }`}
+                      className={`absolute right-0 z-50 mt-2 w-44 origin-top rounded-2xl bg-white shadow-lg transition-all duration-300 ${openProfileMenu
+                        ? "scale-y-100 border border-slate-200 opacity-100"
+                        : "scale-y-0 border-0 opacity-0"
+                        }`}
                     >
                       <Link href="/profile" className="block px-4 py-2 text-gray-800 hover:bg-gray-100" onClick={() => setOpenProfileMenu(false)}>
                         Profile
@@ -258,6 +273,11 @@ export default function DashboardLayout({
                       <p className="mt-1.5 max-w-xl text-sm leading-6 text-slate-600">
                         Type to narrow notes instantly, then use AI to synthesize answers grounded in your saved notes, PDFs, and files.
                       </p>
+                      {!activeLlmConfig && (
+                        <p className="mt-2 text-sm font-medium text-amber-700">
+                          No active AI key is set right now. Add and activate one in Profile to enable answers.
+                        </p>
+                      )}
                     </div>
                     <div className="w-full max-w-3xl xl:min-w-[500px]">
                       <div className="flex flex-col gap-2.5 md:flex-row md:items-center">
@@ -266,7 +286,7 @@ export default function DashboardLayout({
                           placeholder="Ask about a project, meeting, file, or concept..."
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAiSearch(); } }}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAiAction(); } }}
                           autoComplete="off"
                           variant="outlined"
                           className="w-full"
@@ -294,21 +314,25 @@ export default function DashboardLayout({
                           }}
                         />
                         <div className="flex gap-2 sm:justify-end">
-                          <Button
-                            variant="contained"
-                            onClick={() => void handleAiSearch()}
-                            disabled={!canRunAiSearch}
-                            startIcon={isAiSearching ? <CircularProgress color="inherit" size={16} /> : <AutoAwesomeOutlinedIcon />}
-                            sx={{
-                              minHeight: 54, minWidth: 128, borderRadius: "18px", textTransform: "none",
-                              fontWeight: 700, fontSize: "0.9rem",
-                              boxShadow: "0 18px 35px -22px rgba(29,78,216,0.9)",
-                              background: "linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%)",
-                              "&:hover": { background: "linear-gradient(135deg, #0369a1 0%, #1e40af 100%)" },
-                            }}
-                          >
-                            {isAiSearching ? "Searching..." : "Ask AI"}
-                          </Button>
+                          <Tooltip title={!activeLlmConfig ? "Add API key in profile to enable" : ""}>
+                            <span>
+                              <Button
+                                variant="contained"
+                                onClick={() => void handleAiAction()}
+                                disabled={!canRunAiSearch || !activeLlmConfig}
+                                startIcon={isAiSearching ? <CircularProgress color="inherit" size={16} /> : <AutoAwesomeOutlinedIcon />}
+                                sx={{
+                                  minHeight: 54, minWidth: 128, borderRadius: "18px", textTransform: "none",
+                                  fontWeight: 700, fontSize: "0.9rem",
+                                  boxShadow: "0 18px 35px -22px rgba(29,78,216,0.9)",
+                                  background: "linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%)",
+                                  "&:hover": { background: "linear-gradient(135deg, #0369a1 0%, #1e40af 100%)" },
+                                }}
+                              >
+                                {aiActionLabel}
+                              </Button>
+                            </span>
+                          </Tooltip>
                           <Button
                             variant="outlined"
                             onClick={() => { setSearch(""); setAiAnswer(null); }}
@@ -327,7 +351,7 @@ export default function DashboardLayout({
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
                         <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100">{statusLabel}</span>
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">Instant title filtering stays active while you type</span>
-                        <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700 ring-1 ring-indigo-100">AI answers cite note and file sources</span>
+                        <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700 ring-1 ring-indigo-100">{aiConfigLabel}</span>
                       </div>
                     </div>
                   </div>

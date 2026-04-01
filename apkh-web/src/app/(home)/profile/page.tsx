@@ -84,33 +84,7 @@ export default function ProfilePage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)] ">
         <section className="rounded-[28px] border border-white/80 bg-white/88 p-6 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.9)]">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-20 w-20 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,_#0ea5e9,_#2563eb)] text-2xl font-bold tracking-wide text-white shadow-lg">
-                {getInitials(user.name)}
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
-                  Personal Profile
-                </p>
-                <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">
-                  {user.name}
-                </h1>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                  Welcome back, {firstName}. This is your account snapshot,
-                  workspace context, and current access level in one place.
-                </p>
-              </div>
-            </div>
-
-            <span
-              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ring-1 ${planTone}`}
-            >
-              {user.type}
-            </span>
-          </div>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-[22px] border border-slate-200 bg-slate-50/90 p-4">
               <div className="flex items-center gap-2 text-sky-700">
                 <BadgeRoundedIcon sx={{ fontSize: 18 }} />

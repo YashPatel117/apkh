@@ -24,6 +24,7 @@ import { JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { UserDocument } from 'src/common/schema/user';
+import { SearchService } from 'src/search/search.service';
 
 const SEARCH_API = 'http://localhost:8000';
 
@@ -60,13 +61,15 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly httpService: HttpService,
+    private readonly searchService: SearchService,
   ) {}
 
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
   @Get('/profile')
   async getProfile(@JwtTokenUserId() userId: string) {
-    return await this.usersService.findOneById(userId);
+    const user = await this.usersService.findOneById(userId);
+    return user ? this.sanitizeUser(user) : null;
   }
 
   /** Test if the given API key + model combo works — does NOT save anything */
@@ -103,6 +106,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Post('/llm-configs')
   async addLlmConfig(
+    @Headers('authorization') authHeader: string,
     @JwtTokenUserId() userId: string,
     @Body() body: AddLlmConfigDto,
   ) {
@@ -113,7 +117,13 @@ export class UsersController {
       body.model,
       body.setActive ?? true,
     );
-    return this.sanitizeUser(user);
+    const sanitized = this.sanitizeUser(user);
+
+    if (body.setActive ?? true) {
+      this.searchService.triggerUserReindex(authHeader, userId);
+    }
+
+    return sanitized;
   }
 
   /** Set a config as the active one */
@@ -121,10 +131,12 @@ export class UsersController {
   @ApiBearerAuth()
   @Patch('/llm-configs/:keyName/activate')
   async activateLlmConfig(
+    @Headers('authorization') authHeader: string,
     @JwtTokenUserId() userId: string,
     @Param('keyName') keyName: string,
   ) {
     const user = await this.usersService.setActiveConfig(userId, keyName);
+    this.searchService.triggerUserReindex(authHeader, userId);
     return this.sanitizeUser(user);
   }
 
@@ -133,10 +145,12 @@ export class UsersController {
   @ApiBearerAuth()
   @Delete('/llm-configs/:keyName')
   async deleteLlmConfig(
+    @Headers('authorization') authHeader: string,
     @JwtTokenUserId() userId: string,
     @Param('keyName') keyName: string,
   ) {
     const user = await this.usersService.deleteLlmConfig(userId, keyName);
+    this.searchService.triggerUserReindex(authHeader, userId);
     return this.sanitizeUser(user);
   }
 

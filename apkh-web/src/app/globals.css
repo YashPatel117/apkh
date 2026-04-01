@@ -6,7 +6,8 @@
   --foreground: #0f172a;
 }
 
-:root[data-theme="dark"], .dark {
+:root[data-theme="dark"],
+.dark {
   --background: #0f172a;
   --foreground: #f8fafc;
 }
@@ -23,4 +24,231 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.note-rich-content {
+  color: #334155;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.note-rich-content> :first-child {
+  margin-top: 0;
+}
+
+.note-rich-content> :last-child {
+  margin-bottom: 0;
+}
+
+.note-rich-content p,
+.note-rich-content blockquote,
+.note-rich-content pre,
+.note-rich-content ul,
+.note-rich-content ol,
+.note-rich-content h1,
+.note-rich-content h2,
+.note-rich-content h3,
+.note-rich-content h4,
+.note-rich-content h5,
+.note-rich-content h6 {
+  margin: 0.55rem 0;
+}
+
+.note-rich-content strong {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.note-rich-content a {
+  color: #0369a1;
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.2em;
+}
+
+.note-rich-content h1,
+.note-rich-content h2,
+.note-rich-content h3,
+.note-rich-content h4,
+.note-rich-content h5,
+.note-rich-content h6 {
+  color: #0f172a;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.note-rich-content h1 {
+  font-size: 1.35rem;
+}
+
+.note-rich-content h2 {
+  font-size: 1.2rem;
+}
+
+.note-rich-content h3 {
+  font-size: 1.05rem;
+}
+
+.note-rich-content blockquote {
+  border-left: 3px solid #7dd3fc;
+  border-radius: 0 14px 14px 0;
+  background: linear-gradient(90deg, rgba(240, 249, 255, 0.95), rgba(248, 250, 252, 0));
+  padding: 0.4rem 0 0.4rem 0.9rem;
+  color: #475569;
+}
+
+.note-rich-content code {
+  border-radius: 8px;
+  background: #e2e8f0;
+  padding: 0.12rem 0.38rem;
+  font-size: 0.875em;
+}
+
+.note-rich-content pre {
+  overflow-x: auto;
+  border-radius: 16px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.95rem 1rem;
+}
+
+.note-rich-content pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.note-rich-content ul,
+.note-rich-content ol {
+  padding-left: 1.35rem;
+}
+
+.note-rich-content li {
+  margin: 0.18rem 0;
+}
+
+.note-rich-content ul>li {
+  list-style: disc;
+}
+
+.note-rich-content ol>li {
+  list-style: decimal;
+}
+
+.note-rich-content li[data-list="bullet"] {
+  list-style: disc;
+}
+
+.note-rich-content li[data-list="ordered"] {
+  list-style: decimal;
+}
+
+.note-rich-content li.ql-indent-1 {
+  margin-left: 1.5rem;
+}
+
+.note-rich-content li.ql-indent-2 {
+  margin-left: 3rem;
+}
+
+.note-rich-content li.ql-indent-3 {
+  margin-left: 4.5rem;
+}
+
+.note-rich-content .ql-align-center {
+  text-align: center;
+}
+
+.note-rich-content .ql-align-right {
+  text-align: right;
+}
+
+.note-rich-content .ql-align-justify {
+  text-align: justify;
+}
+
+.note-rich-content .file-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.05rem 0.2rem 0.05rem 0;
+  border: 1px solid #bae6fd !important;
+  border-radius: 999px !important;
+  background: linear-gradient(135deg, rgba(224, 242, 254, 0.96), rgba(240, 249, 255, 0.98)) !important;
+  box-shadow: 0 12px 24px -20px rgba(2, 132, 199, 0.9);
+  color: #0369a1 !important;
+  padding: 0.22rem 0.68rem !important;
+  font-size: 0.84rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.note-rich-content[data-collapsed="true"] {
+  overflow: hidden;
+  position: relative;
+}
+
+.note-rich-content[data-collapsed="true"]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3.5rem;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0), rgba(248, 250, 252, 0.98));
+  pointer-events: none;
+}
+
+.note-editor .ql-toolbar.ql-snow {
+  border: 1px solid rgba(186, 230, 253, 0.95);
+  border-bottom: none;
+  border-radius: 22px 22px 0 0;
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.96), rgba(255, 255, 255, 0.96));
+  padding: 0.75rem 0.85rem;
+}
+
+.note-editor .ql-container.ql-snow {
+  border: 1px solid rgba(186, 230, 253, 0.95);
+  border-radius: 0 0 22px 22px;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.note-editor .ql-editor {
+  min-height: 19rem;
+  max-height: 48vh;
+  font-size: 0.97rem;
+  color: #1e293b;
+}
+
+.note-editor .ql-editor.ql-blank::before {
+  color: #94a3b8;
+  font-style: normal;
+}
+
+.note-editor .ql-snow .ql-picker {
+  color: #334155;
+}
+
+.note-editor .ql-snow .ql-stroke {
+  stroke: #334155;
+}
+
+.note-editor .ql-snow .ql-fill {
+  fill: #334155;
+}
+
+.note-editor .ql-toolbar button.ql-customButton {
+  width: auto;
+  min-width: 72px;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  color: #0369a1;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.note-editor .ql-toolbar button.ql-customButton:hover {
+  background: rgba(224, 242, 254, 0.9);
 }

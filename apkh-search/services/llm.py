@@ -1,28 +1,16 @@
 """
-LLM Service for Answer Generation — supports multiple providers.
+LLM service for answer generation using only per-request credentials.
 
 Supported providers (detected by model name prefix):
-  - Google Gemini  : model starts with "gemini-"   → uses google-genai SDK
-  - OpenAI         : model starts with "gpt-" or "o1" / "o3" / "o4"  → uses openai SDK
-  - Anthropic      : model starts with "claude-"   → uses anthropic SDK
-
-Per-request api_key and model are passed in. Falls back to env vars if not provided.
+  - Google Gemini  : model starts with "gemini-"
+  - OpenAI         : model starts with "gpt-" or "o1" / "o3" / "o4"
+  - Anthropic      : model starts with "claude-"
 """
 
-import os
 import logging
-from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
-load_dotenv()
 
-# ── Fallback env vars (used when user hasn't configured their own key) ──────
-_DEFAULT_GEMINI_KEY  = os.getenv("GEMINI_KEY", "")
-_DEFAULT_OPENAI_KEY  = os.getenv("OPENAI_KEY", "")
-_DEFAULT_CLAUDE_KEY  = os.getenv("ANTHROPIC_KEY", "")
-_DEFAULT_MODEL       = os.getenv("DEFAULT_LLM_MODEL", "gemini-2.5-flash")
-
-# ── Shared system prompt ─────────────────────────────────────────────────────
 _SYSTEM_INSTRUCTION = (
     "You are a personal knowledge assistant. Your job is to answer the user's question "
     "using ONLY the information in the provided context sections.\n\n"
@@ -36,20 +24,20 @@ _SYSTEM_INSTRUCTION = (
 )
 
 
-def _detect_provider(model: str) -> str:
+def detect_provider(model: str) -> str:
     """Detect provider from model name."""
-    m = model.lower()
-    if m.startswith("gemini"):
+    normalized = model.lower()
+    if normalized.startswith("gemini"):
         return "gemini"
-    if m.startswith("gpt") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4"):
+    if normalized.startswith(("gpt", "o1", "o3", "o4")):
         return "openai"
-    if m.startswith("claude"):
+    if normalized.startswith("claude"):
         return "anthropic"
-    raise ValueError(f"Cannot detect provider for model '{model}'. "
-                     "Model name must start with 'gemini-', 'gpt-', 'o1'/'o3'/'o4', or 'claude-'.")
+    raise ValueError(
+        f"Cannot detect provider for model '{model}'. "
+        "Model name must start with 'gemini-', 'gpt-', 'o1'/'o3'/'o4', or 'claude-'."
+    )
 
-
-# ── Provider implementations ─────────────────────────────────────────────────
 
 async def _call_gemini(api_key: str, model: str, system: str, user_prompt: str) -> dict:
     from google import genai
@@ -79,7 +67,7 @@ async def _call_openai(api_key: str, model: str, system: str, user_prompt: str) 
         temperature=0.2,
         messages=[
             {"role": "system", "content": system},
-            {"role": "user",   "content": user_prompt},
+            {"role": "user", "content": user_prompt},
         ],
     )
     tokens_used = response.usage.total_tokens if response.usage else 0
@@ -105,26 +93,14 @@ async def _call_anthropic(api_key: str, model: str, system: str, user_prompt: st
     return {"answer": answer, "tokens_used": tokens_used}
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
-
 async def generate_rag_answer(
     query: str,
     contexts: list[str],
-    api_key: str | None = None,
-    model: str | None = None,
+    api_key: str,
+    model: str,
 ) -> dict:
     """
     Generate an answer from the provided context chunks.
-
-    Args:
-        query:    The user's question.
-        contexts: List of retrieved context strings.
-        api_key:  User's API key for their chosen provider. Falls back to env var.
-        model:    Model identifier (e.g. 'gpt-4o', 'claude-3-5-sonnet-20241022').
-                  Falls back to DEFAULT_LLM_MODEL env var.
-
-    Returns:
-        { "answer": str, "tokens_used": int }
     """
     if not contexts:
         return {
@@ -132,39 +108,50 @@ async def generate_rag_answer(
             "tokens_used": 0,
         }
 
-    resolved_model = (model or _DEFAULT_MODEL).strip()
-    context_text   = "\n\n---\n\n".join(contexts)
-    user_prompt    = f"Context:\n\n{context_text}\n\n---\n\nUser Question: {query}"
+    resolved_key = api_key.strip()
+    resolved_model = model.strip()
 
-    try:
-        provider = _detect_provider(resolved_model)
-    except ValueError as e:
-        logger.error(str(e))
-        return {"answer": "Unsupported model. Please check your AI settings.", "tokens_used": 0}
-
-    # Resolve API key (user-supplied takes priority over env fallback)
-    if provider == "gemini":
-        resolved_key = api_key or _DEFAULT_GEMINI_KEY
-        caller = _call_gemini
-    elif provider == "openai":
-        resolved_key = api_key or _DEFAULT_OPENAI_KEY
-        caller = _call_openai
-    else:  # anthropic
-        resolved_key = api_key or _DEFAULT_CLAUDE_KEY
-        caller = _call_anthropic
-
-    if not resolved_key:
+    if not resolved_key or not resolved_model:
         return {
-            "answer": "No API key configured. Please add your API key in profile settings.",
+            "answer": "Add an active API key and model in profile settings to enable AI search.",
             "tokens_used": 0,
         }
 
+    context_text = "\n\n---\n\n".join(contexts)
+    user_prompt = f"Context:\n\n{context_text}\n\n---\n\nUser Question: {query}"
+
     try:
-        result = await caller(resolved_key, resolved_model, _SYSTEM_INSTRUCTION, user_prompt)
-        logger.info(f"RAG answer generated via {provider}/{resolved_model} — {result['tokens_used']} tokens")
+        provider = detect_provider(resolved_model)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return {
+            "answer": "Unsupported model. Please check your AI settings.",
+            "tokens_used": 0,
+        }
+
+    if provider == "gemini":
+        caller = _call_gemini
+    elif provider == "openai":
+        caller = _call_openai
+    else:
+        caller = _call_anthropic
+
+    try:
+        result = await caller(
+            resolved_key,
+            resolved_model,
+            _SYSTEM_INSTRUCTION,
+            user_prompt,
+        )
+        logger.info(
+            "RAG answer generated via %s/%s - %s tokens",
+            provider,
+            resolved_model,
+            result["tokens_used"],
+        )
         return result
-    except Exception as e:
-        logger.error(f"LLM call failed [{provider}/{resolved_model}]: {e}")
+    except Exception as exc:
+        logger.error("LLM call failed [%s/%s]: %s", provider, resolved_model, exc)
         return {
             "answer": "I'm sorry, I encountered an error while formulating the answer.",
             "tokens_used": 0,
@@ -174,25 +161,41 @@ async def generate_rag_answer(
 async def test_llm_connection(api_key: str, model: str) -> dict:
     """
     Verify that a given API key + model combination works.
-    Sends a minimal single-token prompt and returns success/error.
-
-    Returns:
-        { "ok": bool, "error": str | None }
     """
+    resolved_key = api_key.strip()
+    resolved_model = model.strip()
+
+    if not resolved_key or not resolved_model:
+        return {"ok": False, "error": "api_key and model are required"}
+
     try:
-        provider = _detect_provider(model)
-    except ValueError as e:
-        return {"ok": False, "error": str(e)}
+        provider = detect_provider(resolved_model)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
 
     try:
         if provider == "gemini":
-            result = await _call_gemini(api_key, model, "You are a test assistant.", "Say: OK")
+            await _call_gemini(
+                resolved_key,
+                resolved_model,
+                "You are a test assistant.",
+                "Say: OK",
+            )
         elif provider == "openai":
-            result = await _call_openai(api_key, model, "You are a test assistant.", "Say: OK")
+            await _call_openai(
+                resolved_key,
+                resolved_model,
+                "You are a test assistant.",
+                "Say: OK",
+            )
         else:
-            result = await _call_anthropic(api_key, model, "You are a test assistant.", "Say: OK")
+            await _call_anthropic(
+                resolved_key,
+                resolved_model,
+                "You are a test assistant.",
+                "Say: OK",
+            )
 
         return {"ok": True, "error": None, "provider": provider}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
