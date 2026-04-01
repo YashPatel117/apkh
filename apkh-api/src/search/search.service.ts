@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
@@ -7,6 +8,7 @@ import {
   KnowledgeChunk,
   KnowledgeChunkDocument,
 } from 'src/common/schema/chunk';
+import { UsersService } from 'src/users/users.service';
 
 const SEARCH_API = 'http://localhost:8000';
 
@@ -34,6 +36,7 @@ export class SearchService {
     private readonly httpService: HttpService,
     @InjectModel(KnowledgeChunk.name)
     private chunkModel: Model<KnowledgeChunkDocument>,
+    private readonly usersService: UsersService,
   ) {}
 
   /**
@@ -219,17 +222,32 @@ export class SearchService {
         return `[SOURCE: ${source}]\n${c.text}`;
       });
 
-      // 4. Generate Answer via RAG endpoint
-      const ragRes$ = this.httpService.post<{ answer: string }>(
+      // 4. Generate Answer via RAG endpoint — pass user's key+model
+      const { apiKey, model } = await this.usersService.getLlmSettings(userId);
+
+      const ragRes$ = this.httpService.post<{
+        answer: string;
+        tokens_used: number;
+      }>(
         `${SEARCH_API}/ai-search/rag`,
-        { query, contexts },
+        { query, contexts, api_key: apiKey, model },
         {
           headers: { Authorization: token },
           timeout: 60000,
-        }, // RAG calls can take a few seconds
+        },
       );
       const ragRes = await firstValueFrom(ragRes$);
       const answer = ragRes.data.answer;
+      const tokensUsed = ragRes.data.tokens_used ?? 0;
+
+      // Track token usage for the user (fire-and-forget)
+      if (tokensUsed > 0) {
+        this.usersService.addTokenUsage(userId, tokensUsed).catch((err) => {
+          this.logger.error(
+            `Failed to track token usage for user ${userId}: ${err.message}`,
+          );
+        });
+      }
 
       // 5. Build Final Response Interface
       return {

@@ -3,6 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { MongooseModule } from '@nestjs/mongoose';
 import { KnowledgeChunk, KnowledgeChunkSchema } from 'src/common/schema/chunk';
 import { SearchService } from './search.service';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -10,6 +11,7 @@ import { SearchService } from './search.service';
     MongooseModule.forFeature([
       { name: KnowledgeChunk.name, schema: KnowledgeChunkSchema },
     ]),
+    UsersModule,
   ],
   providers: [SearchService],
   exports: [SearchService],

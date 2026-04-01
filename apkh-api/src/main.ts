@@ -19,7 +19,7 @@ async function bootstrap() {
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
   );
   app.enableCors({
-    origin: 'http://localhost:3002', // Next.js frontend
+    origin: ['http://localhost:3002', 'http://192.168.3.172:3002'], // Next.js frontend
     credentials: true, // allows cookies & auth headers
   });
   await app.listen(process.env.PORT ?? 3000);

@@ -10,10 +10,11 @@ const app = express();
 const port = 3001;
 
 const FRONTEND_URL = "http://localhost:3002";
+const LAN_URL = "http://192.168.3.172:3002";
 
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin: [FRONTEND_URL, LAN_URL],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
   })

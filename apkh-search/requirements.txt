@@ -4,6 +4,8 @@ PyJWT
 cryptography
 httpx
 google-genai
+openai
+anthropic
 beautifulsoup4
 PyMuPDF
 pytesseract

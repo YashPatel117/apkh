@@ -8,7 +8,9 @@ import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import StickyNote2OutlinedIcon from "@mui/icons-material/StickyNote2Outlined";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import TokenOutlinedIcon from "@mui/icons-material/TokenOutlined";
 import { useRouter } from "next/navigation";
+import LlmSettingsCard from "./LlmSettingsCard";
 
 function getInitials(name: string) {
   return name
@@ -153,6 +155,21 @@ export default function ProfilePage() {
                 Controls the account capabilities available to you.
               </p>
             </div>
+
+            <div className="rounded-[22px] border border-slate-200 bg-slate-50/90 p-4">
+              <div className="flex items-center gap-2 text-violet-700">
+                <TokenOutlinedIcon sx={{ fontSize: 18 }} />
+                <span className="text-xs font-semibold uppercase tracking-[0.2em]">
+                  AI Tokens Used
+                </span>
+              </div>
+              <p className="mt-3 text-base font-semibold text-slate-900">
+                {(user.totalTokensUsed ?? 0).toLocaleString()}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Total tokens consumed across all AI search queries.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -190,6 +207,8 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
+
+          <LlmSettingsCard user={user} />
 
           <div className="rounded-[28px] border border-slate-200 bg-white/92 p-5 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
