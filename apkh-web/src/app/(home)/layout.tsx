@@ -80,6 +80,7 @@ export default function DashboardLayout({
   const [filteredNotes, setFilteredNotes] = useState<INote[]>([]);
   const [aiAnswer, setAiAnswer] = useState<AiSearchResponse | null>(null);
   const [isAiSearching, setIsAiSearching] = useState(false);
+  const [selectedNotes, setSelectedNotes] = useState<{ noteId: string, title: string }[]>([]);
   const { user } = useAppSelector((state) => state.auth);
   const { notes } = useAppSelector((state) => state.note);
   const dispatch = useAppDispatch();
@@ -187,6 +188,14 @@ export default function DashboardLayout({
     await handleAiSearch();
   }
 
+  const toggleSelect = (noteId: string, title: string) => {
+    if (selectedNotes.find((note) => note.noteId === noteId)) {
+      setSelectedNotes(selectedNotes.filter((note) => note.noteId !== noteId));
+    } else {
+      setSelectedNotes([...selectedNotes, { noteId, title }]);
+    }
+  };
+
   const trimmedSearch = search.trim();
   const canRunAiSearch = !isAiSearching && (!activeLlmConfig || trimmedSearch.length > 3);
   const statusLabel = aiAnswer
@@ -206,7 +215,7 @@ export default function DashboardLayout({
 
   return (
     <NotesContext.Provider
-      value={{ openNote, filteredNotes, aiAnswer, isAiSearching }}
+      value={{ openNote, filteredNotes, aiAnswer, isAiSearching, selectedNotes, toggleSelect }}
     >
       <style>{`
         @media (max-width: 400px) {

@@ -8,7 +8,7 @@ import { deleteNote as deleteNoteAction } from "@/store/slices/noteSlice";
 import { deleteNote } from "@/service/noteService";
 
 export default function NotesPage() {
-  const { openNote, filteredNotes, aiAnswer } = useContext(NotesContext);
+  const { openNote, filteredNotes, aiAnswer, selectedNotes, toggleSelect } = useContext(NotesContext);
   const dispatch = useAppDispatch();
   const categoryCount = new Set(
     filteredNotes
@@ -19,6 +19,7 @@ export default function NotesPage() {
     (total, note) => total + note.files.length,
     0
   );
+
 
   return (
     <div className="p-4 sm:px-6 sm:pb-8">
@@ -77,7 +78,9 @@ export default function NotesPage() {
               note={note}
               lineLength={5}
               key={note.id}
+              selected={selectedNotes.some((selectedNote) => selectedNote.noteId === note.id)}
               onEdit={() => openNote(note.id)}
+              toggleSelect={() => toggleSelect(note.id, note.title)}
               onDelete={async () => {
                 await deleteNote(note.id);
                 dispatch(deleteNoteAction(note.id));

@@ -13,6 +13,7 @@ import { normalizeNoteLinksInHtml } from "../service/noteLinkUtils";
 import { summarizeNote } from "@/service/noteService";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
+import { stopPropagation } from "@/core/utils";
 
 const ATTACHMENT_INDEXING_PENDING_SUMMARY =
   "Attachment text is still being indexed for this note. Please try the summary again in a moment.";
@@ -20,15 +21,19 @@ const ATTACHMENT_INDEXING_PENDING_SUMMARY =
 interface NoteProps {
   note: INote;
   lineLength?: number;
+  selected?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
+  toggleSelect?: () => void;
 }
 
 export const ShowNote: React.FC<NoteProps> = ({
   note,
   lineLength = 3,
+  selected = false,
   onEdit,
   onDelete,
+  toggleSelect,
 }) => {
   const [showLinesNumber, setShowLinesNumber] = useState<number | null>(lineLength);
   const [isTruncated, setIsTruncated] = useState(false);
@@ -163,8 +168,17 @@ export const ShowNote: React.FC<NoteProps> = ({
 
   return (
     <>
-      <article className="group mb-5 break-inside-avoid overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(140deg,_rgba(255,255,255,0.95),_rgba(240,249,255,0.95)_58%,_rgba(239,246,255,0.92)_100%)] p-[1px] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_70px_-38px_rgba(2,132,199,0.35)]">
-        <div className="rounded-[27px] bg-white/92 p-4 sm:p-5">
+      <article className="group mb-5 cursor-pointer break-inside-avoid overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(140deg,_rgba(255,255,255,0.95),_rgba(240,249,255,0.95)_58%,_rgba(239,246,255,0.92)_100%)] p-[1px] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_70px_-38px_rgba(2,132,199,0.35)]"
+        onClick={(e) => {
+          if (e.defaultPrevented) return;
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            toggleSelect?.();
+            return;
+          }
+          onEdit?.();
+        }}>
+        <div className={`rounded-[27px] p-4 sm:p-5 transition-colors duration-200 ${selected ? "bg-[linear-gradient(140deg,_rgba(224,242,254,0.95),_rgba(186,230,253,0.95)_58%,_rgba(125,211,252,0.92)_100%)]" : "bg-white/92"}`}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -184,7 +198,7 @@ export const ShowNote: React.FC<NoteProps> = ({
 
             <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200/80 bg-white/90 p-1 shadow-sm">
               <IconButton
-                onClick={handleSummaryClick}
+                onClick={stopPropagation(handleSummaryClick)}
                 className="p-1.5!"
                 size="small"
                 aria-label={`${summaryOpen ? "Hide" : "Show"} summary for ${note.title || "note"}`}
@@ -192,15 +206,7 @@ export const ShowNote: React.FC<NoteProps> = ({
                 <AutoAwesomeRoundedIcon fontSize="small" />
               </IconButton>
               <IconButton
-                onClick={onEdit}
-                className="p-1.5!"
-                size="small"
-                aria-label={`Edit ${note.title || "note"}`}
-              >
-                <EditNoteRoundedIcon fontSize="small" />
-              </IconButton>
-              <IconButton
-                onClick={onDelete}
+                onClick={stopPropagation(onDelete)}
                 className="p-1.5!"
                 size="small"
                 aria-label={`Delete ${note.title || "note"}`}
@@ -264,9 +270,9 @@ export const ShowNote: React.FC<NoteProps> = ({
             {lineLength && (isTruncated || !isCollapsed) && (
               <button
                 type="button"
-                onClick={() =>
+                onClick={stopPropagation(() =>
                   setShowLinesNumber(showLinesNumber === lineLength ? null : lineLength)
-                }
+                )}
                 className="rounded-full border border-sky-100 bg-sky-50 px-3.5 py-1.5 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100"
               >
                 {showLinesNumber === lineLength ? "See more" : "See less"}
@@ -274,7 +280,7 @@ export const ShowNote: React.FC<NoteProps> = ({
             )}
           </div>
         </div>
-      </article>
+      </article >
 
       <Modal open={openFile} onClose={() => setOpenFile(false)}>
         <Box sx={modalStyle()}>
