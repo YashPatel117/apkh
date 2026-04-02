@@ -1,15 +1,17 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional } from 'class-validator';
 
 export class CreateNoteDto {
-  @ApiProperty()
-  title: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  title?: string;
 
   @ApiProperty()
   content: string;
 
-  @ApiProperty()
-  category: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  category?: string;
 
   @ApiProperty({
     type: 'string',

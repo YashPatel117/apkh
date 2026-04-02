@@ -11,6 +11,7 @@ import { FileService } from 'src/file/file.service';
 import { NoteResponse } from './dto/response.dto';
 import { NoteSummaryResponse } from './dto/summary-response.dto';
 import { SearchService } from 'src/search/search.service';
+import { resolveNoteMetadata } from './utils/note-metadata';
 
 @Injectable()
 export class NotesService {
@@ -29,7 +30,18 @@ export class NotesService {
     files: Express.Multer.File[],
   ) {
     try {
-      const note = new this.noteModel({ ...createNoteDto, userId });
+      const existingCategories = await this.noteModel.distinct('category', { userId });
+      const resolvedMetadata = resolveNoteMetadata({
+        title: createNoteDto.title,
+        category: createNoteDto.category,
+        content: createNoteDto.content,
+        existingCategories,
+      });
+      const note = new this.noteModel({
+        ...createNoteDto,
+        ...resolvedMetadata,
+        userId,
+      });
       await note.save();
       const result: NoteResponse = {
         id: note._id as string,
@@ -125,12 +137,24 @@ export class NotesService {
       throw new HttpException('Note not found', HttpStatus.BAD_REQUEST);
     }
 
-    // Update note fields
-    note.title = updateNoteDto.title ?? note.title;
-    note.content = updateNoteDto.content ?? note.content;
-    note.category = updateNoteDto.category ?? note.category;
-
     try {
+      const existingCategories = await this.noteModel.distinct('category', { userId });
+      const nextContent = updateNoteDto.content ?? note.content;
+      const nextTitle = updateNoteDto.title === undefined ? note.title : updateNoteDto.title;
+      const nextCategory =
+        updateNoteDto.category === undefined ? note.category : updateNoteDto.category;
+      const resolvedMetadata = resolveNoteMetadata({
+        title: nextTitle,
+        category: nextCategory,
+        content: nextContent,
+        existingCategories,
+      });
+
+      // Update note fields
+      note.title = resolvedMetadata.title;
+      note.content = nextContent;
+      note.category = resolvedMetadata.category;
+
       // Remove files if requested
       if (updateNoteDto.removedFiles?.length) {
         await this.fileService.removeSelectedFiles(
@@ -161,6 +185,7 @@ export class NotesService {
       // Get all current files for re-indexing
       const currentFiles = await this.fileService.getNoteFiles(_id);
       const allFiles = currentFiles?.files || result.files;
+      result.files = allFiles;
 
       await this.clearSummaryCache(_id, userId);
 

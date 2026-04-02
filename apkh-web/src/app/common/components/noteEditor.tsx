@@ -92,8 +92,8 @@ export default function NoteEditor({
     if (onSave) {
       onSave(
         {
-          title: note.title,
-          category: note.category,
+          title: note.title.trim(),
+          category: note.category.trim(),
           content: normalizedContent,
           files: files
             .filter((f) => fileTokens.some((ft) => ft.id === f.id))
@@ -175,6 +175,8 @@ export default function NoteEditor({
             label="Title"
             variant="outlined"
             value={note.title}
+            placeholder="Leave blank to auto-generate from the note"
+            helperText="Optional. We'll create a title if you leave this empty."
             onChange={(e) =>
               setNote((prev) => ({ ...prev, title: e.target.value }))
             }
@@ -189,9 +191,10 @@ export default function NoteEditor({
           <Autocomplete
             id="category"
             options={categoryOptions}
+            freeSolo
             filterOptions={(options, params) => {
               const filtered = filter(options, params);
-              const { inputValue } = params;
+              const inputValue = params.inputValue.trim();
               const isExisting = options.some((option) => inputValue === option);
               if (inputValue !== "" && !isExisting) filtered.push(inputValue);
               return filtered;
@@ -206,14 +209,20 @@ export default function NoteEditor({
               );
             }}
             value={note.category}
+            inputValue={note.category}
+            onInputChange={(event, newInputValue) =>
+              setNote((prev) => ({ ...prev, category: newInputValue }))
+            }
             onChange={(event, newValue) =>
-              newValue && setNote((prev) => ({ ...prev, category: newValue }))
+              setNote((prev) => ({ ...prev, category: newValue ?? "" }))
             }
             className="w-full"
             renderInput={(params) => (
               <TextField
                 {...params}
                 label="Category"
+                placeholder="Leave blank to auto-match or create one"
+                helperText="Optional. We'll reuse a related category or generate a new one."
                 sx={{
                   "& .MuiOutlinedInput-root": {
                     borderRadius: "18px",

@@ -472,16 +472,19 @@ export default function DashboardLayout({
 
             <Modal open={openNoteModal} onClose={() => setOpenNoteModal(false)} aria-labelledby="modal-modal-title" aria-describedby="modal-modal-description">
               <Box sx={modalStyle()}>
-                <NoteEditor
-                  onSave={async (data, id) => {
-                    let res: INote | null = null;
-                    if (id) { res = await updateNote(id, data); } else { res = await createNote(data); }
-                    if (res) dispatch(addNote(res));
-                    setOpenNoteModal(false);
-                  }}
-                  initialNote={editNote}
-                  categoryOptions={Array.from(new Set(notes.map((note: INote) => note.category)))}
-                />
+                {openNoteModal ? (
+                  <NoteEditor
+                    key={editNote?.id ?? "new-note"}
+                    onSave={async (data, id) => {
+                      let res: INote | null = null;
+                      if (id) { res = await updateNote(id, data); } else { res = await createNote(data); }
+                      if (res) dispatch(addNote(res));
+                      setOpenNoteModal(false);
+                    }}
+                    initialNote={editNote}
+                    categoryOptions={Array.from(new Set(notes.map((note: INote) => note.category)))}
+                  />
+                ) : null}
               </Box>
             </Modal>
           </>
