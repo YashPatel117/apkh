@@ -12,7 +12,7 @@ export class FileService {
   constructor(
     private readonly httpService: HttpService,
     @InjectModel(NoteFiles.name) private fileModel: Model<NoteFileDocument>,
-  ) {}
+  ) { }
 
   // 📌 Upload files for a note
   async upload(token: string, noteId: string, files: Express.Multer.File[]) {
@@ -66,12 +66,20 @@ export class FileService {
 
   // 📌 Remove all files of a note
   async removeNoteFiles(token: string, noteId: string) {
+    const noteObjectId = new Types.ObjectId(noteId);
+    const noteFiles = await this.fileModel.findOne({ noteId: noteObjectId });
+
+    if (!noteFiles?.files?.length) {
+      await this.fileModel.deleteOne({ noteId: noteObjectId });
+      return { message: 'No files attached to note' };
+    }
+
     const res$ = this.httpService.delete(`${fileStorageApi}files/${noteId}`, {
       headers: { Authorization: token },
     });
     await firstValueFrom(res$);
 
-    await this.fileModel.deleteOne({ noteId: new Types.ObjectId(noteId) });
+    await this.fileModel.deleteOne({ noteId: noteObjectId });
     return { message: 'Note folder deleted' };
   }
 
