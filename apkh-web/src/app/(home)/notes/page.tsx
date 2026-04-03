@@ -23,7 +23,7 @@ export default function NotesPage() {
 
   return (
     <div className="p-4 sm:px-6 sm:pb-8">
-      <div className="mb-6 overflow-hidden rounded-[30px] border border-white/80 bg-[linear-gradient(145deg,_rgba(255,255,255,0.94),_rgba(240,249,255,0.94)_48%,_rgba(224,242,254,0.92)_100%)] shadow-[0_26px_80px_-54px_rgba(14,116,144,0.65)]">
+      <div className="mb-6 rounded-[30px] border border-white/80 bg-[linear-gradient(145deg,_rgba(255,255,255,0.94),_rgba(240,249,255,0.94)_48%,_rgba(224,242,254,0.92)_100%)] shadow-[0_26px_80px_-54px_rgba(14,116,144,0.65)]">
         <div className="grid gap-5 px-5 py-5 lg:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)] lg:px-6 lg:py-6">
           <div>
             <div className="inline-flex items-center rounded-full border border-sky-200 bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
