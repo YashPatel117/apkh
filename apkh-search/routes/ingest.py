@@ -118,6 +118,15 @@ async def ingest_note(body: IngestRequest, request: Request):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    except Exception as exc:
+        logger.exception(
+            "Unexpected embedding error during ingestion for note %s",
+            body.note_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Embedding provider request failed unexpectedly.",
+        ) from exc
 
     logger.info("Generated %s embeddings", len(embeddings))
 

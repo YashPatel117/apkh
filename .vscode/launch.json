@@ -1,0 +1,62 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "API (Node)",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/apkh-api",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": [
+                "run",
+                "start:dev"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Storage (Node)",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/apkh-storage",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": [
+                "start"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Web (Vite/React)",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/apkh-web",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": [
+                "run",
+                "dev"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Search (FastAPI)",
+            "type": "python",
+            "request": "launch",
+            "module": "uvicorn",
+            "cwd": "${workspaceFolder}/apkh-search",
+            "args": [
+                "main:app"
+            ],
+            "jinja": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "🚀 Run All Services (Debug)",
+            "configurations": [
+                "API (Node)",
+                "Storage (Node)",
+                "Web (Vite/React)",
+                "Search (FastAPI)"
+            ]
+        }
+    ]
+}

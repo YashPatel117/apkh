@@ -85,6 +85,7 @@ export type AiSearchResponse = {
   query: string;
   answer: string;
   confidence: string;
+  isError?: boolean;
   references: {
     note_id: string;
     note_title: string;

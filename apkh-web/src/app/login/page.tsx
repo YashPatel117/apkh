@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAppDispatch, useAppSelector } from "@/store/hook";
+import { useAppDispatch } from "@/store/hook";
 import { setUser, setToken, logout } from "@/store/slices/authSlice";
+import { setNotes } from "@/store/slices/noteSlice";
 import { login, profile } from "@/service/authService";
+import { getAllNotes } from "@/service/noteService";
 import { useRouter } from "next/navigation";
 import { jwtDecode } from "jwt-decode";
 import { motion } from "framer-motion";
@@ -16,19 +18,20 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const dispatch = useAppDispatch();
   const router = useRouter();
-  const { user } = useAppSelector((state) => state.auth);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
       const data = await login(email, password);
-      const fetchedUser = await profile();
+      const [fetchedUser, notes] = await Promise.all([profile(), getAllNotes()]);
       dispatch(setToken(data.data)); // "data.data" is the token
       dispatch(setUser(fetchedUser));
+      dispatch(setNotes(notes));
       router.push("/notes");
-    } catch (err) {
+    } catch {
       alert("Login failed");
+    } finally {
       setIsLoading(false);
     }
   };

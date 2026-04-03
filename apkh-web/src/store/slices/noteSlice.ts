@@ -1,8 +1,8 @@
 "use client";
 
 import { INote } from "@/app/common/models/note";
-import { updateNote } from "@/service/noteService";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { logout } from "./authSlice";
 
 interface NoteState {
   latestUpdatedAt: string | null;
@@ -15,7 +15,7 @@ const initialState: NoteState = {
 };
 
 const noteSlice = createSlice({
-  name: "auth",
+  name: "note",
   initialState,
   reducers: {
     setNotes: (state, action: PayloadAction<NoteState["notes"]>) => {
@@ -36,6 +36,9 @@ const noteSlice = createSlice({
       const index = state.notes.findIndex((n) => n.id === action.payload);
       if (index !== -1) state.notes.splice(index, 1);
     },
+  },
+  extraReducers: (builder) => {
+    builder.addCase(logout, () => initialState);
   },
 });
 

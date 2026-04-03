@@ -47,6 +47,23 @@ interface SummaryChunkContext {
   sourceName?: string;
   sourcePage?: number;
 }
+export interface AiSearchResultReference {
+  note_id: string;
+  note_title: string;
+  source_type: string;
+  source_name?: string;
+  source_page?: number;
+  excerpt: string;
+  similarity_score: number;
+}
+
+export interface AiSearchResult {
+  query: string;
+  answer: string;
+  confidence: 'high' | 'low' | 'not_found';
+  references: AiSearchResultReference[];
+  isError: boolean;
+}
 
 const SUMMARY_CONTEXT_CHAR_LIMIT = 24000;
 const SUMMARY_CONTEXT_MAX_CHUNKS = 36;
@@ -402,7 +419,7 @@ export class SearchService {
     query: string,
     topK = 5,
     referencedNoteIds?: string[],
-  ) {
+  ): Promise<AiSearchResult> {
     this.logger.log(
       `Performing AI Search for user ${userId}, query: "${query}"`,
     );
@@ -466,49 +483,34 @@ export class SearchService {
       }
 
       const userChunks = await this.chunkModel.find(chunkFilter).lean();
+      let contexts: string[] = ["search on web for more information on this topic"];
+      let topChunks: any[] = [];
 
-      if (!userChunks.length) {
-        return {
-          query,
-          answer:
-            "I couldn't find any indexed notes compatible with your active AI settings yet.",
-          confidence: 'not_found',
-          references: [],
-        };
+      if (userChunks.length) {
+        const scoredChunks = userChunks.map((chunk) => ({
+          ...chunk,
+          score: this.cosineSimilarity(queryVector, chunk.embedding),
+        }));
+
+        const minSimilarityThreshold = 0.5;
+        const relevantChunks = scoredChunks
+          .filter((chunk) => chunk.score >= minSimilarityThreshold)
+          .sort((a, b) => b.score - a.score);
+
+        topChunks = relevantChunks.slice(0, topK);
+
+        if (topChunks.length)
+          contexts = topChunks.map((chunk) => {
+            let source = `Note "${chunk.noteTitle}"`;
+            if (chunk.sourceType === 'file' && chunk.sourceName) {
+              source += ` | File: ${chunk.sourceName}`;
+              if (chunk.sourcePage) {
+                source += ` | Page ${chunk.sourcePage}`;
+              }
+            }
+            return `[SOURCE: ${source}]\n${chunk.text}`;
+          });
       }
-
-      const scoredChunks = userChunks.map((chunk) => ({
-        ...chunk,
-        score: this.cosineSimilarity(queryVector, chunk.embedding),
-      }));
-
-      const minSimilarityThreshold = 0.5;
-      const relevantChunks = scoredChunks
-        .filter((chunk) => chunk.score >= minSimilarityThreshold)
-        .sort((a, b) => b.score - a.score);
-
-      const topChunks = relevantChunks.slice(0, topK);
-
-      if (!topChunks.length) {
-        return {
-          query,
-          answer:
-            "I couldn't find any information in your notes relevant to your question.",
-          confidence: 'low',
-          references: [],
-        };
-      }
-
-      const contexts = topChunks.map((chunk) => {
-        let source = `Note "${chunk.noteTitle}"`;
-        if (chunk.sourceType === 'file' && chunk.sourceName) {
-          source += ` | File: ${chunk.sourceName}`;
-          if (chunk.sourcePage) {
-            source += ` | Page ${chunk.sourcePage}`;
-          }
-        }
-        return `[SOURCE: ${source}]\n${chunk.text}`;
-      });
 
       let answer = '';
       let tokensUsed = 0;
@@ -552,7 +554,7 @@ export class SearchService {
       return {
         query,
         answer,
-        confidence: topChunks[0].score > 0.35 ? 'high' : 'low',
+        confidence: topChunks[0]?.score > 0.35 ? 'high' : 'low',
         references: topChunks.map((chunk) => ({
           note_id: chunk.noteId.toString(),
           note_title: chunk.noteTitle,
@@ -562,6 +564,7 @@ export class SearchService {
           excerpt: chunk.text,
           similarity_score: chunk.score,
         })),
+        isError: false,
       };
     } catch (error: any) {
       this.logger.error(`AI Search failed: ${error.message}`);
@@ -569,12 +572,13 @@ export class SearchService {
     }
   }
 
-  private buildGuidanceResponse(query: string, answer: string) {
+  private buildGuidanceResponse(query: string, answer: string): AiSearchResult {
     return {
       query,
-      answer,
+      answer: this.normalizeSearchServiceMessage(answer),
       confidence: 'not_found',
       references: [],
+      isError: true,
     };
   }
 
@@ -584,12 +588,12 @@ export class SearchService {
       | undefined;
     const detail = responseData?.detail;
     if (typeof detail === 'string' && detail.trim()) {
-      return detail;
+      return this.normalizeSearchServiceMessage(detail);
     }
 
     const message = responseData?.message;
     if (typeof message === 'string' && message.trim()) {
-      return message;
+      return this.normalizeSearchServiceMessage(message);
     }
 
     if (Array.isArray(message)) {
@@ -598,10 +602,40 @@ export class SearchService {
           (item): item is string => typeof item === 'string' && !!item.trim(),
         )
         .join(' ');
-      return combined || null;
+      return combined ? this.normalizeSearchServiceMessage(combined) : null;
     }
 
     return null;
+  }
+
+  private normalizeSearchServiceMessage(rawMessage: string): string {
+    const trimmed = rawMessage.trim();
+
+    const prefixedProviderMessage = trimmed.match(
+      /^(?:Gemini|OpenAI) embedding request failed:\s*(.+)$/i,
+    );
+    const normalized = (prefixedProviderMessage?.[1] ?? trimmed).trim();
+    const lower = normalized.toLowerCase();
+
+    if (
+      lower.includes('api key not found') ||
+      lower.includes('api_key_invalid') ||
+      lower.includes('invalid api key')
+    ) {
+      return 'Invalid API key for the active AI config. Update it in Profile and test the connection again.';
+    }
+
+    const singleQuotedMessage = normalized.match(/'message':\s*'([^']+)'/);
+    if (singleQuotedMessage?.[1]) {
+      return singleQuotedMessage[1].trim();
+    }
+
+    const doubleQuotedMessage = normalized.match(/"message"\s*:\s*"([^"]+)"/);
+    if (doubleQuotedMessage?.[1]) {
+      return doubleQuotedMessage[1].trim();
+    }
+
+    return normalized;
   }
 
   private supportsSemanticSearch(provider: ActiveLlmSettings['provider']) {

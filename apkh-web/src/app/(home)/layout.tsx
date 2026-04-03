@@ -23,9 +23,8 @@ import { addNote } from "@/store/slices/noteSlice";
 import { modalStyle } from "../common/style/modal";
 import { INote } from "../common/models/note";
 import { NotesContext } from "../common/context/notesContext";
-import { CircularProgress, TextField, Tooltip } from "@mui/material";
+import { CircularProgress, Tooltip } from "@mui/material";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
@@ -65,6 +64,54 @@ function buildSourceMeta(reference: AiSearchResponse["references"][number]) {
     return `${reference.source_name ?? "Attachment"}${pageLabel}`;
   }
   return "Directly from note content";
+}
+
+function cleanAiErrorMessage(message: string) {
+  const trimmed = message.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (
+    lower.includes("api key not found") ||
+    lower.includes("api_key_invalid") ||
+    lower.includes("invalid api key")
+  ) {
+    return "Invalid API key for your active AI config. Update it in Profile and test the connection again.";
+  }
+
+  const singleQuotedMessage = trimmed.match(/'message':\s*'([^']+)'/);
+  if (singleQuotedMessage?.[1]) return singleQuotedMessage[1].trim();
+
+  const doubleQuotedMessage = trimmed.match(/"message"\s*:\s*"([^"]+)"/);
+  if (doubleQuotedMessage?.[1]) return doubleQuotedMessage[1].trim();
+
+  return trimmed;
+}
+
+function looksLikeAiFailureMessage(message: string) {
+  const lower = message.toLowerCase();
+
+  return (
+    lower.includes("api key is invalid") ||
+    lower.includes("api key not found") ||
+    lower.includes("api_key_invalid") ||
+    lower.includes("invalid api key") ||
+    lower.includes("invalid_argument") ||
+    lower.includes("embedding request failed") ||
+    lower.includes("provider request failed") ||
+    lower.includes("cannot be used for semantic search") ||
+    lower.includes("add an active api key")
+  );
+}
+
+function isAiErrorResponse(response: AiSearchResponse | null | undefined) {
+  if (!response) return false;
+
+  // Primary contract: backend explicitly marks guidance/failures as errors.
+  if (response.isError) return true;
+  if (response.answer && looksLikeAiFailureMessage(response.answer)) return true;
+
+  // Backward-compatible fallback for older backend responses.
+  return response.confidence === "not_found" && (response.references?.length ?? 0) === 0;
 }
 
 let isFetchingProfile = false;
@@ -158,6 +205,15 @@ export default function DashboardLayout({
       const res = await aiSearchNotes(query, referencedNoteIds);
       if (res) {
         setAiAnswer(res);
+        if (isAiErrorResponse(res)) {
+          setFilteredNotes(
+            notes.filter((note: INote) =>
+              note.title.toLowerCase().includes(query.toLowerCase()),
+            ),
+          );
+          return;
+        }
+
         const referencedNoteIds = res.references.map(
           (reference: AiSearchResponse["references"][number]) => reference.note_id,
         );
@@ -199,8 +255,14 @@ export default function DashboardLayout({
   };
 
   const trimmedSearch = search.trim();
+  const aiErrorMessage =
+    isAiErrorResponse(aiAnswer) && aiAnswer?.answer
+      ? cleanAiErrorMessage(aiAnswer.answer)
+      : null;
   const canRunAiSearch = !isAiSearching && (!activeLlmConfig || trimmedSearch.length > 3);
-  const statusLabel = aiAnswer
+  const statusLabel = aiErrorMessage
+    ? "AI search error"
+    : aiAnswer
     ? `${aiAnswer.references.length} source${aiAnswer.references.length === 1 ? "" : "s"} connected`
     : trimmedSearch
       ? `${filteredNotes.length} note${filteredNotes.length === 1 ? "" : "s"} visible`
@@ -213,7 +275,9 @@ export default function DashboardLayout({
     : "No active AI config. Add an API key in Profile to enable answers.";
 
   const confidence =
-    (aiAnswer && confidenceTone[aiAnswer.confidence]) || confidenceTone.medium;
+    aiAnswer && !aiErrorMessage
+      ? confidenceTone[aiAnswer.confidence] || confidenceTone.medium
+      : null;
 
   return (
     <NotesContext.Provider
@@ -372,78 +436,99 @@ export default function DashboardLayout({
                 )}
 
                 {aiAnswer && !isAiSearching && (
-                  <div className="mb-8 overflow-hidden rounded-[32px] border border-sky-100 bg-[linear-gradient(160deg,_rgba(240,249,255,0.98),_rgba(255,255,255,0.96)_45%,_rgba(238,242,255,0.94)_100%)] shadow-[0_30px_90px_-56px_rgba(37,99,235,0.7)]">
-                    <div className="border-b border-sky-100/90 px-6 py-6">
+                  <div className={`mb-8 overflow-hidden rounded-[32px] border ${aiErrorMessage
+                    ? "border-red-200 bg-[linear-gradient(160deg,_rgba(254,242,242,0.98),_rgba(255,255,255,0.96)_50%,_rgba(254,226,226,0.88)_100%)] shadow-[0_30px_90px_-56px_rgba(220,38,38,0.55)]"
+                    : "border-sky-100 bg-[linear-gradient(160deg,_rgba(240,249,255,0.98),_rgba(255,255,255,0.96)_45%,_rgba(238,242,255,0.94)_100%)] shadow-[0_30px_90px_-56px_rgba(37,99,235,0.7)]"
+                    }`}>
+                    <div className={`px-6 py-6 ${aiErrorMessage ? "border-b border-red-100/90" : "border-b border-sky-100/90"}`}>
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="max-w-2xl">
-                          <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
+                          <div className={`inline-flex items-center gap-2 rounded-full border bg-white/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] ${aiErrorMessage ? "border-red-200 text-red-700" : "border-sky-200 text-sky-700"}`}>
                             <AutoAwesomeOutlinedIcon sx={{ fontSize: 16 }} />
-                            AI Answer Panel
+                            {aiErrorMessage ? "AI Error" : "AI Answer Panel"}
                           </div>
                           <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900">{aiAnswer.query}</h2>
-                          <p className="mt-2 text-sm leading-6 text-slate-600">This answer is grounded in your saved notes and attached files. Open any source card to jump straight into the note.</p>
+                          <p className={`mt-2 text-sm leading-6 ${aiErrorMessage ? "text-red-700" : "text-slate-600"}`}>
+                            {aiErrorMessage
+                              ? "The request failed. Fix the configuration issue and try again."
+                              : "This answer is grounded in your saved notes and attached files. Open any source card to jump straight into the note."}
+                          </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${confidence.classes}`}>{confidence.label}</span>
-                          <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-                            {aiAnswer.references.length} source{aiAnswer.references.length === 1 ? "" : "s"}
-                          </span>
+                          {aiErrorMessage ? (
+                            <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200">
+                              Needs attention
+                            </span>
+                          ) : (
+                            <>
+                              {confidence && (
+                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${confidence.classes}`}>{confidence.label}</span>
+                              )}
+                              <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                                {aiAnswer.references.length} source{aiAnswer.references.length === 1 ? "" : "s"}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="grid gap-6 p-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
-                      <div className="rounded-[28px] border border-white/80 bg-white/88 p-5 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.9)]">
-                        <div className="mb-4 flex items-center gap-2 text-sky-700">
+                    <div className={`grid gap-6 p-6 ${aiErrorMessage ? "" : "xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]"}`}>
+                      <div className={`rounded-[28px] border p-5 ${aiErrorMessage ? "border-red-100 bg-white/95 shadow-[0_20px_50px_-42px_rgba(220,38,38,0.6)]" : "border-white/80 bg-white/88 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.9)]"}`}>
+                        <div className={`mb-4 flex items-center gap-2 ${aiErrorMessage ? "text-red-700" : "text-sky-700"}`}>
                           <AutoAwesomeOutlinedIcon />
-                          <h3 className="text-lg font-semibold text-slate-900">Synthesized answer</h3>
+                          <h3 className="text-lg font-semibold text-slate-900">
+                            {aiErrorMessage ? "AI Search Error" : "Synthesized answer"}
+                          </h3>
                         </div>
-                        <div className="prose prose-slate max-w-none text-slate-700">
-                          <ReactMarkdown>{aiAnswer.answer}</ReactMarkdown>
+                        <div className={`prose max-w-none ${aiErrorMessage ? "prose-red text-red-700" : "prose-slate text-slate-700"}`}>
+                          <ReactMarkdown>{aiErrorMessage || aiAnswer.answer}</ReactMarkdown>
                         </div>
                       </div>
-                      <div className="space-y-3">
-                        <div>
-                          <h3 className="text-lg font-semibold text-slate-900">Source trail</h3>
-                          <p className="text-sm text-slate-500">Click a source to open the matching note.</p>
-                        </div>
-                        {aiAnswer.references.length > 0 ? (
-                          aiAnswer.references.map((reference: AiSearchResponse["references"][number], index: number) => (
-                            <button
-                              key={`${reference.note_id}-${reference.source_name ?? "note"}-${index}`}
-                              onClick={() => openNote(reference.note_id)}
-                              className="group w-full rounded-[24px] border border-slate-200 bg-white/92 p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_18px_35px_-28px_rgba(2,132,199,0.8)]"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2 text-sky-700">
-                                    {reference.source_type === "file" ? (
-                                      <DescriptionOutlinedIcon sx={{ fontSize: 18 }} />
-                                    ) : (
-                                      <MenuBookRoundedIcon sx={{ fontSize: 18 }} />
-                                    )}
-                                    <span className="text-xs font-semibold uppercase tracking-[0.24em]">
-                                      {reference.source_type === "file" ? "Attachment source" : "Note source"}
-                                    </span>
-                                  </div>
-                                  <h4 className="mt-3 text-base font-semibold text-slate-900">{reference.note_title}</h4>
-                                  <p className="mt-1 text-sm text-slate-500">{buildSourceMeta(reference)}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-100">
-                                    {Math.round(reference.similarity_score * 100)}% match
-                                  </span>
-                                  <LaunchRoundedIcon className="text-slate-300 transition-colors group-hover:text-sky-600" />
-                                </div>
-                              </div>
-                              <p className="reference-excerpt mt-4 text-sm leading-6 text-slate-600">{reference.excerpt}</p>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/80 p-5 text-sm leading-6 text-slate-500">
-                            No direct source excerpts were returned for this answer.
+                      {!aiErrorMessage && (
+                        <div className="space-y-3">
+                          <div>
+                            <h3 className="text-lg font-semibold text-slate-900">Source trail</h3>
+                            <p className="text-sm text-slate-500">Click a source to open the matching note.</p>
                           </div>
-                        )}
-                      </div>
+                          {aiAnswer.references.length > 0 ? (
+                            aiAnswer.references.map((reference: AiSearchResponse["references"][number], index: number) => (
+                              <button
+                                key={`${reference.note_id}-${reference.source_name ?? "note"}-${index}`}
+                                onClick={() => openNote(reference.note_id)}
+                                className="group w-full rounded-[24px] border border-slate-200 bg-white/92 p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_18px_35px_-28px_rgba(2,132,199,0.8)]"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 text-sky-700">
+                                      {reference.source_type === "file" ? (
+                                        <DescriptionOutlinedIcon sx={{ fontSize: 18 }} />
+                                      ) : (
+                                        <MenuBookRoundedIcon sx={{ fontSize: 18 }} />
+                                      )}
+                                      <span className="text-xs font-semibold uppercase tracking-[0.24em]">
+                                        {reference.source_type === "file" ? "Attachment source" : "Note source"}
+                                      </span>
+                                    </div>
+                                    <h4 className="mt-3 text-base font-semibold text-slate-900">{reference.note_title}</h4>
+                                    <p className="mt-1 text-sm text-slate-500">{buildSourceMeta(reference)}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-100">
+                                      {Math.round(reference.similarity_score * 100)}% match
+                                    </span>
+                                    <LaunchRoundedIcon className="text-slate-300 transition-colors group-hover:text-sky-600" />
+                                  </div>
+                                </div>
+                                <p className="reference-excerpt mt-4 text-sm leading-6 text-slate-600">{reference.excerpt}</p>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/80 p-5 text-sm leading-6 text-slate-500">
+                              No direct source excerpts were returned for this answer.
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

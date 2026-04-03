@@ -74,6 +74,12 @@ async def embed_query(body: EmbedQueryRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    except Exception as exc:
+        logger.exception("Unexpected embedding error for model %s", model)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Embedding provider request failed unexpectedly.",
+        ) from exc
 
 
 @router.post("/rag")
