@@ -401,6 +401,7 @@ export class SearchService {
     userId: string,
     query: string,
     topK = 5,
+    referencedNoteIds?: string[],
   ) {
     this.logger.log(
       `Performing AI Search for user ${userId}, query: "${query}"`,
@@ -446,6 +447,13 @@ export class SearchService {
 
       const chunkFilter: FilterQuery<KnowledgeChunkDocument> = {
         userId: new Types.ObjectId(userId),
+        ...(referencedNoteIds?.length
+          ? {
+            noteId: {
+              $in: referencedNoteIds.map((id) => new Types.ObjectId(id)),
+            },
+          }
+          : {}),
       };
 
       if (activeLlm.provider === 'gemini') {

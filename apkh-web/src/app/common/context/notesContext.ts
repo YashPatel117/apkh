@@ -8,11 +8,15 @@ export interface NotesContextType {
   openNote: (noteId: string) => void;
   aiAnswer?: AiSearchResponse | null;
   isAiSearching?: boolean;
+  selectedNotes: { noteId: string, title: string }[];
+  toggleSelect: (noteId: string, title: string) => void;
 }
 
 export const NotesContext = createContext<NotesContextType>({
-  openNote: (noteId: string) => {},
+  openNote: (noteId: string) => { },
   filteredNotes: [],
   aiAnswer: null,
   isAiSearching: false,
+  selectedNotes: [],
+  toggleSelect: (noteId: string, title: string) => { },
 });

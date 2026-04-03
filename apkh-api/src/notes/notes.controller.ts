@@ -28,7 +28,7 @@ export class NotesController {
   constructor(
     private readonly notesService: NotesService,
     private readonly searchService: SearchService,
-  ) {}
+  ) { }
 
   /** CREATE */
   @Post()
@@ -97,7 +97,7 @@ export class NotesController {
     @JwtTokenUserId() userId: string,
     @Body() aiSearchDto: AiSearchDto,
   ) {
-    return this.searchService.performAiSearch(token, userId, aiSearchDto.query);
+    return this.searchService.performAiSearch(token, userId, aiSearchDto.query, 5, aiSearchDto.referencedNoteIds);
   }
 
   @Post(':id/summary')

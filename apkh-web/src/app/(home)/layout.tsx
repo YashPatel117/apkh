@@ -31,6 +31,7 @@ import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
 import ReactMarkdown from "react-markdown";
+import MentionTextField from "../common/components/mentionTextField";
 
 const NoteEditor = dynamic(() => import("../common/components/noteEditor"), {
   ssr: false,
@@ -80,6 +81,7 @@ export default function DashboardLayout({
   const [filteredNotes, setFilteredNotes] = useState<INote[]>([]);
   const [aiAnswer, setAiAnswer] = useState<AiSearchResponse | null>(null);
   const [isAiSearching, setIsAiSearching] = useState(false);
+  const [selectedNotes, setSelectedNotes] = useState<{ noteId: string, title: string }[]>([]);
   const { user } = useAppSelector((state) => state.auth);
   const { notes } = useAppSelector((state) => state.note);
   const dispatch = useAppDispatch();
@@ -152,7 +154,8 @@ export default function DashboardLayout({
     setAiAnswer(null);
     setIsAiSearching(true);
     try {
-      const res = await aiSearchNotes(query);
+      const referencedNoteIds = selectedNotes.map((note) => note.noteId);
+      const res = await aiSearchNotes(query, referencedNoteIds);
       if (res) {
         setAiAnswer(res);
         const referencedNoteIds = res.references.map(
@@ -187,6 +190,14 @@ export default function DashboardLayout({
     await handleAiSearch();
   }
 
+  const toggleSelect = (noteId: string, title: string) => {
+    if (selectedNotes.find((note) => note.noteId === noteId)) {
+      setSelectedNotes(selectedNotes.filter((note) => note.noteId !== noteId));
+    } else {
+      setSelectedNotes([...selectedNotes, { noteId, title }]);
+    }
+  };
+
   const trimmedSearch = search.trim();
   const canRunAiSearch = !isAiSearching && (!activeLlmConfig || trimmedSearch.length > 3);
   const statusLabel = aiAnswer
@@ -206,7 +217,7 @@ export default function DashboardLayout({
 
   return (
     <NotesContext.Provider
-      value={{ openNote, filteredNotes, aiAnswer, isAiSearching }}
+      value={{ openNote, filteredNotes, aiAnswer, isAiSearching, selectedNotes, toggleSelect }}
     >
       <style>{`
         @media (max-width: 400px) {
@@ -263,7 +274,7 @@ export default function DashboardLayout({
               </div>
 
               {/* Search panel */}
-              <div className="overflow-hidden rounded-[24px] border border-sky-100/90 bg-white/85 shadow-[0_24px_80px_-48px_rgba(14,116,144,0.55)] backdrop-blur">
+              <div className="rounded-[24px] border border-sky-100/90 bg-white/85 shadow-[0_24px_80px_-48px_rgba(14,116,144,0.55)] backdrop-blur">
                 <div className="border-b border-sky-100/80 bg-[linear-gradient(135deg,_rgba(240,249,255,0.95),_rgba(255,255,255,0.9)_55%,_rgba(239,246,255,0.92))] px-4 py-4 sm:px-5">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                     <div className="max-w-2xl">
@@ -286,37 +297,13 @@ export default function DashboardLayout({
                     </div>
                     <div className="w-full max-w-3xl xl:min-w-[500px]">
                       <div className="flex flex-col gap-2.5 md:flex-row md:items-center">
-                        <TextField
-                          id="search"
-                          placeholder="Ask about a project, meeting, file, or concept..."
+                        <MentionTextField
                           value={search}
-                          onChange={(e) => setSearch(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAiAction(); } }}
-                          autoComplete="off"
-                          variant="outlined"
-                          className="w-full"
-                          slotProps={{
-                            input: {
-                              startAdornment: (
-                                <div className="mr-2 flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-                                  <SearchRoundedIcon fontSize="small" />
-                                </div>
-                              ),
-                            },
-                          }}
-                          sx={{
-                            "& .MuiOutlinedInput-root": {
-                              minHeight: 54,
-                              borderRadius: "18px",
-                              backgroundColor: "rgba(255,255,255,0.96)",
-                              paddingLeft: "6px",
-                              boxShadow: "0 10px 40px -26px rgba(14,116,144,0.55)",
-                              "& fieldset": { borderColor: "rgba(186,230,253,0.95)", borderWidth: "1px" },
-                              "&:hover fieldset": { borderColor: "rgba(56,189,248,0.95)" },
-                              "&.Mui-focused fieldset": { borderColor: "rgba(14,165,233,1)", borderWidth: "2px" },
-                            },
-                            "& .MuiInputBase-input": { fontSize: "0.95rem", color: "#0f172a" },
-                          }}
+                          onChange={setSearch}
+                          selectedNotes={selectedNotes}
+                          onSelectedNotesChange={setSelectedNotes}
+                          onSubmit={handleAiAction}
+                          placeholder="Ask about a project, meeting, file, or concept..."
                         />
                         <div className="flex gap-2 sm:justify-end">
                           <Tooltip title={!activeLlmConfig ? "Add API key in profile to enable" : ""}>
@@ -353,6 +340,13 @@ export default function DashboardLayout({
                           </Button>
                         </div>
                       </div>
+                      <p className="mt-1.5 ml-3 text-[0.72rem] text-slate-400">
+                        Type &nbsp;
+                        <kbd className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.72rem] text-slate-500 border border-slate-200">
+                          @
+                        </kbd>
+                        &nbsp; to reference a note
+                      </p>
                     </div>
                   </div>
                 </div>
