@@ -6,18 +6,22 @@ used for answer generation, but Anthropic does not currently offer a compatible
 embedding endpoint for this retrieval flow.
 """
 
+import asyncio
 import logging
 import re
 from typing import Any
+
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 from services.llm import detect_provider
 
 logger = logging.getLogger(__name__)
 
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
-GEMINI_EMBEDDING_DIMENSIONS = 768
 GEMINI_FALLBACK_EMBEDDING_MODEL = "text-embedding-004"
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+EMBED_BATCH_SIZE = 100
 
 
 def _extract_provider_error_message(exc: Exception) -> str:
@@ -60,38 +64,22 @@ def _extract_provider_error_message(exc: Exception) -> str:
 
 
 async def _generate_gemini_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=api_key)
-
     candidate_models = [GEMINI_EMBEDDING_MODEL, GEMINI_FALLBACK_EMBEDDING_MODEL]
     last_exception: Exception | None = None
 
     for candidate_model in candidate_models:
         try:
-            embeddings: list[list[float]] = []
-            batch_size = 100
-            for index in range(0, len(texts), batch_size):
-                batch = texts[index:index + batch_size]
-                result = client.models.embed_content(
-                    model=candidate_model,
-                    contents=batch,
-                    config=types.EmbedContentConfig(
-                        output_dimensionality=GEMINI_EMBEDDING_DIMENSIONS,
-                    ),
-                )
-
-                for embedding in result.embeddings:
-                    embeddings.append(embedding.values)
-
-                logger.info(
-                    "Generated Gemini embeddings for batch %s (%s texts) using %s",
-                    index // batch_size + 1,
-                    len(batch),
-                    candidate_model,
-                )
-
+            embedder = GoogleGenerativeAIEmbeddings(
+                model=candidate_model,
+                google_api_key=api_key,
+                task_type="retrieval_document",
+            )
+            embeddings = await _embed_in_batches(
+                texts=texts,
+                embedder=embedder,
+                provider_label="Gemini",
+                model_label=candidate_model,
+            )
             return embeddings
         except Exception as exc:  # pragma: no cover - provider-specific behavior
             last_exception = exc
@@ -110,31 +98,17 @@ async def _generate_gemini_embeddings(texts: list[str], api_key: str) -> list[li
 
 
 async def _generate_openai_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
-    from openai import AsyncOpenAI
-
-    client = AsyncOpenAI(api_key=api_key)
-
     try:
-        embeddings: list[list[float]] = []
-
-        batch_size = 100
-        for index in range(0, len(texts), batch_size):
-            batch = texts[index:index + batch_size]
-            result = await client.embeddings.create(
-                model=OPENAI_EMBEDDING_MODEL,
-                input=batch,
-            )
-
-            for item in sorted(result.data, key=lambda entry: entry.index):
-                embeddings.append(item.embedding)
-
-            logger.info(
-                "Generated OpenAI embeddings for batch %s (%s texts)",
-                index // batch_size + 1,
-                len(batch),
-            )
-
-        return embeddings
+        embedder = OpenAIEmbeddings(
+            model=OPENAI_EMBEDDING_MODEL,
+            api_key=api_key,
+        )
+        return await _embed_in_batches(
+            texts=texts,
+            embedder=embedder,
+            provider_label="OpenAI",
+            model_label=OPENAI_EMBEDDING_MODEL,
+        )
     except Exception as exc:  # pragma: no cover - provider-specific behavior
         raise ValueError(
             f"OpenAI embedding request failed: {_extract_provider_error_message(exc)}"
@@ -159,12 +133,13 @@ async def generate_embeddings(
         raise ValueError("api_key and model are required for embedding generation.")
 
     provider = detect_provider(resolved_model)
+    normalized_texts = [text if text.strip() else " " for text in texts]
 
     if provider == "gemini":
-        return await _generate_gemini_embeddings(texts, resolved_key)
+        return await _generate_gemini_embeddings(normalized_texts, resolved_key)
 
     if provider == "openai":
-        return await _generate_openai_embeddings(texts, resolved_key)
+        return await _generate_openai_embeddings(normalized_texts, resolved_key)
 
     raise ValueError(
         "Anthropic models are not supported for semantic search embeddings yet. "
@@ -176,3 +151,26 @@ async def generate_single_embedding(text: str, api_key: str, model: str) -> list
     """Generate an embedding for a single text."""
     results = await generate_embeddings([text], api_key, model)
     return results[0] if results else []
+
+
+async def _embed_in_batches(
+    texts: list[str],
+    embedder: Any,
+    provider_label: str,
+    model_label: str,
+) -> list[list[float]]:
+    embeddings: list[list[float]] = []
+
+    for index in range(0, len(texts), EMBED_BATCH_SIZE):
+        batch = texts[index:index + EMBED_BATCH_SIZE]
+        batch_embeddings = await asyncio.to_thread(embedder.embed_documents, batch)
+        embeddings.extend(batch_embeddings)
+        logger.info(
+            "Generated %s embeddings for batch %s (%s texts) using %s",
+            provider_label,
+            index // EMBED_BATCH_SIZE + 1,
+            len(batch),
+            model_label,
+        )
+
+    return embeddings

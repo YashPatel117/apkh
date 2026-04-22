@@ -3,8 +3,9 @@ API endpoints for AI RAG requests from the API orchestration layer.
 """
 
 import logging
+import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from services.embedder import generate_single_embedding
@@ -48,7 +49,7 @@ class TestLLMRequest(BaseModel):
 
 
 @router.post("/embed-query")
-async def embed_query(body: EmbedQueryRequest):
+async def embed_query(body: EmbedQueryRequest, request: Request):
     """
     Generate an embedding vector for a single query string.
     """
@@ -83,7 +84,7 @@ async def embed_query(body: EmbedQueryRequest):
 
 
 @router.post("/rag")
-async def generate_rag(body: RagRequest):
+async def generate_rag(body: RagRequest, request: Request):
     """
     Feed context chunks and query to the active user's LLM provider.
     """
@@ -96,22 +97,33 @@ async def generate_rag(body: RagRequest):
             detail="api_key and model are required for answer generation.",
         )
 
+    request_id = str(uuid.uuid4())
+    user_id = getattr(request.state, "user_id", None)
+
     logger.info(
-        "Generating RAG for AI query: %s (with %s contexts)",
+        "Generating RAG for AI query: %s (with %s contexts) [request_id=%s]",
         body.query,
         len(body.contexts),
+        request_id,
     )
     result = await generate_rag_answer(
         query=body.query,
         contexts=body.contexts,
         api_key=api_key,
         model=model,
+        user_id=user_id,
+        request_id=request_id,
     )
-    return {"answer": result["answer"], "tokens_used": result["tokens_used"]}
+    return {
+        "answer": result["answer"],
+        "tokens_used": result["tokens_used"],
+        "request_id": request_id,
+        "run_id": result.get("run_id"),
+    }
 
 
 @router.post("/summarize")
-async def summarize_note(body: SummaryRequest):
+async def summarize_note(body: SummaryRequest, request: Request):
     """
     Generate a concise summary for a single note.
     """
@@ -124,10 +136,14 @@ async def summarize_note(body: SummaryRequest):
             detail="api_key and model are required for summary generation.",
         )
 
+    request_id = str(uuid.uuid4())
+    user_id = getattr(request.state, "user_id", None)
+
     logger.info(
-        "Generating note summary for note: %s with model %s",
+        "Generating note summary for note: %s with model %s [request_id=%s]",
         body.note_id or "unknown",
         model,
+        request_id,
     )
     result = await generate_note_summary(
         title=body.title or "",
@@ -136,12 +152,19 @@ async def summarize_note(body: SummaryRequest):
         contexts=body.contexts or [],
         api_key=api_key,
         model=model,
+        user_id=user_id,
+        request_id=request_id,
     )
-    return {"summary": result["summary"], "tokens_used": result["tokens_used"]}
+    return {
+        "summary": result["summary"],
+        "tokens_used": result["tokens_used"],
+        "request_id": request_id,
+        "run_id": result.get("run_id"),
+    }
 
 
 @router.post("/test")
-async def test_connection(body: TestLLMRequest):
+async def test_connection(body: TestLLMRequest, request: Request):
     """
     Validate that a given API key + model combo actually works.
     """
@@ -154,6 +177,14 @@ async def test_connection(body: TestLLMRequest):
             detail="api_key and model are required for connection testing.",
         )
 
-    logger.info("Testing LLM connection for model: %s", model)
-    result = await test_llm_connection(api_key=api_key, model=model)
+    request_id = str(uuid.uuid4())
+    user_id = getattr(request.state, "user_id", None)
+
+    logger.info("Testing LLM connection for model: %s [request_id=%s]", model, request_id)
+    result = await test_llm_connection(
+        api_key=api_key,
+        model=model,
+        user_id=user_id,
+        request_id=request_id,
+    )
     return result

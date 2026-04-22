@@ -3,6 +3,12 @@ uvicorn[standard]
 PyJWT
 cryptography
 httpx
+langchain
+langchain-core
+langchain-text-splitters
+langchain-openai
+langchain-google-genai
+langchain-anthropic
 google-genai
 openai
 anthropic
@@ -13,5 +19,6 @@ Pillow
 python-docx
 openpyxl
 tiktoken
+langsmith
 python-dotenv
 python-multipart

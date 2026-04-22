@@ -89,8 +89,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
 # Register routers
 from routes.ingest import router as ingest_router
 from routes.ai_search import router as ai_search_router
+from routes.feedback import router as feedback_router
 app.include_router(ingest_router)
 app.include_router(ai_search_router)
+app.include_router(feedback_router)
 
 
 @app.get("/users/me", tags=["Users"], summary="Get current user")

@@ -8,8 +8,15 @@ Supported providers (detected by model name prefix):
 """
 
 import logging
+import traceback
+from typing import Any
 
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from services.html_parser import parse_note_html
+from services.langsmith_config import build_langchain_config
 
 logger = logging.getLogger(__name__)
 
@@ -59,58 +66,74 @@ def detect_provider(model: str) -> str:
     )
 
 
-async def _call_gemini(api_key: str, model: str, system: str, user_prompt: str) -> dict:
-    from google import genai
-    from google.genai import types as gtypes
-
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
+async def _call_gemini(
+    api_key: str, model: str, system: str, user_prompt: str,
+    config: dict[str, Any] | None = None,
+) -> dict:
+    chat = ChatGoogleGenerativeAI(
         model=model,
-        contents=user_prompt,
-        config=gtypes.GenerateContentConfig(
-            system_instruction=system,
-            temperature=0.2,
-        ),
-    )
-    tokens_used = 0
-    if response.usage_metadata:
-        tokens_used = response.usage_metadata.total_token_count or 0
-    return {"answer": response.text, "tokens_used": tokens_used}
-
-
-async def _call_openai(api_key: str, model: str, system: str, user_prompt: str) -> dict:
-    from openai import AsyncOpenAI
-
-    client = AsyncOpenAI(api_key=api_key)
-    response = await client.chat.completions.create(
-        model=model,
+        google_api_key=api_key,
         temperature=0.2,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_prompt},
+    )
+    response = await chat.ainvoke(
+        [
+            SystemMessage(content=system),
+            HumanMessage(content=user_prompt),
         ],
+        config=config or {},
     )
-    tokens_used = response.usage.total_tokens if response.usage else 0
-    answer = response.choices[0].message.content or ""
-    return {"answer": answer, "tokens_used": tokens_used}
+    return {
+        "answer": _extract_message_text(response.content),
+        "tokens_used": _extract_tokens_used(response),
+        "run_id": _extract_run_id(config),
+    }
 
 
-async def _call_anthropic(api_key: str, model: str, system: str, user_prompt: str) -> dict:
-    import anthropic
-
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-    response = await client.messages.create(
+async def _call_openai(
+    api_key: str, model: str, system: str, user_prompt: str,
+    config: dict[str, Any] | None = None,
+) -> dict:
+    chat = ChatOpenAI(
         model=model,
+        api_key=api_key,
+        temperature=0.2,
+    )
+    response = await chat.ainvoke(
+        [
+            SystemMessage(content=system),
+            HumanMessage(content=user_prompt),
+        ],
+        config=config or {},
+    )
+    return {
+        "answer": _extract_message_text(response.content),
+        "tokens_used": _extract_tokens_used(response),
+        "run_id": _extract_run_id(config),
+    }
+
+
+async def _call_anthropic(
+    api_key: str, model: str, system: str, user_prompt: str,
+    config: dict[str, Any] | None = None,
+) -> dict:
+    chat = ChatAnthropic(
+        model=model,
+        api_key=api_key,
         max_tokens=2048,
-        system=system,
-        messages=[{"role": "user", "content": user_prompt}],
+        temperature=0.2,
     )
-    tokens_used = (
-        (response.usage.input_tokens or 0) + (response.usage.output_tokens or 0)
-        if response.usage else 0
+    response = await chat.ainvoke(
+        [
+            SystemMessage(content=system),
+            HumanMessage(content=user_prompt),
+        ],
+        config=config or {},
     )
-    answer = response.content[0].text if response.content else ""
-    return {"answer": answer, "tokens_used": tokens_used}
+    return {
+        "answer": _extract_message_text(response.content),
+        "tokens_used": _extract_tokens_used(response),
+        "run_id": _extract_run_id(config),
+    }
 
 
 async def generate_rag_answer(
@@ -118,6 +141,8 @@ async def generate_rag_answer(
     contexts: list[str],
     api_key: str,
     model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
 ) -> dict:
     """
     Generate an answer from the provided context chunks.
@@ -126,6 +151,7 @@ async def generate_rag_answer(
         return {
             "answer": "I couldn't find any relevant information in your notes.",
             "tokens_used": 0,
+            "run_id": None,
         }
 
     resolved_key = api_key.strip()
@@ -135,6 +161,7 @@ async def generate_rag_answer(
         return {
             "answer": "Add an active API key and model in profile settings to enable AI search.",
             "tokens_used": 0,
+            "run_id": None,
         }
 
     context_text = "\n\n---\n\n".join(contexts)
@@ -147,7 +174,19 @@ async def generate_rag_answer(
         return {
             "answer": "Unsupported model. Please check your AI settings.",
             "tokens_used": 0,
+            "run_id": None,
         }
+
+    trace_config = build_langchain_config(
+        run_name=f"rag:{request_id or 'unknown'}",
+        metadata={
+            "provider": provider,
+            "model_name": resolved_model,
+            "user_id": user_id or "anonymous",
+            "endpoint_name": "rag",
+            "request_id": request_id or "unknown",
+        },
+    )
 
     if provider == "gemini":
         caller = _call_gemini
@@ -162,6 +201,7 @@ async def generate_rag_answer(
             resolved_model,
             _SYSTEM_INSTRUCTION,
             user_prompt,
+            config=trace_config,
         )
         logger.info(
             "RAG answer generated via %s/%s - %s tokens",
@@ -175,6 +215,7 @@ async def generate_rag_answer(
         return {
             "answer": "I'm sorry, I encountered an error while formulating the answer.",
             "tokens_used": 0,
+            "run_id": None,
         }
 
 
@@ -185,6 +226,8 @@ async def generate_note_summary(
     contexts: list[str],
     api_key: str,
     model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
 ) -> dict:
     """
     Generate a concise summary for a single note.
@@ -196,6 +239,7 @@ async def generate_note_summary(
         return {
             "summary": "Add an active API key and model in profile settings to generate summaries.",
             "tokens_used": 0,
+            "run_id": None,
         }
 
     resolved_title = title.strip()
@@ -218,6 +262,7 @@ async def generate_note_summary(
             return {
                 "summary": "This note is empty, so there is nothing to summarize yet.",
                 "tokens_used": 0,
+                "run_id": None,
             }
 
         if note_text:
@@ -240,7 +285,19 @@ async def generate_note_summary(
         return {
             "summary": "Unsupported model. Please check your AI settings.",
             "tokens_used": 0,
+            "run_id": None,
         }
+
+    trace_config = build_langchain_config(
+        run_name=f"summarize:{request_id or 'unknown'}",
+        metadata={
+            "provider": provider,
+            "model_name": resolved_model,
+            "user_id": user_id or "anonymous",
+            "endpoint_name": "summarize",
+            "request_id": request_id or "unknown",
+        },
+    )
 
     if provider == "gemini":
         caller = _call_gemini
@@ -255,12 +312,14 @@ async def generate_note_summary(
             resolved_model,
             _SUMMARY_SYSTEM_INSTRUCTION,
             user_prompt,
+            config=trace_config,
         )
         summary_text = (result.get("answer") or "").strip()
         if not summary_text:
             return {
                 "summary": "The note could not be summarized right now.",
                 "tokens_used": result["tokens_used"],
+                "run_id": result.get("run_id"),
             }
         logger.info(
             "Note summary generated via %s/%s - %s tokens",
@@ -268,16 +327,25 @@ async def generate_note_summary(
             resolved_model,
             result["tokens_used"],
         )
-        return {"summary": summary_text, "tokens_used": result["tokens_used"]}
+        return {
+            "summary": summary_text,
+            "tokens_used": result["tokens_used"],
+            "run_id": result.get("run_id"),
+        }
     except Exception as exc:
         logger.error("Note summary failed [%s/%s]: %s", provider, resolved_model, exc)
         return {
             "summary": "I'm sorry, I encountered an error while generating the summary.",
             "tokens_used": 0,
+            "run_id": None,
         }
 
 
-async def test_llm_connection(api_key: str, model: str) -> dict:
+async def test_llm_connection(
+    api_key: str, model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> dict:
     """
     Verify that a given API key + model combination works.
     """
@@ -292,6 +360,17 @@ async def test_llm_connection(api_key: str, model: str) -> dict:
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
 
+    trace_config = build_langchain_config(
+        run_name=f"test_connection:{request_id or 'unknown'}",
+        metadata={
+            "provider": provider,
+            "model_name": resolved_model,
+            "user_id": user_id or "anonymous",
+            "endpoint_name": "test_connection",
+            "request_id": request_id or "unknown",
+        },
+    )
+
     try:
         if provider == "gemini":
             await _call_gemini(
@@ -299,6 +378,7 @@ async def test_llm_connection(api_key: str, model: str) -> dict:
                 resolved_model,
                 "You are a test assistant.",
                 "Say: OK",
+                config=trace_config,
             )
         elif provider == "openai":
             await _call_openai(
@@ -306,6 +386,7 @@ async def test_llm_connection(api_key: str, model: str) -> dict:
                 resolved_model,
                 "You are a test assistant.",
                 "Say: OK",
+                config=trace_config,
             )
         else:
             await _call_anthropic(
@@ -313,8 +394,91 @@ async def test_llm_connection(api_key: str, model: str) -> dict:
                 resolved_model,
                 "You are a test assistant.",
                 "Say: OK",
+                config=trace_config,
             )
 
         return {"ok": True, "error": None, "provider": provider}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def _extract_run_id(config: dict[str, Any] | None) -> str | None:
+    """Try to pull the run_id from the first LangChainTracer callback."""
+    if not config:
+        return None
+    callbacks = config.get("callbacks", [])
+    for cb in callbacks:
+        run_id = getattr(cb, "run_id", None)
+        if run_id:
+            return str(run_id)
+    return None
+
+
+def _extract_message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                if item.strip():
+                    parts.append(item.strip())
+                continue
+
+            if isinstance(item, dict):
+                text_value = item.get("text")
+                if isinstance(text_value, str) and text_value.strip():
+                    parts.append(text_value.strip())
+                continue
+
+            text_value = getattr(item, "text", None)
+            if isinstance(text_value, str) and text_value.strip():
+                parts.append(text_value.strip())
+        return "\n".join(parts).strip()
+
+    return str(content or "").strip()
+
+
+def _extract_tokens_used(response: Any) -> int:
+    usage_metadata = getattr(response, "usage_metadata", None)
+    tokens = _extract_token_count_from_obj(usage_metadata)
+    if tokens > 0:
+        return tokens
+
+    response_metadata = getattr(response, "response_metadata", None)
+    tokens = _extract_token_count_from_obj(response_metadata)
+    if tokens > 0:
+        return tokens
+
+    return 0
+
+
+def _extract_token_count_from_obj(payload: Any) -> int:
+    if isinstance(payload, dict):
+        total_tokens = payload.get("total_tokens")
+        if isinstance(total_tokens, int):
+            return total_tokens
+
+        total_token_count = payload.get("total_token_count")
+        if isinstance(total_token_count, int):
+            return total_token_count
+
+        for key in ("token_usage", "usage", "usage_metadata"):
+            nested = _extract_token_count_from_obj(payload.get(key))
+            if nested > 0:
+                return nested
+
+        input_tokens = payload.get("input_tokens")
+        output_tokens = payload.get("output_tokens")
+        if isinstance(input_tokens, int) and isinstance(output_tokens, int):
+            return input_tokens + output_tokens
+
+        prompt_tokens = payload.get("prompt_token_count")
+        candidate_tokens = payload.get("candidates_token_count")
+        if isinstance(prompt_tokens, int) and isinstance(candidate_tokens, int):
+            return prompt_tokens + candidate_tokens
+
+        return 0
+
+    return 0

@@ -3,6 +3,7 @@ Ingestion endpoint.
 Receives note data, processes content + files, generates chunks & embeddings.
 """
 
+import asyncio
 import logging
 
 import httpx
@@ -84,16 +85,40 @@ async def ingest_note(body: IngestRequest, request: Request):
         note_text += "\n\nLinks:\n" + "\n".join(link_lines)
 
     file_extractions = []
+    logger.info(
+        "Ingest request body.files = %s (type=%s, count=%s)",
+        body.files,
+        type(body.files).__name__,
+        len(body.files) if body.files else 0,
+    )
     if body.files:
         file_extractions = await _fetch_and_extract_files(
             auth_header,
             body.note_id,
             body.files,
         )
-        logger.info("Extracted text from %s files", len(file_extractions))
+        logger.info(
+            "Extracted text from %s/%s files",
+            len(file_extractions),
+            len(body.files),
+        )
+        for ext in file_extractions:
+            logger.info(
+                "  -> file=%s method=%s chars=%s",
+                ext.get("file_name"),
+                ext.get("extraction_method"),
+                len(ext.get("extracted_text", "")),
+            )
+    else:
+        logger.info("No files in ingestion request, skipping file extraction")
 
     chunks = chunk_document(note_text, file_extractions)
-    logger.info("Created %s chunks", len(chunks))
+    logger.info(
+        "Created %s chunks (note_text_len=%s, file_extractions=%s)",
+        len(chunks),
+        len(note_text),
+        len(file_extractions),
+    )
 
     if not chunks:
         chunks = [
@@ -163,38 +188,67 @@ async def _fetch_and_extract_files(
     filenames: list[str],
 ) -> list[dict]:
     """Fetch files from the storage service and extract text from each."""
-    extractions = []
+    if not filenames:
+        return []
+
+    concurrency_limit = 6
+    semaphore = asyncio.Semaphore(concurrency_limit)
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        for filename in filenames:
+        async def _fetch_one(filename: str) -> dict | None:
             try:
-                url = f"{STORAGE_BASE_URL}/files/{note_id}/{filename}"
-                response = await client.get(
-                    url,
-                    headers={"Authorization": auth_header},
-                )
-
-                if response.status_code != 200:
-                    logger.warning(
-                        "Failed to fetch file %s: HTTP %s",
-                        filename,
-                        response.status_code,
+                async with semaphore:
+                    url = f"{STORAGE_BASE_URL}/files/{note_id}/{filename}"
+                    logger.info("Fetching file from storage: %s", url)
+                    response = await client.get(
+                        url,
+                        headers={"Authorization": auth_header},
                     )
-                    continue
 
-                file_bytes = response.content
-                extraction = extract_text_from_bytes(file_bytes, filename)
-                extractions.append(extraction)
+                    if response.status_code != 200:
+                        logger.warning(
+                            "Failed to fetch file %s: HTTP %s - %s",
+                            filename,
+                            response.status_code,
+                            response.text[:200] if response.text else "no body",
+                        )
+                        return None
 
-                logger.info(
-                    "Extracted %s chars from %s via %s",
-                    len(extraction["extracted_text"]),
-                    filename,
-                    extraction["extraction_method"],
-                )
+                    file_bytes = response.content
+                    logger.info(
+                        "Fetched file %s: %s bytes",
+                        filename,
+                        len(file_bytes),
+                    )
+                    extraction = await asyncio.to_thread(
+                        extract_text_from_bytes,
+                        file_bytes,
+                        filename,
+                    )
+
+                    logger.info(
+                        "Extracted %s chars from %s via %s",
+                        len(extraction["extracted_text"]),
+                        filename,
+                        extraction["extraction_method"],
+                    )
+                    return extraction
 
             except Exception as exc:
                 logger.error("Error processing file %s: %s", filename, exc)
-                continue
+                return None
+
+        results = await asyncio.gather(
+            *[_fetch_one(filename) for filename in filenames],
+            return_exceptions=True,
+        )
+
+    extractions: list[dict] = []
+    for filename, result in zip(filenames, results):
+        if isinstance(result, Exception):
+            logger.error("Unhandled processing error for file %s: %s", filename, result)
+            continue
+        if isinstance(result, dict):
+            extractions.append(result)
 
     return extractions
