@@ -26,6 +26,8 @@ export default function Home() {
         dispatch(setToken(token));
         router.push("/notes"); // layout will fetch user
       }
+    } else {
+      router.push("/login");
     }
   }, []);
 
