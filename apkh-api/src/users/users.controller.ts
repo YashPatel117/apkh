@@ -161,6 +161,7 @@ export class UsersController {
     @JwtTokenUserId() userId: string,
     @Body() body: AddLlmConfigDto,
   ) {
+    const previousProvider = await this.usersService.getActiveProvider(userId);
     const user = await this.usersService.addLlmConfig(
       userId,
       body.keyName,
@@ -168,13 +169,8 @@ export class UsersController {
       body.model,
       body.setActive ?? true,
     );
-    const sanitized = this.sanitizeUser(user);
-
-    if (body.setActive ?? true) {
-      this.searchService.triggerUserReindex(authHeader, userId);
-    }
-
-    return sanitized;
+    await this.reindexIfProviderChanged(authHeader, userId, previousProvider);
+    return this.sanitizeUser(user);
   }
 
   /** Set a config as the active one */
@@ -186,8 +182,9 @@ export class UsersController {
     @JwtTokenUserId() userId: string,
     @Param('keyName') keyName: string,
   ) {
+    const previousProvider = await this.usersService.getActiveProvider(userId);
     const user = await this.usersService.setActiveConfig(userId, keyName);
-    this.searchService.triggerUserReindex(authHeader, userId);
+    await this.reindexIfProviderChanged(authHeader, userId, previousProvider);
     return this.sanitizeUser(user);
   }
 
@@ -200,9 +197,30 @@ export class UsersController {
     @JwtTokenUserId() userId: string,
     @Param('keyName') keyName: string,
   ) {
+    const previousProvider = await this.usersService.getActiveProvider(userId);
     const user = await this.usersService.deleteLlmConfig(userId, keyName);
-    this.searchService.triggerUserReindex(authHeader, userId);
+    await this.reindexIfProviderChanged(authHeader, userId, previousProvider);
     return this.sanitizeUser(user);
+  }
+
+  /**
+   * Stored vectors only need rebuilding when the embedding provider changes:
+   * the embedding model is fixed per provider, so switching models within a
+   * provider (or deleting an inactive key) must not re-embed every note.
+   */
+  private async reindexIfProviderChanged(
+    authHeader: string,
+    userId: string,
+    previousProvider: LlmProvider | null,
+  ) {
+    const provider = await this.usersService.getActiveProvider(userId);
+    if (
+      provider &&
+      provider !== previousProvider &&
+      this.searchService.supportsSemanticSearch(provider)
+    ) {
+      this.searchService.triggerUserReindex(authHeader, userId);
+    }
   }
 
   /** Use the key typed in the form, else the saved key of the named config */

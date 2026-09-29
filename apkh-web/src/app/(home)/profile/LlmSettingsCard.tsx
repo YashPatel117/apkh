@@ -6,7 +6,7 @@ import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, list
 import { getErrorMessage } from "@/service/axios/axios";
 import { useAppDispatch } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
-import { ILlmConfig, ILlmModel, IUser, LlmProvider } from "@/app/common/models/user";
+import { ILlmConfig, ILlmModel, IUser, LlmProvider, providerOfModel } from "@/app/common/models/user";
 import { Button } from "@/app/common/ui/Button";
 import { Input, fieldClass } from "@/app/common/ui/Input";
 import { ConfirmDialog } from "@/app/common/ui/ConfirmDialog";
@@ -27,14 +27,7 @@ const PROVIDER_GROUPS: { id: LlmProvider; label: string; docsUrl: string }[] = [
 const MIN_KEY_LENGTH = 20;
 
 function detectProvider(model: string) {
-  const normalized = model.trim().toLowerCase();
-  const id: LlmProvider | null = normalized.startsWith("gemini")
-    ? "gemini"
-    : /^(gpt|chatgpt|o\d)/.test(normalized)
-      ? "openai"
-      : normalized.startsWith("claude")
-        ? "anthropic"
-        : null;
+  const id = providerOfModel(model);
   return PROVIDER_GROUPS.find((g) => g.id === id) ?? null;
 }
 

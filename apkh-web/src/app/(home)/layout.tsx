@@ -444,7 +444,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         onClose={() => setEditorOpen(false)}
         locked={saving}
         title={editNote ? "Edit note" : "New note"}
-        description={editNote ? undefined : "Leave the title or category blank and AI will fill them in."}
+        description={editNote ? undefined : "Leave the title or category blank and they'll be filled in from your note."}
         size="lg"
       >
         <NoteEditor

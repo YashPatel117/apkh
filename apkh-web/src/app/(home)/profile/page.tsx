@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Coins, Cpu, FolderOpen, Mail, MessagesSquare, NotebookText, Paperclip, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useAppSelector } from "@/store/hook";
 import { Avatar } from "@/app/common/components/sidebar";
+import { supportsSemanticSearch } from "@/app/common/models/user";
 import LlmSettingsCard from "./LlmSettingsCard";
 
 function Stat({ Icon, label, value, href }: { Icon: typeof Coins; label: string; value: string | number; href?: string }) {
@@ -70,13 +71,24 @@ export default function ProfilePage() {
         <div className="space-y-6">
           <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
             <h2 className="font-semibold text-fg">AI search status</h2>
-            {activeConfig ? (
+            {activeConfig && supportsSemanticSearch(activeConfig.llmModel) ? (
               <div className="mt-4 flex items-start gap-3 rounded-2xl bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
                 <Cpu className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 text-sm">
                   <p className="font-semibold">Ready for grounded answers</p>
                   <p className="mt-0.5 truncate opacity-90">
                     Using <span className="font-medium">{activeConfig.keyName}</span> · {activeConfig.llmModel}
+                  </p>
+                </div>
+              </div>
+            ) : activeConfig ? (
+              <div className="mt-4 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold">Keyword matching only</p>
+                  <p className="mt-0.5 opacity-90">
+                    {activeConfig.llmModel} can answer and summarize, but Claude has no embedding model, so notes are
+                    found by keywords rather than meaning. Add a Gemini or OpenAI key for semantic search.
                   </p>
                 </div>
               </div>

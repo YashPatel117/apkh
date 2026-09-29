@@ -123,6 +123,7 @@ async def generate_rag(body: RagRequest, request: Request):
     )
     return {
         "answer": result["answer"],
+        "error": result.get("error", False),
         "tokens_used": result["tokens_used"],
         "request_id": request_id,
         "run_id": result.get("run_id"),
@@ -164,6 +165,7 @@ async def summarize_note(body: SummaryRequest, request: Request):
     )
     return {
         "summary": result["summary"],
+        "error": result.get("error", False),
         "tokens_used": result["tokens_used"],
         "request_id": request_id,
         "run_id": result.get("run_id"),

@@ -28,11 +28,38 @@ interface IngestResponse {
   chunks: IngestChunk[];
   chunk_count: number;
   status: string;
+  embedding_model?: string | null;
 }
 
 interface SummarizeResponse {
   summary: string;
+  error?: boolean;
   tokens_used: number;
+}
+
+interface RagResponse {
+  answer: string;
+  error?: boolean;
+  tokens_used: number;
+}
+
+export interface KeywordNoteMatch {
+  noteId: string;
+  title: string;
+  text: string;
+  /** MongoDB text score (higher is better; no fixed scale) */
+  score: number;
+}
+
+/** A retrieved passage the answer is built from. */
+interface SearchSource {
+  noteId: string;
+  noteTitle: string;
+  sourceType: string;
+  sourceName?: string;
+  sourcePage?: number;
+  text: string;
+  score: number;
 }
 
 interface NoteSummaryGenerationResult {
@@ -60,14 +87,40 @@ export interface AiSearchResultReference {
 export interface AiSearchResult {
   query: string;
   answer: string;
-  confidence: 'high' | 'low' | 'not_found';
+  confidence: 'high' | 'medium' | 'low' | 'not_found';
   references: AiSearchResultReference[];
   isError: boolean;
 }
 
-// Chunks below this similarity are ignored; above HIGH_CONFIDENCE the answer is marked "high"
-const MIN_SIMILARITY_THRESHOLD = 0.5;
-const HIGH_CONFIDENCE_THRESHOLD = 0.7;
+type SemanticProvider = 'gemini' | 'openai';
+
+// Chunks below `min` similarity are ignored; above `high` the answer is marked
+// "high" confidence. Scores run lower for OpenAI's text-embedding-3 models than
+// for Gemini's, so each provider gets its own scale.
+const SIMILARITY_THRESHOLDS: Record<
+  SemanticProvider,
+  { min: number; high: number }
+> = {
+  gemini: { min: 0.5, high: 0.7 },
+  openai: { min: 0.3, high: 0.5 },
+};
+
+// Questions about pinned notes skip the similarity cutoff (a broad question
+// like "what are the key points?" scores low against every chunk) and get a
+// larger share of the note instead.
+const PINNED_NOTES_MAX_CHUNKS = 12;
+
+const KEYWORD_NOTE_CHAR_LIMIT = 3000;
+
+/**
+ * Filter for the notes of a user. Note.userId is declared with the BSON
+ * ObjectId class instead of a schema type, so Mongoose leaves it untyped and
+ * notes store the id exactly as given — a string from the JWT. Matching both
+ * forms also covers notes written with an ObjectId.
+ */
+function noteOwner(userId: string) {
+  return { $in: [userId, new Types.ObjectId(userId)] };
+}
 
 const SUMMARY_CONTEXT_CHAR_LIMIT = 24000;
 const SUMMARY_CONTEXT_MAX_CHUNKS = 36;
@@ -75,6 +128,12 @@ const SUMMARY_CONTEXT_MAX_CHUNKS = 36;
 @Injectable()
 export class SearchService {
   private readonly logger = new Logger(SearchService.name);
+
+  // One ingestion at a time per note: concurrent runs interleave their
+  // delete + insert and leave duplicate chunks behind.
+  private readonly ingestionRuns = new Map<string, Promise<void>>();
+  // Bumped on every request, so a queued run that a newer save superseded is skipped.
+  private readonly ingestionRequests = new Map<string, number>();
 
   constructor(
     private readonly httpService: HttpService,
@@ -84,32 +143,54 @@ export class SearchService {
     private noteModel: Model<NoteDocument>,
     private readonly usersService: UsersService,
     private readonly fileService: FileService,
-  ) { }
+  ) {}
 
   /**
-   * Trigger ingestion in the background after note create/update.
+   * Trigger ingestion in the background after note create/update. The note's
+   * latest title, content and files are read when the run starts.
    */
-  triggerIngestion(
-    token: string,
-    noteId: string,
-    userId: string,
-    title: string,
-    content: string,
-    files: string[],
-  ) {
-    this.processIngestion(token, noteId, userId, title, content, files).catch(
-      (err) => {
-        this.logger.error(
-          `Ingestion failed for note ${noteId}: ${err.message}`,
-        );
-      },
-    );
+  triggerIngestion(token: string, noteId: string, userId: string) {
+    void this.scheduleIngestion(token, noteId, userId);
   }
 
   triggerUserReindex(token: string, userId: string) {
     this.reindexUserNotes(token, userId).catch((err) => {
       this.logger.error(`User reindex failed for ${userId}: ${err.message}`);
     });
+  }
+
+  /** Queues ingestion behind any run already in progress for the same note. */
+  private scheduleIngestion(
+    token: string,
+    noteId: string,
+    userId: string,
+    activeLlm?: ActiveLlmSettings,
+  ): Promise<void> {
+    const request = (this.ingestionRequests.get(noteId) ?? 0) + 1;
+    this.ingestionRequests.set(noteId, request);
+
+    const previous = this.ingestionRuns.get(noteId) ?? Promise.resolve();
+    const run = previous
+      .then(async () => {
+        if (this.ingestionRequests.get(noteId) !== request) {
+          return; // a newer request for this note will index its latest state
+        }
+        await this.processIngestion(token, noteId, userId, activeLlm);
+      })
+      .catch((err) => {
+        this.logger.error(
+          `Ingestion failed for note ${noteId}: ${err.message}`,
+        );
+      })
+      .finally(() => {
+        if (this.ingestionRuns.get(noteId) === run) {
+          this.ingestionRuns.delete(noteId);
+          this.ingestionRequests.delete(noteId);
+        }
+      });
+
+    this.ingestionRuns.set(noteId, run);
+    return run;
   }
 
   /**
@@ -119,14 +200,23 @@ export class SearchService {
     token: string,
     noteId: string,
     userId: string,
-    title: string,
-    content: string,
-    files: string[],
     activeLlm?: ActiveLlmSettings,
   ) {
     this.logger.log(`Starting ingestion for note: ${noteId}`);
 
     try {
+      const note = await this.noteModel
+        .findOne({ _id: noteId, userId: noteOwner(userId) })
+        .select('title content')
+        .lean()
+        .exec();
+      if (!note) {
+        await this.deleteChunks(noteId);
+        return;
+      }
+      const { title, content } = note;
+      const files = (await this.fileService.getNoteFiles(noteId))?.files ?? [];
+
       const llmSettings =
         activeLlm ?? (await this.usersService.getActiveLlmSettings(userId));
 
@@ -170,6 +260,12 @@ export class SearchService {
         `Search module returned ${data.chunk_count} chunks for note ${noteId}`,
       );
 
+      // The note may have been deleted while the search service was working.
+      if (!(await this.noteModel.exists({ _id: noteId }))) {
+        await this.deleteChunks(noteId);
+        return;
+      }
+
       await this.chunkModel.deleteMany({
         noteId: new Types.ObjectId(noteId),
       });
@@ -185,7 +281,8 @@ export class SearchService {
           sourceName: chunk.source_name || undefined,
           sourcePage: chunk.source_page || undefined,
           embeddingProvider: llmSettings.provider,
-          embeddingModel: llmSettings.model,
+          // The model that produced the vectors, not the chat model
+          embeddingModel: data.embedding_model || llmSettings.model,
           embedding: chunk.embedding,
         }));
 
@@ -194,6 +291,11 @@ export class SearchService {
         this.logger.log(
           `Stored ${chunkDocs.length} chunks in MongoDB for note ${noteId}`,
         );
+
+        // ...or while the chunks were being written.
+        if (!(await this.noteModel.exists({ _id: noteId }))) {
+          await this.deleteChunks(noteId);
+        }
       }
     } catch (error: any) {
       this.logger.error(
@@ -214,24 +316,15 @@ export class SearchService {
     }
 
     const notes = await this.noteModel
-      .find({ userId: new Types.ObjectId(userId) })
-      .select('_id title content')
+      .find({ userId: noteOwner(userId) })
+      .select('_id')
       .lean()
       .exec();
 
+    // One note at a time, so a large library doesn't flood the provider.
     for (const note of notes) {
       const noteId = (note._id as Types.ObjectId).toHexString();
-      const noteFiles = await this.fileService.getNoteFiles(noteId);
-
-      await this.processIngestion(
-        token,
-        noteId,
-        userId,
-        note.title,
-        note.content,
-        noteFiles?.files || [],
-        activeLlm,
-      );
+      await this.scheduleIngestion(token, noteId, userId, activeLlm);
     }
   }
 
@@ -312,14 +405,14 @@ export class SearchService {
 
     const summaryContexts = storedChunks.length
       ? this.buildSummaryContexts(
-        storedChunks.map((chunk) => ({
-          text: chunk.text,
-          sourceType: chunk.sourceType as 'note' | 'file',
-          sourceName: chunk.sourceName,
-          sourcePage: chunk.sourcePage,
-        })),
-        hasAttachedFiles && fileChunkCount === 0,
-      )
+          storedChunks.map((chunk) => ({
+            text: chunk.text,
+            sourceType: chunk.sourceType as 'note' | 'file',
+            sourceName: chunk.sourceName,
+            sourcePage: chunk.sourcePage,
+          })),
+          hasAttachedFiles && fileChunkCount === 0,
+        )
       : [];
 
     try {
@@ -342,6 +435,7 @@ export class SearchService {
 
       const summarizeRes = await firstValueFrom(summarizeRes$);
       const summary = summarizeRes.data.summary?.trim() ?? '';
+      const failed = Boolean(summarizeRes.data.error);
       const tokensUsed = summarizeRes.data.tokens_used ?? 0;
 
       if (tokensUsed > 0) {
@@ -352,10 +446,12 @@ export class SearchService {
         });
       }
 
+      // A failure message ("model no longer available", ...) must not be
+      // cached as the note's summary.
       return {
         summary,
-        model: activeLlm.model,
-        cacheable: Boolean(summary),
+        model: failed ? null : activeLlm.model,
+        cacheable: Boolean(summary) && !failed,
       };
     } catch (error: any) {
       const serviceDetail = this.extractSearchServiceError(error);
@@ -394,7 +490,9 @@ export class SearchService {
 
       let source = 'Note content';
       if (chunk.sourceType === 'file') {
-        source = chunk.sourceName ? `Attachment: ${chunk.sourceName}` : 'Attachment';
+        source = chunk.sourceName
+          ? `Attachment: ${chunk.sourceName}`
+          : 'Attachment';
         if (chunk.sourcePage) {
           source += ` | Page ${chunk.sourcePage}`;
         }
@@ -417,7 +515,8 @@ export class SearchService {
   }
 
   /**
-   * Execute AI RAG Search flow using cosine similarity over stored embeddings.
+   * Execute AI RAG Search: rank stored chunks by cosine similarity (or, for
+   * providers without embeddings, find notes by keyword) and answer from the best.
    */
   async performAiSearch(
     token: string,
@@ -440,64 +539,38 @@ export class SearchService {
         );
       }
 
-      if (!this.supportsSemanticSearch(activeLlm.provider)) {
-        return this.buildGuidanceResponse(
-          query,
-          `The active model "${activeLlm.model}" cannot be used for semantic search embeddings yet. Switch your active AI config to Gemini or OpenAI in Profile to use AI search.`,
-        );
-      }
-
-      let queryVector: number[];
-      try {
-        const embedRes$ = this.httpService.post<{ embedding: number[] }>(
-          `${SEARCH_API}/ai-search/embed-query`,
-          {
-            query,
-            api_key: activeLlm.apiKey,
-            model: activeLlm.model,
-          },
-          { headers: { Authorization: token } },
-        );
-        const embedRes = await firstValueFrom(embedRes$);
-        queryVector = embedRes.data.embedding;
-      } catch (error: any) {
-        const serviceDetail = this.extractSearchServiceError(error);
-        if (serviceDetail) {
-          return this.buildGuidanceResponse(query, serviceDetail);
-        }
-        throw error;
-      }
-
-      const chunkFilter: FilterQuery<KnowledgeChunkDocument> = {
-        userId: new Types.ObjectId(userId),
-        ...(referencedNoteIds?.length
-          ? {
-            noteId: {
-              $in: referencedNoteIds.map((id) => new Types.ObjectId(id)),
-            },
-          }
-          : {}),
+      let retrieved: {
+        sources: SearchSource[];
+        confidence: AiSearchResult['confidence'];
       };
-
-      if (activeLlm.provider === 'gemini') {
-        chunkFilter.$or = [
-          { embeddingProvider: 'gemini' },
-          { embeddingProvider: { $exists: false } },
-        ];
+      if (this.supportsSemanticSearch(activeLlm.provider)) {
+        let queryVector: number[];
+        try {
+          queryVector = await this.embedQuery(token, activeLlm, query);
+        } catch (error: any) {
+          const serviceDetail = this.extractSearchServiceError(error);
+          if (serviceDetail) {
+            return this.buildGuidanceResponse(query, serviceDetail);
+          }
+          throw error;
+        }
+        retrieved = await this.findSimilarChunks(
+          userId,
+          activeLlm.provider,
+          queryVector,
+          topK,
+          referencedNoteIds,
+        );
       } else {
-        chunkFilter.embeddingProvider = activeLlm.provider;
+        retrieved = await this.findKeywordSources(
+          userId,
+          query,
+          topK,
+          referencedNoteIds,
+        );
       }
 
-      const userChunks = await this.chunkModel.find(chunkFilter).lean();
-      const topChunks = userChunks
-        .map((chunk) => ({
-          ...chunk,
-          score: cosineSimilarity(queryVector, chunk.embedding),
-        }))
-        .filter((chunk) => chunk.score >= MIN_SIMILARITY_THRESHOLD)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, topK);
-
+      const topChunks = retrieved.sources;
       if (!topChunks.length) {
         return {
           query,
@@ -523,10 +596,7 @@ export class SearchService {
       let tokensUsed = 0;
 
       try {
-        const ragRes$ = this.httpService.post<{
-          answer: string;
-          tokens_used: number;
-        }>(
+        const ragRes$ = this.httpService.post<RagResponse>(
           `${SEARCH_API}/ai-search/rag`,
           {
             query,
@@ -540,6 +610,9 @@ export class SearchService {
           },
         );
         const ragRes = await firstValueFrom(ragRes$);
+        if (ragRes.data.error) {
+          return this.buildGuidanceResponse(query, ragRes.data.answer);
+        }
         answer = ragRes.data.answer;
         tokensUsed = ragRes.data.tokens_used ?? 0;
       } catch (error: any) {
@@ -561,10 +634,9 @@ export class SearchService {
       return {
         query,
         answer,
-        confidence:
-          topChunks[0].score >= HIGH_CONFIDENCE_THRESHOLD ? 'high' : 'low',
+        confidence: retrieved.confidence,
         references: topChunks.map((chunk) => ({
-          note_id: chunk.noteId.toString(),
+          note_id: chunk.noteId,
           note_title: chunk.noteTitle,
           source_type: chunk.sourceType,
           source_name: chunk.sourceName,
@@ -578,6 +650,102 @@ export class SearchService {
       this.logger.error(`AI Search failed: ${error.message}`);
       throw error;
     }
+  }
+
+  /** The note/file chunks most similar to the query vector. */
+  private async findSimilarChunks(
+    userId: string,
+    provider: SemanticProvider,
+    queryVector: number[],
+    topK: number,
+    referencedNoteIds?: string[],
+  ): Promise<{
+    sources: SearchSource[];
+    confidence: AiSearchResult['confidence'];
+  }> {
+    const pinned = Boolean(referencedNoteIds?.length);
+    const chunkFilter: FilterQuery<KnowledgeChunkDocument> = {
+      userId: new Types.ObjectId(userId),
+      // Chat transcripts share this collection; only notes and their files are sources here.
+      sourceType: { $in: ['note', 'file'] },
+      ...this.embeddingProviderFilter(provider),
+      ...(pinned
+        ? {
+            noteId: {
+              $in: referencedNoteIds!.map((id) => new Types.ObjectId(id)),
+            },
+          }
+        : {}),
+    };
+
+    const thresholds = this.similarityThresholds(provider);
+    const userChunks = await this.chunkModel.find(chunkFilter).lean();
+    const sources = userChunks
+      .map((chunk) => ({
+        noteId: chunk.noteId.toString(),
+        noteTitle: chunk.noteTitle,
+        sourceType: chunk.sourceType,
+        sourceName: chunk.sourceName,
+        sourcePage: chunk.sourcePage,
+        text: chunk.text,
+        score: cosineSimilarity(queryVector, chunk.embedding),
+      }))
+      .filter((chunk) => pinned || chunk.score >= thresholds.min)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, pinned ? PINNED_NOTES_MAX_CHUNKS : topK);
+
+    return {
+      sources,
+      confidence: sources[0]?.score >= thresholds.high ? 'high' : 'low',
+    };
+  }
+
+  /**
+   * Keyword retrieval for providers without an embedding model: pinned notes
+   * as-is, otherwise the best text-index matches. Scores are relative to the
+   * best match, since text scores have no fixed scale.
+   */
+  private async findKeywordSources(
+    userId: string,
+    query: string,
+    topK: number,
+    referencedNoteIds?: string[],
+  ): Promise<{
+    sources: SearchSource[];
+    confidence: AiSearchResult['confidence'];
+  }> {
+    let matches: KeywordNoteMatch[];
+    if (referencedNoteIds?.length) {
+      const notes = await this.noteModel
+        .find({
+          userId: noteOwner(userId),
+          _id: { $in: referencedNoteIds.map((id) => new Types.ObjectId(id)) },
+        })
+        .select('title contentPlain')
+        .lean()
+        .exec();
+      matches = notes.map((note) => ({
+        noteId: (note._id as Types.ObjectId).toHexString(),
+        title: note.title,
+        text: (note.contentPlain ?? '').slice(0, KEYWORD_NOTE_CHAR_LIMIT),
+        score: 1,
+      }));
+    } else {
+      matches = await this.findNotesByKeywords(userId, query, topK);
+    }
+
+    const bestScore = matches[0]?.score || 1;
+    return {
+      sources: matches.map((match) => ({
+        noteId: match.noteId,
+        noteTitle: match.title,
+        sourceType: 'note',
+        text: match.text,
+        score: match.score / bestScore,
+      })),
+      // Word overlap says nothing about meaning; never claim high confidence.
+      confidence: 'medium',
+    };
   }
 
   private buildGuidanceResponse(query: string, answer: string): AiSearchResult {
@@ -646,7 +814,86 @@ export class SearchService {
     return normalized;
   }
 
-  private supportsSemanticSearch(provider: ActiveLlmSettings['provider']) {
+  supportsSemanticSearch(
+    provider: ActiveLlmSettings['provider'],
+  ): provider is SemanticProvider {
     return provider === 'gemini' || provider === 'openai';
+  }
+
+  similarityThresholds(provider: ActiveLlmSettings['provider']) {
+    return this.supportsSemanticSearch(provider)
+      ? SIMILARITY_THRESHOLDS[provider]
+      : SIMILARITY_THRESHOLDS.gemini;
+  }
+
+  /** Only chunks embedded by this provider are comparable with its query vectors. */
+  embeddingProviderFilter(
+    provider: ActiveLlmSettings['provider'],
+  ): FilterQuery<KnowledgeChunkDocument> {
+    return provider === 'gemini'
+      ? // chunks indexed before embeddingProvider existed are Gemini's
+        {
+          $or: [
+            { embeddingProvider: 'gemini' },
+            { embeddingProvider: { $exists: false } },
+          ],
+        }
+      : { embeddingProvider: provider };
+  }
+
+  /** Embedding of a search query / chat message. Throws if the provider call fails. */
+  async embedQuery(
+    token: string,
+    activeLlm: ActiveLlmSettings,
+    query: string,
+  ): Promise<number[]> {
+    const embedRes$ = this.httpService.post<{ embedding: number[] }>(
+      `${SEARCH_API}/ai-search/embed-query`,
+      {
+        query,
+        api_key: activeLlm.apiKey,
+        model: activeLlm.model,
+      },
+      { headers: { Authorization: token } },
+    );
+    const embedRes = await firstValueFrom(embedRes$);
+    return embedRes.data.embedding;
+  }
+
+  /**
+   * Notes matching the words of `query`, best first, via the notes text index.
+   * Used when semantic search isn't available (e.g. Claude, which has no
+   * embedding model).
+   */
+  async findNotesByKeywords(
+    userId: string,
+    query: string,
+    limit: number,
+  ): Promise<KeywordNoteMatch[]> {
+    // Quotes and "-" are $text operators (phrase, negation); keep plain words.
+    const words = query
+      .replace(/["\\]/g, ' ')
+      .replace(/(^|\s)-+/g, '$1')
+      .trim();
+    if (!words) {
+      return [];
+    }
+
+    const notes = await this.noteModel
+      .find(
+        { userId: noteOwner(userId), $text: { $search: words } },
+        { score: { $meta: 'textScore' }, title: 1, contentPlain: 1 },
+      )
+      .sort({ score: { $meta: 'textScore' } })
+      .limit(limit)
+      .lean()
+      .exec();
+
+    return notes.map((note) => ({
+      noteId: (note._id as Types.ObjectId).toHexString(),
+      title: note.title,
+      text: (note.contentPlain ?? '').slice(0, KEYWORD_NOTE_CHAR_LIMIT),
+      score: (note as { score?: number }).score ?? 0,
+    }));
   }
 }

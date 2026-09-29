@@ -221,6 +221,7 @@ async def generate_rag_answer(
     if not resolved_key or not resolved_model:
         return {
             "answer": "Add an active API key and model in profile settings to enable AI search.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
@@ -234,6 +235,7 @@ async def generate_rag_answer(
         logger.error(str(exc))
         return {
             "answer": "Unsupported model. Please check your AI settings.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
@@ -270,17 +272,22 @@ async def generate_rag_answer(
             resolved_model,
             result["tokens_used"],
         )
+        if not result["answer"]:
+            result["answer"] = "The model returned an empty response. Please try again."
+            result["error"] = True
         return result
     except Exception as exc:
         logger.error("LLM call failed [%s/%s]: %s", provider, resolved_model, exc)
         if _is_model_unavailable(exc):
             return {
                 "answer": _model_unavailable_message(resolved_model),
+                "error": True,
                 "tokens_used": 0,
                 "run_id": None,
             }
         return {
             "answer": "I'm sorry, I encountered an error while formulating the answer.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
@@ -305,6 +312,7 @@ async def generate_note_summary(
     if not resolved_key or not resolved_model:
         return {
             "summary": "Add an active API key and model in profile settings to generate summaries.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
@@ -351,6 +359,7 @@ async def generate_note_summary(
         logger.error(str(exc))
         return {
             "summary": "Unsupported model. Please check your AI settings.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
@@ -385,6 +394,7 @@ async def generate_note_summary(
         if not summary_text:
             return {
                 "summary": "The note could not be summarized right now.",
+                "error": True,
                 "tokens_used": result["tokens_used"],
                 "run_id": result.get("run_id"),
             }
@@ -404,11 +414,13 @@ async def generate_note_summary(
         if _is_model_unavailable(exc):
             return {
                 "summary": _model_unavailable_message(resolved_model),
+                "error": True,
                 "tokens_used": 0,
                 "run_id": None,
             }
         return {
             "summary": "I'm sorry, I encountered an error while generating the summary.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
@@ -548,6 +560,7 @@ async def generate_chat_rag_answer(
     if not resolved_key or not resolved_model:
         return {
             "answer": "Add an active API key and model in profile settings to enable AI search.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
@@ -568,6 +581,7 @@ async def generate_chat_rag_answer(
         logger.error(str(exc))
         return {
             "answer": "Unsupported model. Please check your AI settings.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
@@ -588,7 +602,13 @@ async def generate_chat_rag_answer(
     elif provider == "openai":
         llm = ChatOpenAI(model=resolved_model, api_key=resolved_key, temperature=0.7)
     else:
-        llm = ChatAnthropic(model_name=resolved_model, anthropic_api_key=resolved_key, temperature=0.7)
+        # Same output budget as _call_anthropic; the SDK default cuts long answers short.
+        llm = ChatAnthropic(
+            model_name=resolved_model,
+            anthropic_api_key=resolved_key,
+            max_tokens=2048,
+            temperature=0.7,
+        )
 
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -610,9 +630,10 @@ async def generate_chat_rag_answer(
 
     try:
         response = await llm.ainvoke(messages, config=trace_config or {})
-        
+        answer = _extract_message_text(response.content)
         return {
-            "answer": _extract_message_text(response.content),
+            "answer": answer or "The model returned an empty response. Please try again.",
+            "error": not answer,
             "tokens_used": _extract_tokens_used(response),
             "run_id": _extract_run_id(trace_config)
         }
@@ -621,11 +642,13 @@ async def generate_chat_rag_answer(
         if _is_model_unavailable(exc):
             return {
                 "answer": _model_unavailable_message(resolved_model),
+                "error": True,
                 "tokens_used": 0,
                 "run_id": None,
             }
         return {
             "answer": "I'm sorry, I encountered an error while formulating the response.",
+            "error": True,
             "tokens_used": 0,
             "run_id": None,
         }

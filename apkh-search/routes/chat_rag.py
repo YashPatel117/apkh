@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Header, HTTPException, status
-from pydantic import BaseModel
 import logging
+import uuid
+
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel
 
 from services.llm import generate_chat_rag_answer
-from services.langsmith_config import build_langchain_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +24,13 @@ class ChatRagRequest(BaseModel):
     model: str
 
 @router.post("/chat-rag")
-async def chat_rag(
-    body: ChatRagRequest,
-    authorization: str = Header(..., description="JWT token from apkh-api")
-):
+async def chat_rag(body: ChatRagRequest, request: Request):
     """
     Generate an AI response based on multi-source RAG context + conversational history.
     """
-    logger.info("Received Chat RAG request for query: %s", body.query)
-    
+    request_id = str(uuid.uuid4())
+    logger.info("Received Chat RAG request for query: %s [request_id=%s]", body.query, request_id)
+
     try:
         dict_history = [{"role": msg.role, "content": msg.content} for msg in body.chat_history]
 
@@ -42,9 +41,11 @@ async def chat_rag(
             notes_chunks=body.notes_chunks,
             similar_chat_chunks=body.similar_chat_chunks,
             api_key=body.api_key,
-            model=body.model
+            model=body.model,
+            user_id=getattr(request.state, "user_id", None),
+            request_id=request_id,
         )
-        return result
+        return {**result, "error": result.get("error", False), "request_id": request_id}
     except Exception as e:
         logger.error(f"Chat RAG failed: {e}")
         raise HTTPException(

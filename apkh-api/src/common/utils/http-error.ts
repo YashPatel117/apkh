@@ -1,5 +1,10 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
+/** Message of a caught value, for logs. */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Normalises a caught error for rethrowing: existing HttpExceptions keep their
  * status and message, anything else becomes `status` with a readable message.

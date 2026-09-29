@@ -63,14 +63,7 @@ export class NotesService {
       }
 
       // Trigger AI ingestion (fire-and-forget)
-      this.searchService.triggerIngestion(
-        token,
-        note._id as string,
-        userId,
-        note.title,
-        note.content,
-        result.files,
-      );
+      this.searchService.triggerIngestion(token, String(note._id), userId);
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error: unknown) {
@@ -188,14 +181,7 @@ export class NotesService {
       await this.clearSummaryCache(_id, userId);
 
       // Trigger AI re-ingestion (fire-and-forget)
-      this.searchService.triggerIngestion(
-        token,
-        _id,
-        userId,
-        note.title,
-        note.content,
-        allFiles,
-      );
+      this.searchService.triggerIngestion(token, _id, userId);
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error) {

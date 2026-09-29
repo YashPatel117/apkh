@@ -1,4 +1,4 @@
-import striptags from 'striptags';
+import { htmlToPlainText } from 'src/common/utils/html';
 
 type ResolveNoteMetadataInput = {
   title?: string | null;
@@ -200,7 +200,7 @@ export function resolveNoteMetadata({
   content,
   existingCategories = [],
 }: ResolveNoteMetadataInput): ResolvedNoteMetadata {
-  const plainText = toPlainText(content);
+  const plainText = htmlToPlainText(content);
   const sourceText = normalizeWhitespace([title, plainText].filter(Boolean).join(' '));
   const resolvedTitle = normalizeUserText(title) || generateTitle(plainText);
   const categorySource = sourceText || (resolvedTitle === FALLBACK_TITLE ? '' : resolvedTitle);
@@ -226,33 +226,6 @@ function normalizeUserText(value?: string | null): string {
   }
 
   return normalizeWhitespace(value);
-}
-
-function decodeBasicEntities(value: string): string {
-  return value
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
-}
-
-function toPlainText(content?: string | null): string {
-  if (!content) {
-    return '';
-  }
-
-  const contentWithLineBreaks = content
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(article|blockquote|div|h[1-6]|li|ol|p|section|ul)>/gi, '\n');
-
-  return decodeBasicEntities(striptags(contentWithLineBreaks).replace(/\u00a0/g, ' '))
-    .replace(/\r/g, '')
-    .split(/\n+/)
-    .map((line) => normalizeWhitespace(line))
-    .filter(Boolean)
-    .join('\n');
 }
 
 function generateTitle(plainText: string): string {

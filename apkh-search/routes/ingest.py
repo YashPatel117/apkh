@@ -5,13 +5,14 @@ Receives note data, processes content + files, generates chunks & embeddings.
 
 import asyncio
 import logging
+import os
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from services.chunker import chunk_document
-from services.embedder import generate_embeddings
+from services.embedder import embedding_model_for, generate_embeddings
 from services.file_extractor import ImageReader, extract_text_from_bytes
 from services.html_parser import parse_note_html
 from services.vision import build_image_reader
@@ -20,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ingest", tags=["Ingestion"])
 
-STORAGE_BASE_URL = "http://localhost:3001"
+# Same variable (and format) as apkh-api, e.g. https://apkh-storage.onrender.com/
+STORAGE_BASE_URL = os.getenv("STORAGE_API_URL", "http://localhost:3001").rstrip("/")
 
 
 class IngestRequest(BaseModel):
@@ -48,6 +50,7 @@ class IngestResponse(BaseModel):
     chunks: list[ChunkResponse]
     chunk_count: int
     status: str
+    embedding_model: str | None = None
 
 
 @router.post("", response_model=IngestResponse)
@@ -194,6 +197,7 @@ async def ingest_note(body: IngestRequest, request: Request):
         chunks=chunk_responses,
         chunk_count=len(chunk_responses),
         status="success",
+        embedding_model=embedding_model_for(model),
     )
 
 

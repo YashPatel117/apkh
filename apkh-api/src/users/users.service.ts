@@ -160,6 +160,24 @@ export class UsersService {
     return this.encryption.decrypt(config.llmApiKey);
   }
 
+  /** Provider of the active config (no key decryption), or null if none/unknown. */
+  async getActiveProvider(userId: string): Promise<LlmProvider | null> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('llmConfigs.llmModel llmConfigs.isActive')
+      .lean()
+      .exec();
+    const active = user?.llmConfigs?.find((config) => config.isActive);
+    if (!active) {
+      return null;
+    }
+    try {
+      return this.detectProvider(active.llmModel);
+    } catch {
+      return null;
+    }
+  }
+
   /** Get the active config's decrypted key + model (used internally for RAG) */
   async getActiveLlmSettings(
     userId: string,

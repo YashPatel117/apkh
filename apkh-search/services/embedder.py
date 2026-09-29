@@ -19,9 +19,18 @@ from services.llm import detect_provider
 logger = logging.getLogger(__name__)
 
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
-GEMINI_FALLBACK_EMBEDDING_MODEL = "text-embedding-004"
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 EMBED_BATCH_SIZE = 100
+
+_EMBEDDING_MODELS = {
+    "gemini": GEMINI_EMBEDDING_MODEL,
+    "openai": OPENAI_EMBEDDING_MODEL,
+}
+
+
+def embedding_model_for(model: str) -> str | None:
+    """The embedding model used for a chat model's provider, or None if it has none."""
+    return _EMBEDDING_MODELS.get(detect_provider(model.strip()))
 
 
 def _extract_provider_error_message(exc: Exception) -> str:
@@ -64,37 +73,24 @@ def _extract_provider_error_message(exc: Exception) -> str:
 
 
 async def _generate_gemini_embeddings(texts: list[str], api_key: str) -> list[list[float]]:
-    candidate_models = [GEMINI_EMBEDDING_MODEL, GEMINI_FALLBACK_EMBEDDING_MODEL]
-    last_exception: Exception | None = None
-
-    for candidate_model in candidate_models:
-        try:
-            embedder = GoogleGenerativeAIEmbeddings(
-                model=candidate_model,
-                google_api_key=api_key,
-                task_type="retrieval_document",
-            )
-            embeddings = await _embed_in_batches(
-                texts=texts,
-                embedder=embedder,
-                provider_label="Gemini",
-                model_label=candidate_model,
-            )
-            return embeddings
-        except Exception as exc:  # pragma: no cover - provider-specific behavior
-            last_exception = exc
-            logger.warning(
-                "Gemini embedding attempt failed on model %s: %s",
-                candidate_model,
-                _extract_provider_error_message(exc),
-            )
-
-    if last_exception is not None:
+    # No fallback model: a different model returns vectors of a different size,
+    # which could never be compared with the rest of the index.
+    try:
+        embedder = GoogleGenerativeAIEmbeddings(
+            model=GEMINI_EMBEDDING_MODEL,
+            google_api_key=api_key,
+            task_type="retrieval_document",
+        )
+        return await _embed_in_batches(
+            texts=texts,
+            embedder=embedder,
+            provider_label="Gemini",
+            model_label=GEMINI_EMBEDDING_MODEL,
+        )
+    except Exception as exc:  # pragma: no cover - provider-specific behavior
         raise ValueError(
-            f"Gemini embedding request failed: {_extract_provider_error_message(last_exception)}"
-        ) from last_exception
-
-    raise ValueError("Gemini embedding request failed for an unknown reason.")
+            f"Gemini embedding request failed: {_extract_provider_error_message(exc)}"
+        ) from exc
 
 
 async def _generate_openai_embeddings(texts: list[str], api_key: str) -> list[list[float]]:

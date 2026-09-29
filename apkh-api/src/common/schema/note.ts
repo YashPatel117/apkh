@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import striptags from 'striptags';
+import { htmlToPlainText } from '../utils/html';
 
 export type NoteDocument = Note & Document;
 
@@ -29,7 +29,7 @@ export const NoteSchema = SchemaFactory.createForClass(Note);
 
 NoteSchema.pre('save', function (next) {
   if (this.content) {
-    this.contentPlain = striptags(this.content);
+    this.contentPlain = htmlToPlainText(this.content);
   }
   next();
 });

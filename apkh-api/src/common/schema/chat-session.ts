@@ -13,7 +13,11 @@ export class ChatSession {
 
   @Prop({ default: false })
   isChunked: boolean;
-  
+
+  /** Message count when the transcript was last chunked for search. */
+  @Prop({ default: 0 })
+  chunkedMessageCount: number;
+
   updatedAt: Date;
 }
 
