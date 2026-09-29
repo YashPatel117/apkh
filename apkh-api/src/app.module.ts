@@ -9,6 +9,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { NotesModule } from './notes/notes.module';
 import { JwtSecretKey } from './common/constant/jwt';
 import { FileModule } from './file/file.module';
+import { ChatModule } from './chat/chat.module';
 dotenv.config();
 
 @Module({
@@ -25,6 +26,7 @@ dotenv.config();
     }),
     NotesModule,
     FileModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],
