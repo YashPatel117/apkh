@@ -25,14 +25,29 @@ export async function createChatSession(firstMessage: string, aiResponse: string
   return res.data.data as IChatSession;
 }
 
-export async function getChatSessions() {
-  const res = await webApi.get("/chat/sessions");
-  return res.data.data as IChatSession[];
+// In-flight requests are shared so simultaneous callers (home + chat layouts,
+// React Strict Mode's double-run effects in dev) trigger a single API call.
+let sessionsRequest: Promise<IChatSession[]> | null = null;
+const messagesRequests = new Map<string, Promise<IChatMessage[]>>();
+
+export function getChatSessions() {
+  sessionsRequest ??= webApi
+    .get("/chat/sessions")
+    .then((res) => res.data.data as IChatSession[])
+    .finally(() => (sessionsRequest = null));
+  return sessionsRequest;
 }
 
-export async function getChatMessages(sessionId: string) {
-  const res = await webApi.get(`/chat/session/${sessionId}`);
-  return res.data.data as IChatMessage[];
+export function getChatMessages(sessionId: string) {
+  let request = messagesRequests.get(sessionId);
+  if (!request) {
+    request = webApi
+      .get(`/chat/session/${sessionId}`)
+      .then((res) => res.data.data as IChatMessage[])
+      .finally(() => messagesRequests.delete(sessionId));
+    messagesRequests.set(sessionId, request);
+  }
+  return request;
 }
 
 export async function deleteChatSession(sessionId: string) {
