@@ -1,19 +1,20 @@
 "use client";
 
-import Button from "@mui/material/Button";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import "../service/fileTokenBlot";
+import { Paperclip, Type } from "lucide-react";
 import { INote, INoteDto } from "../models/note";
-import TextField from "@mui/material/TextField";
-import Autocomplete, { createFilterOptions } from "@mui/material/Autocomplete";
-import { Box, Modal } from "@mui/material";
-import { modalStyle } from "../style/modal";
 import FileDisplay from "./fileDisplay";
+import { CategoryInput } from "./categoryInput";
 import { normalizeNoteLinksInHtml } from "../service/noteLinkUtils";
-
-const filter = createFilterOptions<string>();
+import { displayFileName } from "../service/fileName";
+import { getErrorMessage } from "@/service/axios/axios";
+import { Input } from "../ui/Input";
+import { Button } from "../ui/Button";
+import { Modal } from "../ui/Modal";
+import { FormAlert } from "./authShell";
 
 export type FileItem = {
   id: string;
@@ -25,274 +26,173 @@ export type FileItem = {
 type NoteEditorProps = {
   initialNote?: INote | null;
   categoryOptions?: string[];
-  onSave?: (data: INoteDto, id?: string) => void;
+  saving?: boolean;
+  onSave: (data: INoteDto, id?: string) => Promise<void>;
+  onCancel: () => void;
 };
 
-export default function NoteEditor({
-  initialNote = null,
-  categoryOptions = [],
-  onSave,
-}: NoteEditorProps) {
+const TOOLBAR = [
+  [{ header: [1, 2, 3, false] }],
+  ["bold", "italic", "underline", "strike"],
+  [{ list: "ordered" }, { list: "bullet" }],
+  ["blockquote", "link"],
+  ["clean"],
+];
+
+export default function NoteEditor({ initialNote = null, categoryOptions = [], saving = false, onSave, onCancel }: NoteEditorProps) {
   const [note, setNote] = useState<INoteDto>({
     title: initialNote?.title || "",
     category: initialNote?.category || "",
     content: initialNote?.content || "",
   });
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [openFile, setOpenFile] = useState(false);
-  const [file, setFile] = useState<File | undefined>(undefined);
-  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ file?: File; fileName: string } | null>(null);
   const filesRef = useRef<FileItem[]>(files);
+  const quillRef = useRef<ReactQuill | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
 
-  const quillRef = useRef<ReactQuill | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Stable reference — a new object each render makes Quill re-initialise.
+  const modules = useMemo(() => ({ toolbar: TOOLBAR }), []);
 
-  const handleAttachFile = () => fileInputRef.current?.click();
+  const plainText = note.content.replace(/<[^>]+>/g, "").trim();
+  const hasTokens = note.content.includes("file-token");
+  const isEmpty = !note.title.trim() && !plainText && !hasTokens;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const id =
-      Date.now() + "-" + Math.round(Math.random() * 1e9) + "-" + file.name;
-    const newFile: FileItem = { id, name: file.name, file };
-    setFiles((prev) => [...prev, newFile]);
-
-    const quill = quillRef.current?.getEditor();
-    if (quill) {
-      const range = quill.getSelection(true);
-      if (range) {
-        quill.insertEmbed(range.index, "fileToken", { id, name: file.name }, "user");
-        quill.insertText(range.index + 1, " ");
-        quill.setSelection(range.index + 2, 0);
-      }
-    }
-
+    const picked = Array.from(e.target.files ?? []);
     e.target.value = "";
-  };
+    if (!picked.length) return;
 
-  const saveClicked = () => {
     const quill = quillRef.current?.getEditor();
     if (!quill) return;
-    const normalizedContent = normalizeNoteLinksInHtml(note.content);
+    const range = quill.getSelection(true) ?? { index: quill.getLength(), length: 0 };
+    let index = range.index;
 
-    const fileTokens = Array.from(
-      quill.root.querySelectorAll<HTMLElement>(".file-token")
-    )
-      .map((token) => ({
-        id: token.dataset.id ?? "",
-        name: token.dataset.name ?? "",
-      }))
-      .filter((token) => token.id);
+    const added: FileItem[] = picked.map((file) => {
+      const id = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${file.name}`;
+      quill.insertEmbed(index, "fileToken", { id, name: file.name }, "user");
+      quill.insertText(index + 1, " ", "user");
+      index += 2;
+      return { id, name: file.name, file };
+    });
+    quill.setSelection(index, 0);
+    setFiles((prev) => [...prev, ...added]);
+  };
 
-    if (onSave) {
-      onSave(
+  const save = async () => {
+    const quill = quillRef.current?.getEditor();
+    if (!quill || saving || isEmpty) return;
+    setError(null);
+
+    const fileTokens = Array.from(quill.root.querySelectorAll<HTMLElement>(".file-token"))
+      .map((token) => token.dataset.id ?? "")
+      .filter(Boolean);
+
+    try {
+      await onSave(
         {
           title: note.title.trim(),
           category: note.category.trim(),
-          content: normalizedContent,
+          content: normalizeNoteLinksInHtml(note.content),
           files: files
-            .filter((f) => fileTokens.some((ft) => ft.id === f.id))
-            .filter((file) => file.file !== null)
-            .map(
-              (fileitem) =>
-                new File([fileitem.file!], fileitem.id, {
-                  type: fileitem.file?.type,
-                })
-            ),
-          removedFiles: initialNote?.files
-            .filter((f) => !fileTokens.some((ft) => ft.id === f))
-            .map((fileitem) => fileitem),
+            .filter((f) => f.file && fileTokens.includes(f.id))
+            .map((item) => new File([item.file!], item.id, { type: item.file!.type })),
+          removedFiles: initialNote?.files.filter((f) => !fileTokens.includes(f)),
         },
-        initialNote?.id
+        initialNote?.id,
       );
+    } catch (err) {
+      setError(getErrorMessage(err, "Couldn't save the note. Please try again."));
     }
   };
 
+  // File-chip clicks inside the editor open a preview.
   useEffect(() => {
     const quill = quillRef.current?.getEditor();
     if (!quill) return;
-
-    const button = document.querySelector(".ql-customButton");
-    const handleToolbarAttach = () => handleAttachFile();
-
-    if (button instanceof HTMLButtonElement) {
-      button.textContent = "Attach";
-      button.setAttribute("aria-label", "Attach file");
-      button.addEventListener("click", handleToolbarAttach);
-    }
-
     const editorEl = quill.root;
-    const handleFileTokenClick = (e: Event) => {
-      const custom = e as CustomEvent<{ id: string; name: string }>;
-      const file = filesRef.current.find((f) => f.id === custom.detail.id);
-      const fileUrl = initialNote?.files.find((f) => f === custom.detail.id);
-
-      if (file?.file) {
-        setOpenFile(true);
-        setFile(file.file);
-      } else if (fileUrl) {
-        setOpenFile(true);
-        setFileName(fileUrl);
-      }
+    const onTokenClick = (e: Event) => {
+      const { id } = (e as CustomEvent<{ id: string; name: string }>).detail;
+      const local = filesRef.current.find((f) => f.id === id);
+      if (local?.file) setPreview({ file: local.file, fileName: local.name });
+      else if (initialNote?.files.includes(id)) setPreview({ fileName: id });
     };
-
-    editorEl.addEventListener("file-token-click", handleFileTokenClick);
-
-    return () => {
-      if (button instanceof HTMLButtonElement) {
-        button.removeEventListener("click", handleToolbarAttach);
-      }
-      editorEl.removeEventListener("file-token-click", handleFileTokenClick);
-    };
+    editorEl.addEventListener("file-token-click", onTokenClick);
+    return () => editorEl.removeEventListener("file-token-click", onTokenClick);
   }, [initialNote?.files]);
 
   return (
-    <div className="note-editor-shell">
-      <div className="mb-5 rounded-[28px] border border-sky-100/80 bg-[linear-gradient(145deg,_rgba(240,249,255,0.96),_rgba(255,255,255,0.98)_55%,_rgba(239,246,255,0.94)_100%)] p-4 shadow-[0_20px_55px_-44px_rgba(2,132,199,0.55)] sm:p-5">
-        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
-              Rich Note Composer
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-              {initialNote ? "Update note" : "Create a new note"}
-            </h2>
-          </div>
-          <p className="max-w-xl text-sm leading-6 text-slate-600">
-            Lists, links, formatting, and attached file tokens stay part of the note
-            content while you edit.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-3 md:flex-row">
-          <TextField
-            id="title"
-            label="Title"
-            variant="outlined"
-            value={note.title}
-            placeholder="Leave blank to auto-generate from the note"
-            helperText="Optional. We'll create a title if you leave this empty."
-            onChange={(e) =>
-              setNote((prev) => ({ ...prev, title: e.target.value }))
-            }
-            className="w-full"
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                borderRadius: "18px",
-                backgroundColor: "rgba(255,255,255,0.95)",
-              },
-            }}
-          />
-          <Autocomplete
-            id="category"
-            options={categoryOptions}
-            freeSolo
-            filterOptions={(options, params) => {
-              const filtered = filter(options, params);
-              const inputValue = params.inputValue.trim();
-              const isExisting = options.some((option) => inputValue === option);
-              if (inputValue !== "" && !isExisting) filtered.push(inputValue);
-              return filtered;
-            }}
-            getOptionLabel={(option) => option}
-            renderOption={(props, option) => {
-              const { key, ...optionProps } = props;
-              return (
-                <li key={key} {...optionProps}>
-                  {option}
-                </li>
-              );
-            }}
-            value={note.category}
-            inputValue={note.category}
-            onInputChange={(event, newInputValue) =>
-              setNote((prev) => ({ ...prev, category: newInputValue }))
-            }
-            onChange={(event, newValue) =>
-              setNote((prev) => ({ ...prev, category: newValue ?? "" }))
-            }
-            className="w-full"
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Category"
-                placeholder="Leave blank to auto-match or create one"
-                helperText="Optional. We'll reuse a related category or generate a new one."
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    borderRadius: "18px",
-                    backgroundColor: "rgba(255,255,255,0.95)",
-                  },
-                }}
-              />
-            )}
-          />
-          <input
-            type="file"
-            ref={fileInputRef}
-            style={{ display: "none" }}
-            onChange={handleFileChange}
-          />
-        </div>
-      </div>
-
-      <ReactQuill
-        ref={quillRef}
-        className="note-editor"
-        theme="snow"
-        value={note.content}
-        onChange={(content) => {
-          setNote((prev) => ({ ...prev, content }));
-        }}
-        placeholder="Write your note here..."
-        style={{ marginBottom: "0", width: "100%" }}
-        modules={{
-          toolbar: [
-            ["bold", "italic", "underline", "strike"],
-            [{ list: "ordered" }, { list: "bullet" }],
-            ["link"],
-            ["clean"],
-            ["customButton"],
-          ],
-        }}
-      />
-
-      <div className="mt-5 flex justify-end">
-        <Button
-          onClick={saveClicked}
-          variant="contained"
-          color="primary"
-          sx={{
-            minHeight: 48,
-            borderRadius: "16px",
-            px: 2.5,
-            textTransform: "none",
-            fontWeight: 700,
-            boxShadow: "0 18px 35px -24px rgba(29, 78, 216, 0.85)",
-            background: "linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%)",
-          }}
-        >
-          Save Note
-        </Button>
-      </div>
-
-      <Modal
-        open={openFile}
-        onClose={() => {
-          setOpenFile(false);
-          setFile(undefined);
-          setFileName("");
+    <>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto px-5 pb-2 sm:px-6"
+        onKeyDown={(e) => {
+          if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || e.key.toLowerCase() === "s")) {
+            e.preventDefault();
+            void save();
+          }
         }}
       >
-        <Box sx={modalStyle()}>
-          <FileDisplay fileName={fileName} noteId={initialNote?.id} file={file} />
-        </Box>
+        {error && (
+          <div className="mb-4">
+            <FormAlert>{error}</FormAlert>
+          </div>
+        )}
+        <div className="grid gap-4 sm:grid-cols-[1.4fr_1fr]">
+          <Input
+            label="Title"
+            icon={<Type />}
+            value={note.title}
+            placeholder="Auto-generated if left blank"
+            onChange={(e) => setNote((prev) => ({ ...prev, title: e.target.value }))}
+            data-autofocus
+          />
+          <CategoryInput
+            value={note.category}
+            onChange={(category) => setNote((prev) => ({ ...prev, category }))}
+            options={categoryOptions}
+            placeholder="Auto-matched if left blank"
+          />
+        </div>
+
+        <div className="mt-4">
+          <ReactQuill
+            ref={quillRef}
+            className="note-editor"
+            theme="snow"
+            value={note.content}
+            onChange={(content) => setNote((prev) => ({ ...prev, content }))}
+            placeholder="Write your note, paste links, or attach files…"
+            modules={modules}
+          />
+        </div>
+        <input type="file" multiple ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-5 py-4 sm:px-6">
+        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} icon={<Paperclip className="size-4" />} disabled={saving}>
+          Attach files
+        </Button>
+        <span className="hidden text-xs text-fg-subtle md:inline">
+          <kbd className="rounded border border-line px-1 font-mono">Ctrl</kbd> + <kbd className="rounded border border-line px-1 font-mono">Enter</kbd> to save
+        </span>
+        <div className="ml-auto flex gap-2">
+          <Button variant="ghost" onClick={onCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={() => void save()} loading={saving} disabled={isEmpty}>
+            {saving ? "Saving…" : initialNote ? "Save changes" : "Create note"}
+          </Button>
+        </div>
+      </div>
+
+      <Modal open={Boolean(preview)} onClose={() => setPreview(null)} title={preview?.file?.name ?? (preview ? displayFileName(preview.fileName) : "")} size="xl">
+        {preview && <FileDisplay fileName={preview.fileName} noteId={preview.file ? undefined : initialNote?.id} file={preview.file} />}
       </Modal>
-    </div>
+    </>
   );
 }

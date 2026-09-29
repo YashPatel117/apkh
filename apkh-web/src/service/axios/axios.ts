@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from "axios";
+import { clearToken } from "../session";
 
 const webApi = axios.create({
   baseURL: "http://localhost:3000",
@@ -9,6 +10,8 @@ const storageApi = axios.create({
   baseURL: "http://localhost:3001",
   withCredentials: true,
 });
+
+const AUTH_PAGES = ["/login", "/register", "/reset-password"];
 
 function requestInterceptor(apiInstance: AxiosInstance) {
   apiInstance.interceptors.request.use(
@@ -28,9 +31,12 @@ function responseInterceptor(apiInstance: AxiosInstance) {
   apiInstance.interceptors.response.use(
     (response) => response,
     (error) => {
-      if (error.response?.status === 401) {
-        if (typeof window !== "undefined") {
-          window.location.href = "/login";
+      if (error.response?.status === 401 && typeof window !== "undefined") {
+        // Drop the rejected token first — otherwise /login sees a "valid"
+        // token and bounces straight back, looping forever.
+        clearToken();
+        if (!AUTH_PAGES.includes(window.location.pathname)) {
+          window.location.href = "/login?expired=1";
         }
       }
       return Promise.reject(error);
@@ -43,5 +49,18 @@ responseInterceptor(webApi);
 
 requestInterceptor(storageApi);
 responseInterceptor(storageApi);
+
+/** Best-effort human message from an API / network error. */
+export function getErrorMessage(error: unknown, fallback = "Something went wrong. Please try again.") {
+  if (axios.isAxiosError(error)) {
+    if (!error.response) return "Can't reach the server. Check that the API is running.";
+    const data = error.response.data as { message?: unknown; detail?: unknown } | undefined;
+    const message = data?.message ?? data?.detail;
+    if (Array.isArray(message) && typeof message[0] === "string") return message[0];
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return fallback;
+}
 
 export { webApi, storageApi };

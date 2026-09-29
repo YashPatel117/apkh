@@ -2,6 +2,7 @@
 
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { IChatSession, IChatMessage } from "@/service/chatService";
+import { logout } from "./authSlice";
 
 interface ChatState {
   sessions: IChatSession[];
@@ -25,6 +26,7 @@ const chatSlice = createSlice({
       state.sessions = action.payload;
     },
     addSession: (state, action: PayloadAction<IChatSession>) => {
+      state.sessions = state.sessions.filter((s) => s.id !== action.payload.id);
       state.sessions.unshift(action.payload);
     },
     updateSessionTime: (state, action: PayloadAction<string>) => {
@@ -53,9 +55,16 @@ const chatSlice = createSlice({
     addMessage: (state, action: PayloadAction<IChatMessage>) => {
       state.messages.push(action.payload);
     },
+    removeMessage: (state, action: PayloadAction<string>) => {
+      state.messages = state.messages.filter((m) => m.id !== action.payload);
+    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
     },
+  },
+  extraReducers: (builder) => {
+    // Never leak one user's conversations into the next session.
+    builder.addCase(logout, () => initialState);
   },
 });
 
@@ -66,6 +75,7 @@ export const {
   setActiveSession,
   setMessages,
   addMessage,
+  removeMessage,
   setLoading,
   updateSessionTime
 } = chatSlice.actions;

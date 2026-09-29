@@ -1,41 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import Button from "@mui/material/Button";
-import TextField from "@mui/material/TextField";
-import MenuItem from "@mui/material/MenuItem";
-import CircularProgress from "@mui/material/CircularProgress";
-import IconButton from "@mui/material/IconButton";
-import Tooltip from "@mui/material/Tooltip";
-import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
-import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
-import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import RadioButtonCheckedIcon from "@mui/icons-material/RadioButtonChecked";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
-import TokenOutlinedIcon from "@mui/icons-material/TokenOutlined";
-import {
-  testLlmSettings,
-  addLlmConfig,
-  activateLlmConfig,
-  deleteLlmConfig,
-} from "@/service/authService";
+import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
+import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig } from "@/service/authService";
+import { getErrorMessage } from "@/service/axios/axios";
 import { useAppDispatch } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
 import { ILlmConfig, IUser } from "@/app/common/models/user";
+import { Button } from "@/app/common/ui/Button";
+import { Input, fieldClass } from "@/app/common/ui/Input";
+import { ConfirmDialog } from "@/app/common/ui/ConfirmDialog";
+import { useToast } from "@/app/common/ui/Toast";
+import { Spinner } from "@/app/common/ui/Spinner";
+import { cn } from "@/app/common/ui/cn";
+
 // ── Provider catalogue ───────────────────────────────────────────────────────
 const PROVIDER_GROUPS = [
   {
     label: "Google Gemini",
     prefix: "gemini",
     docsUrl: "https://aistudio.google.com/app/apikey",
-    models: [
-      "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-1.5-pro",
-    ],
+    models: ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
   },
   {
     label: "OpenAI",
@@ -47,26 +32,15 @@ const PROVIDER_GROUPS = [
     label: "Anthropic Claude",
     prefix: "claude",
     docsUrl: "https://console.anthropic.com/settings/keys",
-    models: [
-      "claude-3-5-sonnet-20241022",
-      "claude-3-5-haiku-20241022",
-      "claude-3-opus-20240229",
-    ],
+    models: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
   },
 ];
 
 function detectProvider(model: string) {
-  return (
-    PROVIDER_GROUPS.find((g) => model.toLowerCase().startsWith(g.prefix)) ??
-    null
-  );
+  return PROVIDER_GROUPS.find((g) => model.toLowerCase().startsWith(g.prefix)) ?? null;
 }
 
 type TestStatus = "idle" | "testing" | "ok" | "error";
-
-interface Props {
-  user: IUser;
-}
 
 // ── Saved config row ─────────────────────────────────────────────────────────
 function ConfigRow({
@@ -76,106 +50,89 @@ function ConfigRow({
 }: {
   config: ILlmConfig;
   onActivate: (keyName: string) => Promise<void>;
-  onDelete: (keyName: string) => Promise<void>;
+  onDelete: (config: ILlmConfig) => void;
 }) {
-  const [loading, setLoading] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [activating, setActivating] = useState(false);
   const provider = detectProvider(config.llmModel);
 
   async function handleActivate() {
-    if (config.isActive) return;
-    setLoading(true);
-    await onActivate(config.keyName);
-    setLoading(false);
-  }
-
-  async function handleDelete() {
-    setDeleting(true);
-    await onDelete(config.keyName);
-    setDeleting(false);
+    if (config.isActive || activating) return;
+    setActivating(true);
+    try {
+      await onActivate(config.keyName);
+    } finally {
+      setActivating(false);
+    }
   }
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-[18px] border px-4 py-3 transition-all ${
-        config.isActive
-          ? "border-sky-200 bg-sky-50 ring-1 ring-sky-200"
-          : "border-slate-200 bg-white hover:border-slate-300"
-      }`}
+      className={cn(
+        "flex items-center gap-3 rounded-2xl border p-3 transition-colors",
+        config.isActive ? "border-indigo-200 bg-accent-soft dark:border-indigo-400/30" : "border-line bg-surface",
+      )}
     >
-      {/* Active radio */}
-      <Tooltip title={config.isActive ? "Active" : "Set as active"}>
-        <span>
-          <IconButton
-            size="small"
-            onClick={handleActivate}
-            disabled={config.isActive || loading}
-            className={config.isActive ? "text-sky-600!" : "text-slate-400!"}
-          >
-            {loading ? (
-              <CircularProgress size={16} />
-            ) : config.isActive ? (
-              <RadioButtonCheckedIcon sx={{ fontSize: 18 }} />
-            ) : (
-              <RadioButtonUncheckedIcon sx={{ fontSize: 18 }} />
+      <button
+        type="button"
+        role="radio"
+        aria-checked={config.isActive}
+        onClick={handleActivate}
+        disabled={config.isActive || activating}
+        aria-label={config.isActive ? `${config.keyName} is active` : `Use ${config.keyName}`}
+        className={cn(
+          "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-default",
+          !config.isActive && "hover:bg-surface-2",
+        )}
+      >
+        {activating ? (
+          <Spinner className="size-4 text-accent" />
+        ) : (
+          <span
+            className={cn(
+              "flex size-[1.1rem] items-center justify-center rounded-full border-2",
+              config.isActive ? "border-accent" : "border-fg-subtle",
             )}
-          </IconButton>
-        </span>
-      </Tooltip>
+          >
+            {config.isActive && <span className="size-2 rounded-full bg-accent" />}
+          </span>
+        )}
+      </button>
 
-      {/* Info */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-semibold text-slate-900">
-            {config.keyName}
-          </p>
+          <p className="truncate text-sm font-semibold text-fg">{config.keyName}</p>
           {config.isActive && (
-            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-700">
+            <span className="rounded-md bg-indigo-600 px-1.5 py-0.5 text-[0.62rem] font-bold tracking-wider text-white uppercase dark:bg-indigo-500">
               Active
             </span>
           )}
         </div>
-        <p className="mt-0.5 truncate text-xs text-slate-500">
+        <p className="mt-0.5 truncate text-xs text-fg-subtle">
           {config.llmModel}
-          {provider && (
-            <span className="ml-1.5 text-slate-400">· {provider.label}</span>
-          )}
+          {provider && ` · ${provider.label}`}
         </p>
       </div>
 
-      {/* Per-config token badge */}
-      <div className="flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-100">
-        <TokenOutlinedIcon sx={{ fontSize: 12 }} />
+      <span className="hidden items-center gap-1 rounded-lg bg-surface-2 px-2 py-1 text-xs font-medium text-fg-muted tabular-nums sm:inline-flex" title="Tokens used">
+        <Coins className="size-3" />
         {config.tokensUsed.toLocaleString()}
-      </div>
+      </span>
 
-      {/* Delete */}
-      <Tooltip title="Remove this config">
-        <span>
-          <IconButton
-            size="small"
-            onClick={handleDelete}
-            disabled={deleting}
-            className="text-slate-400! hover:text-red-500!"
-          >
-            {deleting ? (
-              <CircularProgress size={14} />
-            ) : (
-              <DeleteOutlineIcon sx={{ fontSize: 18 }} />
-            )}
-          </IconButton>
-        </span>
-      </Tooltip>
+      <Button size="icon-sm" variant="ghost-danger" onClick={() => onDelete(config)} aria-label={`Remove ${config.keyName}`}>
+        <Trash2 className="size-4" />
+      </Button>
     </div>
   );
 }
 
 // ── Main card ────────────────────────────────────────────────────────────────
-export default function LlmSettingsCard({ user }: Props) {
+export default function LlmSettingsCard({ user }: { user: IUser }) {
   const dispatch = useAppDispatch();
-  const [showForm, setShowForm] = useState(false);
+  const toast = useToast();
+  const configs: ILlmConfig[] = user.llmConfigs ?? [];
+  const [showForm, setShowForm] = useState(configs.length === 0);
+  const [pendingDelete, setPendingDelete] = useState<ILlmConfig | null>(null);
 
-  // Form state
   const [keyName, setKeyName] = useState("");
   const [model, setModel] = useState("gemini-2.5-flash");
   const [customModel, setCustomModel] = useState("");
@@ -184,18 +141,16 @@ export default function LlmSettingsCard({ user }: Props) {
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testError, setTestError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [savedOk, setSavedOk] = useState(false);
 
-  const activeModel = useCustom ? customModel : model;
+  const activeModel = useCustom ? customModel.trim() : model;
   const provider = detectProvider(activeModel);
-  const canTest =
-    keyName.trim().length > 0 &&
-    activeModel.trim().length > 0 &&
-    apiKey.trim().length > 0;
+  const canTest = keyName.trim().length > 0 && activeModel.length > 0 && apiKey.trim().length > 0;
   const canSave = testStatus === "ok" && canTest && !saving;
 
-  const configs: ILlmConfig[] = user.llmConfigs ?? [];
-  const activeConfig = configs.find((c) => c.isActive);
+  const resetTest = () => {
+    setTestStatus("idle");
+    setTestError(null);
+  };
 
   function resetForm() {
     setKeyName("");
@@ -203,9 +158,7 @@ export default function LlmSettingsCard({ user }: Props) {
     setCustomModel("");
     setUseCustom(false);
     setApiKey("");
-    setTestStatus("idle");
-    setTestError(null);
-    setSavedOk(false);
+    resetTest();
     setShowForm(false);
   }
 
@@ -213,275 +166,232 @@ export default function LlmSettingsCard({ user }: Props) {
     setTestStatus("testing");
     setTestError(null);
     try {
-      const result = await testLlmSettings({ apiKey, model: activeModel });
+      const result = await testLlmSettings({ apiKey: apiKey.trim(), model: activeModel });
       setTestStatus(result.ok ? "ok" : "error");
       if (!result.ok) setTestError(result.error ?? "Connection failed.");
-    } catch {
+    } catch (err) {
       setTestStatus("error");
-      setTestError("Could not reach the server.");
+      setTestError(getErrorMessage(err, "Could not reach the server."));
     }
   }
 
   async function handleSave() {
     setSaving(true);
     try {
-      const updatedUser = await addLlmConfig({
-        keyName: keyName.trim(),
-        apiKey,
-        model: activeModel,
-        setActive: true,
-      });
-      setSavedOk(true);
+      const updatedUser = await addLlmConfig({ keyName: keyName.trim(), apiKey: apiKey.trim(), model: activeModel, setActive: true });
       dispatch(setUser({ ...user, ...updatedUser }));
-      setTimeout(resetForm, 1200);
-    } catch {
-      setTestError("Save failed. Please try again.");
+      toast(`“${keyName.trim()}” saved and set as active.`, "success");
+      resetForm();
+    } catch (err) {
+      setTestError(getErrorMessage(err, "Save failed. Please try again."));
+      setTestStatus("error");
     } finally {
       setSaving(false);
     }
   }
 
   async function handleActivate(name: string) {
-    const updatedUser = await activateLlmConfig(name);
-    dispatch(setUser({ ...user, ...updatedUser }));
+    try {
+      const updatedUser = await activateLlmConfig(name);
+      dispatch(setUser({ ...user, ...updatedUser }));
+      toast(`Now using “${name}”.`, "success");
+    } catch (err) {
+      toast(getErrorMessage(err, "Couldn't switch configs."), "error");
+    }
   }
 
-  async function handleDelete(name: string) {
-    const updatedUser = await deleteLlmConfig(name);
-    dispatch(setUser({ ...user, ...updatedUser }));
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    try {
+      const updatedUser = await deleteLlmConfig(pendingDelete.keyName);
+      dispatch(setUser({ ...user, ...updatedUser }));
+      toast("Config removed.", "success");
+    } catch (err) {
+      toast(getErrorMessage(err, "Couldn't remove the config."), "error");
+      throw err;
+    }
   }
 
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white/92 p-5 shadow-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sky-700">
-          <SmartToyOutlinedIcon sx={{ fontSize: 18 }} />
-          <span className="text-xs font-semibold uppercase tracking-[0.22em]">
-            AI Model Settings
-          </span>
+    <section id="ai" className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-fg">AI models</h2>
+          <p className="mt-1 text-sm text-fg-muted">Bring your own key. The active config powers search, summaries and chat.</p>
         </div>
-        <Button
-          size="small"
-          variant={showForm ? "outlined" : "contained"}
-          onClick={() => (showForm ? resetForm() : setShowForm(true))}
-          className="rounded-full! normal-case! text-xs!"
-          startIcon={
-            showForm ? undefined : (
-              <AddCircleOutlineIcon sx={{ fontSize: 15 }} />
-            )
-          }
-        >
-          {showForm ? "Cancel" : "Add Config"}
-        </Button>
+        {!showForm && (
+          <Button size="sm" variant="soft" onClick={() => setShowForm(true)} icon={<Plus className="size-3.5" />}>
+            Add
+          </Button>
+        )}
       </div>
 
-      {/* Active config summary */}
-      {activeConfig && !showForm && (
-        <div className="mt-3 rounded-[16px] bg-sky-50 px-4 py-2.5 ring-1 ring-sky-100">
-          <p className="text-xs font-semibold uppercase tracking-wider text-sky-600">
-            Active
-          </p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">
-            {activeConfig.keyName}
-          </p>
-          <p className="text-xs text-slate-500">{activeConfig.llmModel}</p>
-        </div>
-      )}
-
-      {/* Config list */}
-      {configs.length > 0 && !showForm && (
-        <div className="mt-4 space-y-2">
+      {configs.length > 0 && (
+        <div role="radiogroup" aria-label="Saved AI configs" className="mt-5 space-y-2">
           {configs.map((cfg) => (
-            <ConfigRow
-              key={cfg.keyName}
-              config={cfg}
-              onActivate={handleActivate}
-              onDelete={handleDelete}
-            />
+            <ConfigRow key={cfg.keyName} config={cfg} onActivate={handleActivate} onDelete={setPendingDelete} />
           ))}
         </div>
       )}
 
-      {configs.length === 0 && !showForm && (
-        <p className="mt-4 text-center text-sm text-slate-400">
-          No configs yet. Add one to enable AI search.
-        </p>
-      )}
-
-      {/* Add new config form */}
       {showForm && (
-        <div className="mt-4 space-y-3">
-          <TextField
-            label="Config Name"
-            placeholder='e.g. "My GPT-4o Key", "Work Gemini"'
+        <div className={cn("space-y-4", configs.length > 0 ? "mt-5 border-t border-line pt-5" : "mt-5")}>
+          <h3 className="text-sm font-semibold text-fg">New config</h3>
+
+          <Input
+            label="Name"
+            icon={<Tag />}
+            placeholder="e.g. Work Gemini"
             value={keyName}
             onChange={(e) => {
               setKeyName(e.target.value);
-              setTestStatus("idle");
+              resetTest();
             }}
-            size="small"
-            fullWidth
-            sx={{ "& .MuiOutlinedInput-root": { borderRadius: "16px" } }}
           />
 
-          {/* Provider tabs */}
-          <div className="flex flex-wrap gap-2 py-2">
-            {PROVIDER_GROUPS.map((pg) => (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-fg">Provider</span>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Provider">
+              {PROVIDER_GROUPS.map((pg) => {
+                const selected = !useCustom && detectProvider(model)?.prefix === pg.prefix;
+                return (
+                  <button
+                    key={pg.prefix}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => {
+                      setUseCustom(false);
+                      setModel(pg.models[0]);
+                      resetTest();
+                    }}
+                    className={cn(
+                      "cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                      selected ? "border-accent bg-accent-soft text-accent-fg" : "border-line text-fg-muted hover:bg-surface-2 hover:text-fg",
+                    )}
+                  >
+                    {pg.label}
+                  </button>
+                );
+              })}
               <button
-                key={pg.prefix}
+                type="button"
+                role="radio"
+                aria-checked={useCustom}
                 onClick={() => {
-                  setUseCustom(false);
-                  setModel(pg.models[0]);
-                  setTestStatus("idle");
+                  setUseCustom(true);
+                  resetTest();
                 }}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition-all ${
-                  !useCustom && detectProvider(model)?.prefix === pg.prefix
-                    ? "bg-sky-600 text-white shadow"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
+                className={cn(
+                  "cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                  useCustom ? "border-accent bg-accent-soft text-accent-fg" : "border-line text-fg-muted hover:bg-surface-2 hover:text-fg",
+                )}
               >
-                {pg.label}
+                Custom
               </button>
-            ))}
-            <button
-              onClick={() => {
-                setUseCustom(true);
-                setTestStatus("idle");
-              }}
-              className={`rounded-full px-3 py-1 text-xs font-semibold transition-all ${
-                useCustom
-                  ? "bg-sky-600 text-white shadow"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              Custom
-            </button>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-3">
-            {useCustom ? (
-              <TextField
-                label="Model identifier"
-                placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
-                value={customModel}
-                onChange={(e) => {
-                  setCustomModel(e.target.value);
-                  setTestStatus("idle");
-                }}
-                size="small"
-                fullWidth
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: "16px" } }}
-              />
-            ) : (
-              <TextField
-                select
-                label="Model"
-                value={model}
-                onChange={(e) => {
-                  setModel(e.target.value);
-                  setTestStatus("idle");
-                }}
-                size="small"
-                fullWidth
-                sx={{ "& .MuiOutlinedInput-root": { borderRadius: "16px" } }}
-              >
-                {(provider?.models ?? PROVIDER_GROUPS[0].models).map((m) => (
-                  <MenuItem key={m} value={m}>
-                    {m}
-                  </MenuItem>
-                ))}
-              </TextField>
-            )}
-
-            <TextField
-              label="API Key"
-              type="password"
-              placeholder="Paste your API key"
-              value={apiKey}
+          {useCustom ? (
+            <Input
+              label="Model identifier"
+              placeholder="e.g. gpt-4o"
+              value={customModel}
               onChange={(e) => {
-                setApiKey(e.target.value);
-                setTestStatus("idle");
-                setSavedOk(false);
-              }}
-              size="small"
-              fullWidth
-              helperText={
-                provider ? (
-                  <a
-                    href={provider.docsUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sky-600 underline"
-                  >
-                    Get your {provider.label} API key →
-                  </a>
-                ) : undefined
-              }
-              sx={{
-                "& .MuiOutlinedInput-root": { borderRadius: "16px" },
-                "& .MuiFormHelperText-root": {
-                  marginLeft: 0,
-                  marginTop: "6px",
-                },
+                setCustomModel(e.target.value);
+                resetTest();
               }}
             />
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="llm-model" className="text-sm font-medium text-fg">
+                Model
+              </label>
+              <div className="relative">
+                <select
+                  id="llm-model"
+                  value={model}
+                  onChange={(e) => {
+                    setModel(e.target.value);
+                    resetTest();
+                  }}
+                  className={cn(fieldClass, "h-11 cursor-pointer appearance-none pr-10")}
+                >
+                  {(provider?.models ?? PROVIDER_GROUPS[0].models).map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-fg-subtle" />
+              </div>
+            </div>
+          )}
 
-            {testStatus === "ok" && (
-              <div className="flex items-center gap-2 rounded-[14px] bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-200">
-                <CheckCircleOutlineIcon sx={{ fontSize: 16 }} /> Connection
-                successful! You can now save.
-              </div>
-            )}
-            {testStatus === "error" && (
-              <div className="flex items-start gap-2 rounded-[14px] bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">
-                <ErrorOutlineIcon
-                  sx={{ fontSize: 16 }}
-                  className="mt-0.5 shrink-0"
-                />
-                <span className="break-all">{testError}</span>
-              </div>
-            )}
-            {savedOk && (
-              <div className="flex items-center gap-2 rounded-[14px] bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-200">
-                <CheckCircleOutlineIcon sx={{ fontSize: 16 }} /> Config saved
-                and set as active!
-              </div>
-            )}
-          </div>
+          <Input
+            label="API key"
+            type="password"
+            icon={<KeyRound />}
+            placeholder="Paste your API key"
+            autoComplete="off"
+            value={apiKey}
+            onChange={(e) => {
+              setApiKey(e.target.value);
+              resetTest();
+            }}
+            hint={
+              provider ? (
+                <a href={provider.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+                  Get a {provider.label} API key <ExternalLink className="size-3" />
+                </a>
+              ) : undefined
+            }
+          />
 
-          <div className="flex gap-2">
-            <Button
-              variant="outlined"
-              size="small"
-              disabled={!canTest || testStatus === "testing"}
-              onClick={handleTest}
-              className="rounded-[14px]! normal-case!"
-              startIcon={
-                testStatus === "testing" ? (
-                  <CircularProgress size={14} />
-                ) : undefined
-              }
-            >
-              {testStatus === "testing" ? "Testing…" : "Test Connection"}
-            </Button>
-            <Button
-              variant="contained"
-              size="small"
-              disabled={!canSave}
-              onClick={handleSave}
-              className="rounded-[14px]! normal-case!"
-              startIcon={
-                saving ? (
-                  <CircularProgress size={14} color="inherit" />
-                ) : undefined
-              }
-            >
-              {saving ? "Saving…" : "Save Config"}
-            </Button>
+          {testStatus === "ok" && (
+            <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" role="status">
+              <CircleCheck className="size-4 shrink-0" /> Connection works — you can save now.
+            </p>
+          )}
+          {testStatus === "error" && testError && (
+            <p className="flex items-start gap-2 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300" role="alert">
+              <CircleAlert className="mt-0.5 size-4 shrink-0" />
+              <span className="break-words">{testError}</span>
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            {testStatus === "ok" ? (
+              <Button onClick={handleSave} disabled={!canSave} loading={saving}>
+                {saving ? "Saving…" : "Save & activate"}
+              </Button>
+            ) : (
+              <Button onClick={handleTest} disabled={!canTest} loading={testStatus === "testing"} icon={<PlugZap className="size-4" />}>
+                {testStatus === "testing" ? "Testing…" : "Test connection"}
+              </Button>
+            )}
+            {configs.length > 0 && (
+              <Button variant="ghost" onClick={resetForm} disabled={saving}>
+                Cancel
+              </Button>
+            )}
           </div>
         </div>
       )}
-    </div>
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Remove this AI config?"
+        message={
+          <>
+            The key <span className="font-semibold text-fg">“{pendingDelete?.keyName}”</span> will be deleted.
+            {pendingDelete?.isActive && " AI features will be off until you activate another config."}
+          </>
+        }
+        confirmLabel="Remove"
+        onConfirm={confirmDelete}
+        onClose={() => setPendingDelete(null)}
+      />
+    </section>
   );
 }

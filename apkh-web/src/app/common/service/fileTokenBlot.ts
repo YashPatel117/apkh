@@ -8,6 +8,7 @@ type FileTokenValue = {
 
 const Embed = Quill.import("blots/embed") as BlotConstructor;
 
+// Visual styling lives in globals.css (.file-token) so it follows the theme.
 export class FileTokenBlot extends Embed {
   static blotName = "fileToken";
   static tagName = "span";
@@ -20,18 +21,11 @@ export class FileTokenBlot extends Embed {
     node.setAttribute("data-name", value.name);
     node.innerText = value.name;
     node.contentEditable = "false";
-    node.style.backgroundColor = "#e0f7fa";
-    node.style.padding = "2px 6px";
-    node.style.borderRadius = "4px";
-    node.style.cursor = "pointer";
-    node.style.color = "#00796b";
 
     node.addEventListener("click", () => {
-      const fileName = node.getAttribute("data-name");
-      const fileId = node.getAttribute("data-id");
       const customEvent = new CustomEvent("file-token-click", {
         bubbles: true,
-        detail: { id: fileId, name: fileName },
+        detail: { id: node.getAttribute("data-id"), name: node.getAttribute("data-name") },
       });
       node.dispatchEvent(customEvent);
     });

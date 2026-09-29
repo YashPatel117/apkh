@@ -1,110 +1,104 @@
 "use client";
 
 import { useState } from "react";
-import { resetPassword } from "@/service/authService";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import Link from "next/link";
-import { TextField, Button } from "@mui/material";
+import axios from "axios";
+import { Lock, Mail } from "lucide-react";
+import { resetPassword } from "@/service/authService";
+import { getErrorMessage } from "@/service/axios/axios";
+import { AuthShell, FormAlert } from "../common/components/authShell";
+import { Input } from "../common/ui/Input";
+import { Button } from "../common/ui/Button";
+
+const MIN_PASSWORD = 6;
 
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  const mismatch = confirm.length > 0 && confirm !== password;
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password.length < MIN_PASSWORD) {
+      setError(`Password must be at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords don't match.");
+      return;
+    }
     setIsLoading(true);
+    setError(null);
     try {
-      await resetPassword({ email, password });
-      alert("Password reset successfully! Please login with your new password.");
-      router.push("/login");
+      await resetPassword({ email: email.trim(), password });
+      router.replace("/login?reset=1");
     } catch (err) {
-      alert("Password reset failed. Please ensure the email is correct.");
+      setError(
+        axios.isAxiosError(err) && err.response?.status === 404
+          ? "We couldn't find an account with that email."
+          : getErrorMessage(err, "Password reset failed. Please try again."),
+      );
       setIsLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 transition-colors duration-300 px-4 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-md bg-white/80 backdrop-blur-xl shadow-2xl rounded-2xl p-8 border border-white/20"
-      >
-        <div className="text-center mb-8">
-          <motion.h1 
-            initial={{ scale: 0.9 }}
-            animate={{ scale: 1 }}
-            className="text-3xl font-extrabold text-gray-800 tracking-tight"
-          >
-            Reset Password
-          </motion.h1>
-          <p className="text-gray-500 mt-2">Enter your email and new password</p>
-        </div>
-
-        <form onSubmit={handleReset} className="flex flex-col gap-5">
-          <TextField
-            label="Email Address"
-            variant="outlined"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            fullWidth
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                "& fieldset": { borderColor: "var(--color-slate-300)" },
-                "&:hover fieldset": { borderColor: "var(--color-blue-400)" },
-                "&.Mui-focused fieldset": { borderColor: "var(--color-blue-500)" },
-              },
-            }}
-          />
-          <TextField
-            label="New Password"
-            variant="outlined"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            fullWidth
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                "& fieldset": { borderColor: "var(--color-slate-300)" },
-                "&:hover fieldset": { borderColor: "var(--color-blue-400)" },
-                "&.Mui-focused fieldset": { borderColor: "var(--color-blue-500)" },
-              },
-            }}
-          />
-
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="mt-2">
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              fullWidth
-              size="large"
-              disabled={isLoading}
-              className="py-3 rounded-lg font-bold shadow-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
-            >
-              {isLoading ? "Resetting..." : "Reset Password"}
-            </Button>
-          </motion.div>
-        </form>
-
-        <div className="mt-6 text-center text-gray-500">
-          Remember your password?{" "}
-          <Link href="/login" className="text-blue-600 font-semibold hover:underline">
-            Log in
+    <AuthShell
+      title="Reset your password"
+      subtitle="Enter your account email and choose a new password."
+      footer={
+        <>
+          Remembered it?{" "}
+          <Link href="/login" className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">
+            Back to sign in
           </Link>
-        </div>
-      </motion.div>
-    </main>
+        </>
+      }
+    >
+      <form onSubmit={handleReset} className="flex flex-col gap-4">
+        {error && <FormAlert>{error}</FormAlert>}
+        <Input
+          label="Email"
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
+          icon={<Mail />}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoFocus
+        />
+        <Input
+          label="New password"
+          type="password"
+          autoComplete="new-password"
+          placeholder="At least 6 characters"
+          icon={<Lock />}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <Input
+          label="Confirm new password"
+          type="password"
+          autoComplete="new-password"
+          placeholder="Repeat the new password"
+          icon={<Lock />}
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          error={mismatch ? "Passwords don't match." : null}
+          required
+        />
+        <Button type="submit" size="lg" loading={isLoading} className="mt-2 w-full">
+          {isLoading ? "Updating…" : "Update password"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

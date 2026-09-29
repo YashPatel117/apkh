@@ -18,8 +18,14 @@ export async function profile() {
   return res.data;
 }
 
+/** Registers and signs the user in (the API returns a token on success). */
 export async function register(data: { name: string; email: string; password: string }) {
   const res = await axios.post("http://localhost:3000/auth/register", data);
+  const token = res.data?.data;
+  if (typeof token !== "string") {
+    throw new Error(res.data?.message || "Registration failed. Please check your details.");
+  }
+  localStorage.setItem("token", token);
   return res.data;
 }
 

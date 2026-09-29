@@ -1,147 +1,106 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAppDispatch } from "@/store/hook";
-import { setUser, setToken, logout } from "@/store/slices/authSlice";
-import { setNotes } from "@/store/slices/noteSlice";
-import { login, profile } from "@/service/authService";
-import { getAllNotes } from "@/service/noteService";
 import { useRouter } from "next/navigation";
-import { jwtDecode } from "jwt-decode";
-import { motion } from "framer-motion";
 import Link from "next/link";
-import { TextField, Button } from "@mui/material";
+import axios from "axios";
+import { ArrowRight, Lock, Mail } from "lucide-react";
+import { login } from "@/service/authService";
+import { getValidToken } from "@/service/session";
+import { getErrorMessage } from "@/service/axios/axios";
+import { useAppDispatch } from "@/store/hook";
+import { setToken } from "@/store/slices/authSlice";
+import { AuthShell, FormAlert } from "../common/components/authShell";
+import { Input } from "../common/ui/Input";
+import { Button } from "../common/ui/Button";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const dispatch = useAppDispatch();
   const router = useRouter();
+
+  useEffect(() => {
+    if (getValidToken()) {
+      router.replace("/notes");
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("expired")) setNotice("Your session has expired. Please sign in again.");
+    if (params.get("reset")) setNotice("Password updated. Sign in with your new password.");
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
     try {
-      const data = await login(email, password);
-      const [fetchedUser, notes] = await Promise.all([profile(), getAllNotes()]);
-      dispatch(setToken(data.data)); // "data.data" is the token
-      dispatch(setUser(fetchedUser));
-      dispatch(setNotes(notes));
-      router.push("/notes");
-    } catch {
-      alert("Login failed");
-    } finally {
+      const data = await login(email.trim(), password);
+      dispatch(setToken(data.data));
+      router.replace("/notes");
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err) && err.response?.status === 401
+          ? "Incorrect email or password."
+          : getErrorMessage(err, "Couldn't sign you in. Please try again."),
+      );
       setIsLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    dispatch(logout());
-  };
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      const decoded = jwtDecode(token);
-      const currentTime = Date.now() / 1000;
-      if (decoded.exp && decoded.exp < currentTime) handleLogout();
-      else {
-        dispatch(setToken(token));
-        router.push("/notes"); // layout will fetch user
-      }
-    }
-  }, []);
-
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 transition-colors duration-300 px-4 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-md bg-white/80 backdrop-blur-xl shadow-2xl rounded-2xl p-8 border border-white/20"
-      >
-        <div className="text-center mb-8">
-          <motion.h1 
-            initial={{ scale: 0.9 }}
-            animate={{ scale: 1 }}
-            className="text-3xl font-extrabold text-gray-800 tracking-tight"
-          >
-            Welcome Back
-          </motion.h1>
-          <p className="text-gray-500 mt-2">Log in to your account to continue</p>
-        </div>
-
-        <form onSubmit={handleLogin} className="flex flex-col gap-5">
-          <TextField
-            label="Email Address"
-            variant="outlined"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            fullWidth
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                "& fieldset": { borderColor: "var(--color-slate-300)" },
-                "&:hover fieldset": { borderColor: "var(--color-blue-400)" },
-                "&.Mui-focused fieldset": { borderColor: "var(--color-blue-500)" },
-              },
-            }}
-          />
-          <TextField
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to pick up where your knowledge left off."
+      footer={
+        <>
+          New to Knowledge Hub?{" "}
+          <Link href="/register" className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">
+            Create an account
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleLogin} className="flex flex-col gap-4" noValidate={false}>
+        {notice && !error && <FormAlert tone="info">{notice}</FormAlert>}
+        {error && <FormAlert>{error}</FormAlert>}
+        <Input
+          label="Email"
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
+          icon={<Mail />}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoFocus
+        />
+        <div className="flex flex-col gap-1.5">
+          <Input
             label="Password"
-            variant="outlined"
             type="password"
+            autoComplete="current-password"
+            placeholder="••••••••"
+            icon={<Lock />}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            fullWidth
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                "& fieldset": { borderColor: "var(--color-slate-300)" },
-                "&:hover fieldset": { borderColor: "var(--color-blue-400)" },
-                "&.Mui-focused fieldset": { borderColor: "var(--color-blue-500)" },
-              },
-            }}
           />
-
-          <div className="flex justify-end mt-[-10px]">
-            <Link 
-              href="/reset-password" 
-              className="text-sm text-blue-600 hover:underline transition-all"
-            >
-              Forgot Password?
-            </Link>
-          </div>
-
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              fullWidth
-              size="large"
-              disabled={isLoading}
-              className="py-3 rounded-lg font-bold shadow-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
-            >
-              {isLoading ? "Logging in..." : "Login"}
-            </Button>
-          </motion.div>
-        </form>
-
-        <div className="mt-6 text-center text-gray-500">
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-blue-600 font-semibold hover:underline">
-            Sign up
+          <Link
+            href="/reset-password"
+            className="self-end text-xs font-medium text-indigo-700 hover:underline dark:text-indigo-300"
+          >
+            Forgot password?
           </Link>
         </div>
-      </motion.div>
-    </main>
+        <Button type="submit" size="lg" loading={isLoading} className="mt-2 w-full">
+          {isLoading ? "Signing in…" : "Sign in"}
+          {!isLoading && <ArrowRight className="size-4" />}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

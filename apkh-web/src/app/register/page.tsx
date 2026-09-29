@@ -1,126 +1,104 @@
 "use client";
 
-import { useState } from "react";
-import { register } from "@/service/authService";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import Link from "next/link";
-import { TextField, Button } from "@mui/material";
+import { ArrowRight, Lock, Mail, User } from "lucide-react";
+import { register } from "@/service/authService";
+import { getValidToken } from "@/service/session";
+import { getErrorMessage } from "@/service/axios/axios";
+import { useAppDispatch } from "@/store/hook";
+import { setToken } from "@/store/slices/authSlice";
+import { AuthShell, FormAlert } from "../common/components/authShell";
+import { Input } from "../common/ui/Input";
+import { Button } from "../common/ui/Button";
+
+const MIN_PASSWORD = 6;
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    if (getValidToken()) router.replace("/notes");
+  }, [router]);
+
+  const passwordTooShort = password.length > 0 && password.length < MIN_PASSWORD;
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password.length < MIN_PASSWORD) {
+      setError(`Password must be at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
     setIsLoading(true);
+    setError(null);
     try {
-      await register({ name, email, password });
-      alert("Registration successful! Please login.");
-      router.push("/login");
+      const res = await register({ name: name.trim(), email: email.trim(), password });
+      dispatch(setToken(res.data));
+      router.replace("/notes");
     } catch (err) {
-      alert("Registration failed. Please check your details.");
+      setError(getErrorMessage(err, "Registration failed. Please check your details."));
       setIsLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 transition-colors duration-300 px-4 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-md bg-white/80 backdrop-blur-xl shadow-2xl rounded-2xl p-8 border border-white/20"
-      >
-        <div className="text-center mb-8">
-          <motion.h1 
-            initial={{ scale: 0.9 }}
-            animate={{ scale: 1 }}
-            className="text-3xl font-extrabold text-gray-800 tracking-tight"
-          >
-            Create an Account
-          </motion.h1>
-          <p className="text-gray-500 mt-2">Join us to manage your knowledge</p>
-        </div>
-
-        <form onSubmit={handleRegister} className="flex flex-col gap-5">
-          <TextField
-            label="Full Name"
-            variant="outlined"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            fullWidth
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                "& fieldset": { borderColor: "var(--color-slate-300)" },
-                "&:hover fieldset": { borderColor: "var(--color-blue-400)" },
-                "&.Mui-focused fieldset": { borderColor: "var(--color-blue-500)" },
-              },
-            }}
-          />
-          <TextField
-            label="Email Address"
-            variant="outlined"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            fullWidth
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                "& fieldset": { borderColor: "var(--color-slate-300)" },
-                "&:hover fieldset": { borderColor: "var(--color-blue-400)" },
-                "&.Mui-focused fieldset": { borderColor: "var(--color-blue-500)" },
-              },
-            }}
-          />
-          <TextField
-            label="Password"
-            variant="outlined"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            fullWidth
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                "& fieldset": { borderColor: "var(--color-slate-300)" },
-                "&:hover fieldset": { borderColor: "var(--color-blue-400)" },
-                "&.Mui-focused fieldset": { borderColor: "var(--color-blue-500)" },
-              },
-            }}
-          />
-
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="mt-2">
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              fullWidth
-              size="large"
-              disabled={isLoading}
-              className="py-3 rounded-lg font-bold shadow-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
-            >
-              {isLoading ? "Creating Account..." : "Sign Up"}
-            </Button>
-          </motion.div>
-        </form>
-
-        <div className="mt-6 text-center text-gray-500">
+    <AuthShell
+      title="Create your account"
+      subtitle="Start building a second brain that answers back."
+      footer={
+        <>
           Already have an account?{" "}
-          <Link href="/login" className="text-blue-600 font-semibold hover:underline">
-            Log in
+          <Link href="/login" className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">
+            Sign in
           </Link>
-        </div>
-      </motion.div>
-    </main>
+        </>
+      }
+    >
+      <form onSubmit={handleRegister} className="flex flex-col gap-4">
+        {error && <FormAlert>{error}</FormAlert>}
+        <Input
+          label="Full name"
+          autoComplete="name"
+          placeholder="Ada Lovelace"
+          icon={<User />}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          autoFocus
+        />
+        <Input
+          label="Email"
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
+          icon={<Mail />}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <Input
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          placeholder="At least 6 characters"
+          icon={<Lock />}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={passwordTooShort ? `Use at least ${MIN_PASSWORD} characters.` : null}
+          required
+        />
+        <Button type="submit" size="lg" loading={isLoading} className="mt-2 w-full">
+          {isLoading ? "Creating account…" : "Create account"}
+          {!isLoading && <ArrowRight className="size-4" />}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

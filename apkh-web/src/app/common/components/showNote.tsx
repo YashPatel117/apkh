@@ -1,108 +1,99 @@
+"use client";
+
 import React, { useEffect, useRef, useState } from "react";
-import Modal from "@mui/material/Modal";
-import Box from "@mui/material/Box";
-import { IconButton } from "@mui/material";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
-import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
-import DeleteForeverRoundedIcon from "@mui/icons-material/DeleteForeverRounded";
-import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import ReactMarkdown from "react-markdown";
+import { AtSign, ChevronDown, Clock, Paperclip, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { INote } from "../models/note";
 import FileDisplay from "./fileDisplay";
-import { modalStyle } from "../style/modal";
 import { normalizeNoteLinksInHtml } from "../service/noteLinkUtils";
 import { summarizeNote } from "@/service/noteService";
-import axios from "axios";
-import ReactMarkdown from "react-markdown";
-import { stopPropagation } from "@/core/utils";
+import { getErrorMessage } from "@/service/axios/axios";
+import { Modal } from "../ui/Modal";
+import { Tooltip } from "../ui/Tooltip";
+import { cn } from "../ui/cn";
+import { displayFileName } from "../service/fileName";
 
 const ATTACHMENT_INDEXING_PENDING_SUMMARY =
   "Attachment text is still being indexed for this note. Please try the summary again in a moment.";
 
+const PREVIEW_MAX_HEIGHT = 168; // px
+
 interface NoteProps {
   note: INote;
-  lineLength?: number;
+  index?: number;
   selected?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
-  toggleSelect?: () => void;
+  onToggleSelect?: () => void;
 }
 
-export const ShowNote: React.FC<NoteProps> = ({
-  note,
-  lineLength = 3,
-  selected = false,
-  onEdit,
-  onDelete,
-  toggleSelect,
-}) => {
-  const [showLinesNumber, setShowLinesNumber] = useState<number | null>(lineLength);
+const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+function IconAction({
+  label,
+  onClick,
+  active,
+  danger,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={active}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        className={cn(
+          "flex size-8 cursor-pointer items-center justify-center rounded-lg transition-colors [&>svg]:size-4",
+          active
+            ? "bg-accent-soft text-accent"
+            : danger
+              ? "text-fg-subtle hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+              : "text-fg-subtle hover:bg-surface-2 hover:text-fg",
+        )}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}
+
+export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = false, onEdit, onDelete, onToggleSelect }) => {
+  const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
-  const [openFile, setOpenFile] = useState(false);
-  const [fileName, setFileName] = useState("");
+  const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryText, setSummaryText] = useState("");
   const [summaryError, setSummaryError] = useState("");
-  const [summaryMeta, setSummaryMeta] = useState<{
-    cached: boolean;
-    model: string | null;
-    generatedAt: string | null;
-  } | null>(null);
+  const [summaryMeta, setSummaryMeta] = useState<{ cached: boolean; model: string | null; generatedAt: string | null } | null>(null);
 
   const contentRef = useRef<HTMLDivElement>(null);
-  const isCollapsed = Boolean(showLinesNumber);
-  const previewMaxHeight = `${Math.max(lineLength * 2.65, 8.75)}rem`;
   const categoryLabel = note.category?.trim() || "Uncategorized";
   const attachmentCount = note.files.length;
   const normalizedContent = normalizeNoteLinksInHtml(note.content);
-  const updatedLabel = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(note.updatedAt));
-  const summaryGeneratedLabel = summaryMeta?.generatedAt
-    ? new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(summaryMeta.generatedAt))
-    : "";
+  const hasContent = Boolean(note.content?.replace(/<[^>]+>/g, "").trim()) || note.content?.includes("file-token");
+  const summaryPending = summaryText.trim() === ATTACHMENT_INDEXING_PENDING_SUMMARY;
 
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-
-    const measure = () => {
-      setIsTruncated(el.scrollHeight > el.clientHeight + 4);
-    };
-
-    requestAnimationFrame(measure);
-
+    const measure = () => setIsTruncated(el.scrollHeight > PREVIEW_MAX_HEIGHT + 4);
+    measure();
     if (typeof ResizeObserver === "undefined") return;
-
     const observer = new ResizeObserver(measure);
     observer.observe(el);
-
     return () => observer.disconnect();
-  }, [lineLength, normalizedContent, showLinesNumber]);
-
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const token = target.closest(".file-token") as HTMLElement | null;
-      if (token && token.dataset.id) {
-        setOpenFile(true);
-        setFileName(token.dataset.id);
-      }
-    };
-
-    const current = contentRef.current;
-    current?.addEventListener("click", handleClick);
-
-    return () => {
-      current?.removeEventListener("click", handleClick);
-    };
-  }, []);
+  }, [normalizedContent]);
 
   useEffect(() => {
     setSummaryOpen(false);
@@ -112,180 +103,196 @@ export const ShowNote: React.FC<NoteProps> = ({
     setSummaryMeta(null);
   }, [note.id, note.updatedAt]);
 
-  const getSummaryErrorMessage = (error: unknown) => {
-    if (axios.isAxiosError(error)) {
-      const apiMessage =
-        error.response?.data?.message ?? error.response?.data?.detail;
-      if (typeof apiMessage === "string" && apiMessage.trim()) {
-        return apiMessage;
-      }
-    }
-
-    if (error instanceof Error && error.message.trim()) {
-      return error.message;
-    }
-
-    return "Couldn't generate the summary right now.";
-  };
-
-  const handleSummaryClick = async () => {
-    const shouldRefreshPendingSummary =
-      summaryText.trim() === ATTACHMENT_INDEXING_PENDING_SUMMARY;
-
-    if (summaryOpen && (summaryText || summaryError) && !shouldRefreshPendingSummary) {
-      setSummaryOpen(false);
-      return;
-    }
-
-    setSummaryOpen(true);
-
-    if ((summaryText && !shouldRefreshPendingSummary) || summaryLoading) {
-      return;
-    }
-
-    if (shouldRefreshPendingSummary) {
-      setSummaryText("");
-      setSummaryMeta(null);
-    }
-
+  const loadSummary = async () => {
     setSummaryLoading(true);
     setSummaryError("");
-
+    setSummaryText("");
+    setSummaryMeta(null);
     try {
       const response = await summarizeNote(note.id);
       setSummaryText(response.summary);
-      setSummaryMeta({
-        cached: response.cached,
-        model: response.model,
-        generatedAt: response.generatedAt,
-      });
+      setSummaryMeta({ cached: response.cached, model: response.model, generatedAt: response.generatedAt });
     } catch (error) {
-      setSummaryError(getSummaryErrorMessage(error));
+      setSummaryError(getErrorMessage(error, "Couldn't generate the summary right now."));
     } finally {
       setSummaryLoading(false);
     }
   };
 
+  const handleSummaryClick = () => {
+    if (summaryOpen && !summaryPending) {
+      setSummaryOpen(false);
+      return;
+    }
+    setSummaryOpen(true);
+    if (summaryLoading) return;
+    if (!summaryText || summaryPending || summaryError) void loadSummary();
+  };
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      onToggleSelect?.();
+      return;
+    }
+    // Don't hijack text selection or link clicks.
+    if (window.getSelection()?.toString()) return;
+    onEdit?.();
+  };
+
+  const handleContentClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const token = target.closest<HTMLElement>(".file-token");
+    if (token?.dataset.id) {
+      e.stopPropagation();
+      setPreviewFile(token.dataset.id);
+      return;
+    }
+    if (target.closest("a")) e.stopPropagation();
+  };
+
   return (
     <>
-      <article className="group mb-5 cursor-pointer break-inside-avoid overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(140deg,_rgba(255,255,255,0.95),_rgba(240,249,255,0.95)_58%,_rgba(239,246,255,0.92)_100%)] p-[1px] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_70px_-38px_rgba(2,132,199,0.35)]"
-        onClick={(e) => {
-          if (e.defaultPrevented) return;
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            toggleSelect?.();
-            return;
-          }
-          onEdit?.();
-        }}>
-        <div className={`rounded-[27px] p-4 sm:p-5 transition-colors duration-200 ${selected ? "bg-[linear-gradient(140deg,_rgba(224,242,254,0.95),_rgba(186,230,253,0.95)_58%,_rgba(125,211,252,0.92)_100%)]" : "bg-white/92"}`}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700 ring-1 ring-sky-100">
-                  {categoryLabel}
-                </span>
-                {attachmentCount > 0 && (
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
-                    {attachmentCount} attachment{attachmentCount === 1 ? "" : "s"}
-                  </span>
-                )}
-              </div>
-              <h2 className="mt-3 break-words text-lg font-semibold tracking-tight text-slate-900">
-                {note.title || "Untitled note"}
-              </h2>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200/80 bg-white/90 p-1 shadow-sm">
-              <IconButton
-                onClick={stopPropagation(handleSummaryClick)}
-                className="p-1.5!"
-                size="small"
-                aria-label={`${summaryOpen ? "Hide" : "Show"} summary for ${note.title || "note"}`}
-              >
-                <AutoAwesomeRoundedIcon fontSize="small" />
-              </IconButton>
-              <IconButton
-                onClick={stopPropagation(onDelete)}
-                className="p-1.5!"
-                size="small"
-                aria-label={`Delete ${note.title || "note"}`}
-              >
-                <DeleteForeverRoundedIcon fontSize="small" />
-              </IconButton>
-            </div>
+      <article
+        className={cn(
+          "group relative mb-4 animate-rise cursor-pointer break-inside-avoid rounded-3xl border bg-surface p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/5",
+          selected
+            ? "border-indigo-300 ring-4 ring-indigo-500/15 dark:border-indigo-400/50"
+            : "border-line hover:border-indigo-200 dark:hover:border-indigo-400/30",
+        )}
+        style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
+        onClick={handleCardClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.target === e.currentTarget) onEdit?.();
+        }}
+        tabIndex={0}
+        aria-label={`Open note ${note.title || "Untitled note"}`}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="max-w-full truncate rounded-md bg-accent-soft px-2 py-0.5 text-[0.7rem] font-semibold text-accent-fg">
+              {categoryLabel}
+            </span>
+            {attachmentCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-0.5 text-[0.7rem] font-medium text-fg-muted">
+                <Paperclip className="size-3" />
+                {attachmentCount}
+              </span>
+            )}
           </div>
+          <div
+            className={cn(
+              "-mt-1 -mr-1 flex shrink-0 items-center gap-0.5 transition-opacity",
+              !selected && !summaryOpen && "sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100",
+            )}
+          >
+            <IconAction label={selected ? "Unpin from AI question" : "Pin for AI question"} active={selected} onClick={() => onToggleSelect?.()}>
+              <AtSign />
+            </IconAction>
+            <IconAction label={summaryOpen ? "Hide AI summary" : "AI summary"} active={summaryOpen} onClick={handleSummaryClick}>
+              <Sparkles />
+            </IconAction>
+            <IconAction label="Delete note" danger onClick={() => onDelete?.()}>
+              <Trash2 />
+            </IconAction>
+          </div>
+        </div>
 
-          <div className="mt-4 rounded-[22px] border border-slate-100 bg-slate-50/90 px-4 py-3 shadow-inner">
+        <h2 className="mt-3 text-[1.05rem] leading-snug font-semibold tracking-tight break-words text-fg">
+          {note.title || "Untitled note"}
+        </h2>
+
+        {/* Content preview */}
+        {hasContent && (
+          <div className="relative mt-2.5">
             <div
               ref={contentRef}
-              className="note-rich-content text-sm"
-              data-collapsed={isCollapsed && isTruncated}
-              style={isCollapsed ? { maxHeight: previewMaxHeight } : undefined}
+              onClick={handleContentClick}
+              className={cn(
+                "rich-content overflow-hidden text-sm",
+                !expanded && isTruncated && "[mask-image:linear-gradient(to_bottom,black_65%,transparent)]",
+              )}
+              style={!expanded ? { maxHeight: PREVIEW_MAX_HEIGHT } : undefined}
               dangerouslySetInnerHTML={{ __html: normalizedContent }}
             />
           </div>
+        )}
 
-          {summaryOpen && (
-            <section className="mt-4 rounded-[22px] border border-amber-100 bg-[linear-gradient(140deg,_rgba(255,251,235,0.95),_rgba(255,255,255,0.98))] px-4 py-3 shadow-inner">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800 ring-1 ring-amber-200">
-                  AI Summary
-                </span>
-                {summaryMeta && (
-                  <span className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
-                    {summaryMeta.cached ? "From cache" : "Freshly generated"}
-                    {summaryMeta.model ? ` | ${summaryMeta.model}` : ""}
-                    {summaryGeneratedLabel ? ` | ${summaryGeneratedLabel}` : ""}
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-3 text-sm leading-6 text-slate-700">
-                {summaryLoading && (
-                  <p className="text-slate-500">Generating summary...</p>
-                )}
-
-                {!summaryLoading && summaryError && (
-                  <p className="text-rose-600">{summaryError}</p>
-                )}
-
-                {!summaryLoading && !summaryError && summaryText && (
-                  <div className="prose">
-                    <ReactMarkdown>{summaryText}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 ring-1 ring-slate-200">
-                <AccessTimeRoundedIcon sx={{ fontSize: 14 }} />
-                Updated {updatedLabel}
+        {/* AI summary */}
+        {summaryOpen && (
+          <section
+            onClick={(e) => e.stopPropagation()}
+            className="mt-4 animate-fade-in cursor-default rounded-2xl border border-indigo-100 bg-linear-to-br from-blue-50/80 via-indigo-50/80 to-violet-50/80 p-4 dark:border-indigo-400/20 dark:from-blue-500/10 dark:via-indigo-500/10 dark:to-violet-500/10"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-fg">
+                <Sparkles className="size-3.5" /> AI summary
               </span>
+              {(summaryMeta || summaryError || summaryPending) && !summaryLoading && (
+                <button
+                  type="button"
+                  onClick={() => void loadSummary()}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.7rem] font-medium text-fg-subtle hover:bg-surface/70 hover:text-fg"
+                  aria-label="Refresh summary"
+                >
+                  <RefreshCw className="size-3" />
+                  Refresh
+                </button>
+              )}
             </div>
 
-            {lineLength && (isTruncated || !isCollapsed) && (
-              <button
-                type="button"
-                onClick={stopPropagation(() =>
-                  setShowLinesNumber(showLinesNumber === lineLength ? null : lineLength)
-                )}
-                className="rounded-full border border-sky-100 bg-sky-50 px-3.5 py-1.5 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100"
-              >
-                {showLinesNumber === lineLength ? "See more" : "See less"}
-              </button>
-            )}
-          </div>
-        </div>
-      </article >
+            <div className="mt-2 text-sm leading-relaxed">
+              {summaryLoading && (
+                <div className="space-y-2" aria-live="polite" aria-label="Generating summary">
+                  {[100, 90, 70].map((w) => (
+                    <div key={w} className="h-3 animate-pulse rounded-full bg-indigo-200/50 dark:bg-indigo-400/15" style={{ width: `${w}%` }} />
+                  ))}
+                </div>
+              )}
+              {!summaryLoading && summaryError && <p className="text-rose-600 dark:text-rose-400">{summaryError}</p>}
+              {!summaryLoading && !summaryError && summaryText && (
+                <div className="rich-content text-sm text-fg">
+                  <ReactMarkdown>{summaryText}</ReactMarkdown>
+                </div>
+              )}
+            </div>
 
-      <Modal open={openFile} onClose={() => setOpenFile(false)}>
-        <Box sx={modalStyle()}>
-          <FileDisplay fileName={fileName} noteId={note.id} />
-        </Box>
+            {summaryMeta && !summaryLoading && (
+              <p className="mt-3 text-[0.7rem] text-fg-subtle">
+                {summaryMeta.cached ? "Cached" : "Fresh"}
+                {summaryMeta.model ? ` · ${summaryMeta.model}` : ""}
+                {summaryMeta.generatedAt ? ` · ${dateFormat.format(new Date(summaryMeta.generatedAt))}` : ""}
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* Footer */}
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5 text-xs text-fg-subtle">
+            <Clock className="size-3.5" />
+            {dateFormat.format(new Date(note.updatedAt))}
+          </span>
+          {isTruncated && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((v) => !v);
+              }}
+              aria-expanded={expanded}
+              className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft"
+            >
+              {expanded ? "Show less" : "Show more"}
+              <ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
+            </button>
+          )}
+        </div>
+      </article>
+
+      <Modal open={Boolean(previewFile)} onClose={() => setPreviewFile(null)} title={previewFile ? displayFileName(previewFile) : ""} size="xl">
+        {previewFile && <FileDisplay fileName={previewFile} noteId={note.id} />}
       </Modal>
     </>
   );

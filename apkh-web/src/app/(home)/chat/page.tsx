@@ -1,347 +1,318 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useAppDispatch, useAppSelector } from "@/store/hook";
-import { 
-    getChatMessages, 
-    sendChatMessage, 
-    deleteChatSession,
-    IChatMessage
-} from "@/service/chatService";
-import { 
-    setActiveSession, 
-    setMessages, 
-    addMessage, 
-    removeSession,
-    updateSessionTime
-} from "@/store/slices/chatSlice";
-import { CircularProgress, IconButton, Menu, MenuItem } from "@mui/material";
-import AddIcon from '@mui/icons-material/Add';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import SendIcon from '@mui/icons-material/Send';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
+import { ArrowLeft, ArrowUp, MessagesSquare, Search, Trash2 } from "lucide-react";
+import { useAppDispatch, useAppSelector } from "@/store/hook";
+import { getChatMessages, sendChatMessage, deleteChatSession, IChatMessage, IChatSession } from "@/service/chatService";
+import { getErrorMessage } from "@/service/axios/axios";
+import {
+  setActiveSession,
+  setMessages,
+  addMessage,
+  removeMessage,
+  removeSession,
+  updateSessionTime,
+} from "@/store/slices/chatSlice";
+import { useNotes } from "@/app/common/context/notesContext";
+import { Avatar } from "@/app/common/components/sidebar";
+import { LogoMark } from "@/app/common/ui/Logo";
+import { Button } from "@/app/common/ui/Button";
+import { Spinner } from "@/app/common/ui/Spinner";
+import { ConfirmDialog } from "@/app/common/ui/ConfirmDialog";
+import { useToast } from "@/app/common/ui/Toast";
+import { cn } from "@/app/common/ui/cn";
+
+const dayFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
 export default function ChatPage() {
   const dispatch = useAppDispatch();
-  const { sessions, activeSessionId, messages, isLoading } = useAppSelector((state) => state.chat);
-  
+  const { sessions, activeSessionId, messages } = useAppSelector((state) => state.chat);
+  const user = useAppSelector((state) => state.auth.user);
+  const { focusSearch } = useNotes();
+  const toast = useToast();
+
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [fetchingMessages, setFetchingMessages] = useState(false);
+  const [mobileShowList, setMobileShowList] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<IChatSession | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const activeRef = useRef(activeSessionId);
+  activeRef.current = activeSessionId;
 
-  // Read session ID from URL on mount
+  const currentSession = sessions.find((s) => s.id === activeSessionId);
+
+  // Pick the most recent conversation if none is selected (or the selected one vanished).
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionParam = urlParams.get("session");
-    if (sessionParam && sessionParam !== activeSessionId) {
-      dispatch(setActiveSession(sessionParam));
-      // Remove query param to clean URL without reloading route
-      window.history.replaceState({}, '', '/chat');
+    if (sessions.length && (!activeSessionId || !currentSession)) {
+      dispatch(setActiveSession(sessions[0].id));
     }
-  }, [dispatch, activeSessionId]);
+  }, [sessions, activeSessionId, currentSession, dispatch]);
 
-  // Load messages when active session changes
+  // Load messages when the active session changes.
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      if (activeSessionId) {
-        setFetchingMessages(true);
-        try {
-          const fetchedMessages = await getChatMessages(activeSessionId);
-          if (mounted) {
-            dispatch(setMessages(fetchedMessages));
-          }
-        } catch (err) {
-          console.error("Failed to fetch messages for session", activeSessionId);
-        } finally {
-          if (mounted) setFetchingMessages(false);
-        }
-      } else {
-        if (mounted) dispatch(setMessages([]));
-      }
-    })();
-    return () => { mounted = false; };
-  }, [activeSessionId, dispatch]);
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: "smooth"
-      });
+    if (!activeSessionId) {
+      dispatch(setMessages([]));
+      return;
     }
+    setFetchingMessages(true);
+    dispatch(setMessages([]));
+    getChatMessages(activeSessionId)
+      .then((fetched) => mounted && dispatch(setMessages(fetched)))
+      .catch((err) => mounted && toast(getErrorMessage(err, "Couldn't load this conversation."), "error"))
+      .finally(() => mounted && setFetchingMessages(false));
+    return () => {
+      mounted = false;
+    };
+  }, [activeSessionId, dispatch, toast]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, isSending]);
 
+  // Auto-grow the composer.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, [inputValue]);
+
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || !activeSessionId || isSending) return;
-    
     const content = inputValue.trim();
+    if (!content || !activeSessionId || isSending) return;
+    const sessionId = activeSessionId;
     setInputValue("");
-    
-    // Optimistic UI for user message
+
     const tempId = `temp-${Date.now()}`;
-    const userMsg: IChatMessage = {
-        id: tempId,
-        sessionId: activeSessionId,
-        role: 'user',
-        content,
-        createdAt: new Date().toISOString()
-    };
-    dispatch(addMessage(userMsg));
-    
+    dispatch(addMessage({ id: tempId, sessionId, role: "user", content, createdAt: new Date().toISOString() }));
+
     setIsSending(true);
     try {
-        const response = await sendChatMessage(activeSessionId, content);
-        
-        // Dispatch actual answer
-        const aiMsg: IChatMessage = {
-            id: `ai-${Date.now()}`, // Temporary id for UI, db has correct one but not returned to save roundtrips
-            sessionId: activeSessionId,
-            role: 'assistant',
-            content: response.answer,
-            createdAt: new Date().toISOString()
-        };
-        dispatch(addMessage(aiMsg));
-        dispatch(updateSessionTime(activeSessionId));
+      const response = await sendChatMessage(sessionId, content);
+      dispatch(updateSessionTime(sessionId));
+      // Only append if the user is still looking at this conversation.
+      if (activeRef.current === sessionId) {
+        dispatch(
+          addMessage({ id: `ai-${Date.now()}`, sessionId, role: "assistant", content: response.answer, createdAt: new Date().toISOString() }),
+        );
+      }
     } catch (err) {
-        console.error("Failed to send message", err);
-        // Remove optimistic message or show error...
+      dispatch(removeMessage(tempId));
+      setInputValue((v) => v || content);
+      toast(getErrorMessage(err, "Message failed to send."), "error");
     } finally {
-        setIsSending(false);
+      setIsSending(false);
+      textareaRef.current?.focus();
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    try {
+      await deleteChatSession(pendingDelete.id);
+      dispatch(removeSession(pendingDelete.id));
+      toast("Conversation deleted.", "success");
+    } catch (err) {
+      toast(getErrorMessage(err, "Couldn't delete the conversation."), "error");
+      throw err;
     }
   };
 
-  const handleNewSession = () => {
-     // A "New Session" is really just navigating to home to start an AI search which creates a session,
-     // OR we could build a placeholder. Given the instructions, we can just redirect to Home for a new search.
-     window.location.href = "/";
+  const selectSession = (id: string) => {
+    dispatch(setActiveSession(id));
+    setMobileShowList(false);
   };
 
-  const currentSession = sessions.find(s => s.id === activeSessionId);
+  if (sessions.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="max-w-sm animate-rise text-center">
+          <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+            <MessagesSquare className="size-6" />
+          </span>
+          <h1 className="mt-5 text-xl font-bold tracking-tight text-fg">No conversations yet</h1>
+          <p className="mt-2 text-sm leading-relaxed text-fg-muted">
+            Ask AI a question from the search bar, then choose <span className="font-semibold text-fg">Continue this conversation</span>{" "}
+            to keep chatting here with full context.
+          </p>
+          <Button className="mt-6" onClick={focusSearch} icon={<Search className="size-4" />}>
+            Ask a question
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden bg-slate-50/50">
-      {/* Sidebar */}
-      <div className="flex w-80 flex-col border-r border-slate-200 bg-white/60">
-        <div className="flex items-center justify-between border-b border-slate-100 p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">History</h2>
-          <button 
-            onClick={handleNewSession}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-50 text-sky-600 transition hover:bg-sky-100"
-            title="Start new search at Home"
-          >
-            <AddIcon fontSize="small" />
-          </button>
+    <div className="flex h-full min-h-0">
+      {/* Session list */}
+      <aside
+        className={cn(
+          "min-h-0 w-full shrink-0 flex-col border-r border-line bg-surface/60 md:flex md:w-72",
+          mobileShowList ? "flex" : "hidden",
+        )}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between px-4">
+          <h2 className="text-sm font-semibold text-fg">Conversations</h2>
+          <span className="text-xs text-fg-subtle tabular-nums">{sessions.length}</span>
         </div>
-        <div className="flex-1 overflow-y-auto p-3">
-          {sessions.length === 0 ? (
-            <div className="mt-8 text-center text-sm text-slate-500">
-              No chat history yet.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {sessions.map((session) => (
-                <SessionItem 
-                  key={session.id} 
-                  session={session} 
-                  isActive={activeSessionId === session.id} 
-                  onClick={() => dispatch(setActiveSession(session.id))}
-                  onDelete={async () => {
-                    await deleteChatSession(session.id);
-                    dispatch(removeSession(session.id));
-                  }}
-                />
-              ))}
-            </div>
+        <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+          {sessions.map((session) => {
+            const active = session.id === activeSessionId;
+            return (
+              <li key={session.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => selectSession(session.id)}
+                  aria-current={active ? "true" : undefined}
+                  className={cn(
+                    "flex w-full cursor-pointer flex-col rounded-xl py-2.5 pr-10 pl-3 text-left transition-colors",
+                    active ? "bg-accent-soft" : "hover:bg-surface-2",
+                  )}
+                >
+                  <span className={cn("truncate text-sm font-medium", active ? "text-accent-fg" : "text-fg")}>
+                    {session.title || "New chat"}
+                  </span>
+                  <span className="mt-0.5 text-xs text-fg-subtle">
+                    {dayFormat.format(new Date(session.updatedAt))} · {session.messageCount} messages
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingDelete(session)}
+                  className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-fg-subtle opacity-100 transition hover:bg-rose-50 hover:text-rose-600 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                  aria-label={`Delete conversation ${session.title}`}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </aside>
+
+      {/* Conversation */}
+      <section className={cn("min-h-0 min-w-0 flex-1 flex-col", mobileShowList ? "hidden md:flex" : "flex")}>
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface/60 px-3 backdrop-blur sm:px-5">
+          <button
+            type="button"
+            onClick={() => setMobileShowList(true)}
+            className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 md:hidden"
+            aria-label="Back to conversations"
+          >
+            <ArrowLeft className="size-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-semibold text-fg">{currentSession?.title || "Conversation"}</h1>
+            <p className="text-xs text-fg-subtle">{messages.length} messages · grounded in your notes</p>
+          </div>
+          {currentSession && (
+            <Button size="icon-sm" variant="ghost" onClick={() => setPendingDelete(currentSession)} aria-label="Delete conversation">
+              <Trash2 className="size-4" />
+            </Button>
           )}
         </div>
-      </div>
 
-      {/* Main Chat Area */}
-      <div className="flex flex-1 flex-col bg-white/40">
-        {activeSessionId ? (
-          <>
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 px-6 py-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500">
-                  <AutoAwesomeIcon fontSize="small" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-slate-800">{currentSession?.title || "Conversation"}</h3>
-                  <p className="text-xs text-slate-500">{currentSession?.messageCount} messages</p>
-                </div>
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6">
+            {fetchingMessages ? (
+              <div className="flex justify-center py-16 text-fg-subtle">
+                <Spinner />
               </div>
-            </div>
-
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-6 py-8" ref={scrollRef}>
-              {fetchingMessages ? (
-                <div className="flex h-full items-center justify-center">
-                  <CircularProgress size={30} className="text-sky-500" />
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
-                    <AutoAwesomeIcon className="mb-4 text-slate-300" style={{ fontSize: 48 }} />
-                    <p className="text-lg font-medium text-slate-600">Start the conversation</p>
-                    <p className="text-sm">Your messages are powered by your knowledge base.</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-6">
-                  {messages.map((msg, idx) => (
-                    <MessageBubble key={msg.id || idx} message={msg} />
+            ) : (
+              messages.map((msg, idx) => <MessageBubble key={msg.id || idx} message={msg} userName={user?.name ?? ""} />)
+            )}
+            {isSending && (
+              <div className="flex items-start gap-3">
+                <LogoMark size={32} className="mt-0.5 rounded-full" />
+                <div className="flex gap-1.5 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3.5" aria-label="Assistant is typing">
+                  {[0, 150, 300].map((d) => (
+                    <span key={d} className="size-2 animate-bounce rounded-full bg-fg-subtle" style={{ animationDelay: `${d}ms` }} />
                   ))}
-                  {isSending && (
-                    <div className="flex w-full justify-start">
-                      <div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-white p-4 shadow-sm ring-1 ring-slate-100">
-                        <div className="flex gap-1.5">
-                            <span className="h-2 w-2 animate-bounce rounded-full bg-slate-300"></span>
-                            <span className="h-2 w-2 animate-bounce rounded-full bg-slate-300" style={{ animationDelay: "150ms" }}></span>
-                            <span className="h-2 w-2 animate-bounce rounded-full bg-slate-300" style={{ animationDelay: "300ms" }}></span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              )}
-            </div>
-
-            {/* Input Area */}
-            <div className="border-t border-slate-200/60 bg-white/80 p-4 pb-6 px-6">
-              <div className="mx-auto flex max-w-4xl items-end gap-3 rounded-[24px] bg-white p-2 pl-4 shadow-sm ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-sky-500">
-                <textarea
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask a follow-up question..."
-                  className="max-h-32 min-h-[44px] w-full resize-none bg-transparent py-3 text-[15px] outline-none"
-                  rows={Math.min(4, inputValue.split('\n').length)}
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={!inputValue.trim() || isSending}
-                  className="mb-1 mr-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white transition disabled:bg-slate-200 disabled:text-slate-400"
-                >
-                  <SendIcon fontSize="small" className={inputValue.trim() ? "translate-x-0.5" : ""} />
-                </button>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
+
+        <div className="shrink-0 border-t border-line bg-surface/60 px-3 py-3 backdrop-blur sm:px-6 sm:py-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSendMessage();
+            }}
+            className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-line bg-surface p-2 pl-4 shadow-sm transition focus-within:border-accent focus-within:ring-4 focus-within:ring-indigo-500/15"
+          >
+            <textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSendMessage();
+                }
+              }}
+              placeholder="Ask a follow-up question…"
+              rows={1}
+              aria-label="Message"
+              className="max-h-44 min-h-10 flex-1 resize-none bg-transparent py-2 text-[0.95rem] text-fg outline-none placeholder:text-fg-subtle focus-visible:outline-none"
+            />
+            <Button type="submit" size="icon" disabled={!inputValue.trim() || isSending} aria-label="Send message">
+              <ArrowUp className="size-5" />
+            </Button>
+          </form>
+          <p className="mt-2 text-center text-[0.7rem] text-fg-subtle">
+            Enter to send · Shift + Enter for a new line
+          </p>
+        </div>
+      </section>
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete this conversation?"
+        message={
+          <>
+            <span className="font-semibold text-fg">“{pendingDelete?.title || "New chat"}”</span> and all its messages will be
+            permanently removed.
           </>
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center bg-slate-50/50">
-            <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-                <AutoAwesomeIcon className="mb-4 text-sky-400" style={{ fontSize: 40 }} />
-                <h3 className="text-xl font-semibold text-slate-800">Your Chat History</h3>
-                <p className="mt-2 text-slate-500 max-w-sm">
-                    Select a conversation from the sidebar to pick up right where you left off, or start a new search from the home page.
-                </p>
-                <button 
-                  onClick={handleNewSession}
-                  className="mt-6 rounded-full bg-sky-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-sky-700"
-                >
-                  Start New Search
-                </button>
-            </div>
-          </div>
-        )}
-      </div>
+        }
+        onConfirm={confirmDelete}
+        onClose={() => setPendingDelete(null)}
+      />
     </div>
   );
 }
 
-// --- Subcomponents ---
+function MessageBubble({ message, userName }: { message: IChatMessage; userName: string }) {
+  const isUser = message.role === "user";
 
-function SessionItem({ session, isActive, onClick, onDelete }: { session: any, isActive: boolean, onClick: () => void, onDelete: () => void }) {
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-
-  const handleMenuClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = (event?: React.MouseEvent) => {
-    if(event) event.stopPropagation();
-    setAnchorEl(null);
-  };
-
-  const handleDelete = (event: React.MouseEvent) => {
-    event.stopPropagation();
-    handleClose();
-    onDelete();
-  };
-
-  const formattedDate = new Intl.DateTimeFormat('en-US', {
-    month: 'short', day: 'numeric'
-  }).format(new Date(session.updatedAt));
+  if (isUser) {
+    return (
+      <div className="flex items-start justify-end gap-3">
+        <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-linear-to-br from-blue-600 via-indigo-600 to-violet-600 px-4 py-3 text-white shadow-md shadow-indigo-500/15 sm:max-w-[75%]">
+          <p className="text-[0.95rem] leading-relaxed whitespace-pre-wrap">{message.content}</p>
+        </div>
+        <span className="hidden sm:block">
+          <Avatar name={userName || "You"} size="sm" />
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div 
-      onClick={onClick}
-      className={`group relative flex cursor-pointer items-center justify-between rounded-xl p-3 pr-2 transition ${
-        isActive ? 'bg-sky-50 ring-1 ring-sky-200' : 'hover:bg-slate-100'
-      }`}
-    >
-      <div className="min-w-0 flex-1">
-        <h4 className={`truncate text-sm font-medium ${isActive ? 'text-sky-900' : 'text-slate-700'}`}>
-          {session.title || "New Chat"}
-        </h4>
-        <p className="mt-0.5 truncate text-xs text-slate-400">{formattedDate}</p>
-      </div>
-      
-      <div className={`opacity-0 transition group-hover:opacity-100 ${anchorEl ? 'opacity-100' : ''}`}>
-        <IconButton size="small" onClick={handleMenuClick} className="text-slate-400 hover:text-slate-600">
-          <MoreVertIcon fontSize="small" style={{ fontSize: 18 }} />
-        </IconButton>
-      </div>
-
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={handleClose}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-        PaperProps={{
-          style: { borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.08)', border: '1px solid #f1f5f9' },
-        }}
-      >
-        <MenuItem onClick={handleDelete} className="text-red-500 hover:bg-red-50 gap-2 px-4 py-2">
-          <DeleteOutlineIcon fontSize="small" /> <span className="text-sm font-medium">Delete</span>
-        </MenuItem>
-      </Menu>
-    </div>
-  );
-}
-
-function MessageBubble({ message }: { message: IChatMessage }) {
-  const isUser = message.role === 'user';
-  
-  return (
-    <div className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div 
-        className={`max-w-[85%] sm:max-w-[75%] px-5 py-4 ${
-          isUser 
-            ? 'rounded-[22px] rounded-tr-sm bg-sky-600/95 text-white shadow-sm'
-            : 'rounded-[22px] rounded-tl-sm bg-white text-slate-800 shadow-sm ring-1 ring-slate-100/50'
-        }`}
-      >
-        {isUser ? (
-          <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{message.content}</p>
-        ) : (
-          <div className="note-rich-content">
-            <Markdown>{message.content}</Markdown>
-          </div>
-        )}
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 hidden sm:block">
+        <LogoMark size={32} className="rounded-full" />
+      </span>
+      <div className="min-w-0 max-w-full flex-1 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 sm:max-w-[85%] sm:flex-none">
+        <div className="rich-content text-fg">
+          <Markdown>{message.content}</Markdown>
+        </div>
       </div>
     </div>
   );

@@ -1,212 +1,107 @@
 "use client";
 
+import Link from "next/link";
+import { Coins, Cpu, FolderOpen, Mail, MessagesSquare, NotebookText, Paperclip, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useAppSelector } from "@/store/hook";
-import Button from "@mui/material/Button";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import EmailRoundedIcon from "@mui/icons-material/EmailRounded";
-import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
-import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
-import StickyNote2OutlinedIcon from "@mui/icons-material/StickyNote2Outlined";
-import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
-import TokenOutlinedIcon from "@mui/icons-material/TokenOutlined";
-import { useRouter } from "next/navigation";
+import { Avatar } from "@/app/common/components/sidebar";
+import { ThemeSwitch } from "@/app/common/ui/theme";
 import LlmSettingsCard from "./LlmSettingsCard";
 
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
-
-function getPlanTone(type: string) {
-  const normalized = type.toLowerCase();
-
-  if (normalized.includes("pro") || normalized.includes("premium")) {
-    return "bg-amber-50 text-amber-700 ring-amber-200";
-  }
-
-  if (normalized.includes("admin")) {
-    return "bg-rose-50 text-rose-700 ring-rose-200";
-  }
-
-  return "bg-sky-50 text-sky-700 ring-sky-200";
+function Stat({ Icon, label, value, href }: { Icon: typeof Coins; label: string; value: string | number; href?: string }) {
+  const body = (
+    <>
+      <span className="flex size-10 items-center justify-center rounded-xl bg-accent-soft text-accent">
+        <Icon className="size-[1.1rem]" />
+      </span>
+      <p className="mt-4 text-2xl font-bold tracking-tight text-fg tabular-nums">{value}</p>
+      <p className="mt-0.5 text-sm text-fg-muted">{label}</p>
+    </>
+  );
+  const cls = "rounded-3xl border border-line bg-surface p-5 transition-colors";
+  return href ? (
+    <Link href={href} className={`${cls} hover:border-indigo-200 dark:hover:border-indigo-400/30`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={cls}>{body}</div>
+  );
 }
 
 export default function ProfilePage() {
   const { user } = useAppSelector((state) => state.auth);
   const { notes } = useAppSelector((state) => state.note);
-  const router = useRouter();
+  const sessionsCount = useAppSelector((state) => state.chat.sessions.length);
 
-  if (!user) {
-    return (
-      <main className="p-4 sm:px-6 sm:pb-8">
-        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white/85 p-6 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
-            Profile
-          </p>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
-            Loading your profile
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Your account details will appear here in a moment.
-          </p>
-        </div>
-      </main>
-    );
-  }
+  if (!user) return null; // the (home) layout renders the loading state
 
-  const planTone = getPlanTone(user.type);
-  const notesCount = notes.length;
-  const firstName = user.name.split(" ")[0] || user.name;
+  const activeConfig = user.llmConfigs?.find((c) => c.isActive) ?? null;
+  const categories = new Set(notes.map((n) => n.category?.trim()).filter(Boolean)).size;
+  const attachments = notes.reduce((t, n) => t + n.files.length, 0);
 
   return (
-    <main className="p-4 sm:px-6 sm:pb-8">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Button
-          variant="outlined"
-          className="gap-2! rounded-full! border-slate-200! bg-white! px-4! py-2! text-slate-700!"
-          onClick={() => router.back()}
-        >
-          <ArrowBackIcon fontSize="small" />
-          <span className="text-sm font-medium">Back</span>
-        </Button>
-        <Button
-          variant="text"
-          className="rounded-full! px-4! py-2! text-sky-700!"
-          onClick={() => router.push("/notes")}
-        >
-          Go To Notes
-        </Button>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)] ">
-        <section className="rounded-[28px] border border-white/80 bg-white/88 p-6 shadow-[0_20px_60px_-48px_rgba(15,23,42,0.9)]">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/90 p-4">
-              <div className="flex items-center gap-2 text-sky-700">
-                <BadgeRoundedIcon sx={{ fontSize: 18 }} />
-                <span className="text-xs font-semibold uppercase tracking-[0.2em]">
-                  Full Name
-                </span>
-              </div>
-              <p className="mt-3 text-base font-semibold text-slate-900">
-                {user.name}
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Displayed across your workspace.
-              </p>
-            </div>
-
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/90 p-4">
-              <div className="flex items-center gap-2 text-sky-700">
-                <EmailRoundedIcon sx={{ fontSize: 18 }} />
-                <span className="text-xs font-semibold uppercase tracking-[0.2em]">
-                  Email
-                </span>
-              </div>
-              <p className="mt-3 break-all text-base font-semibold text-slate-900">
-                {user.email}
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Used for authentication and recovery.
-              </p>
-            </div>
-
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/90 p-4">
-              <div className="flex items-center gap-2 text-sky-700">
-                <ShieldOutlinedIcon sx={{ fontSize: 18 }} />
-                <span className="text-xs font-semibold uppercase tracking-[0.2em]">
-                  Access Level
-                </span>
-              </div>
-              <p className="mt-3 text-base font-semibold uppercase text-slate-900">
-                {user.type}
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Controls the account capabilities available to you.
-              </p>
-            </div>
-
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/90 p-4">
-              <div className="flex items-center gap-2 text-violet-700">
-                <TokenOutlinedIcon sx={{ fontSize: 18 }} />
-                <span className="text-xs font-semibold uppercase tracking-[0.2em]">
-                  AI Tokens Used
-                </span>
-              </div>
-              <p className="mt-3 text-base font-semibold text-slate-900">
-                {(user.totalTokensUsed ?? 0).toLocaleString()}
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Total tokens consumed across all AI search queries.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div className="rounded-[28px] border border-slate-200 bg-white/92 p-5 shadow-sm">
-            <div className="flex items-center gap-2 text-sky-700">
-              <StickyNote2OutlinedIcon sx={{ fontSize: 18 }} />
-              <span className="text-xs font-semibold uppercase tracking-[0.22em]">
-                Workspace Snapshot
-              </span>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <div className="rounded-[22px] bg-sky-50 p-4 ring-1 ring-sky-100">
-                <p className="text-sm font-medium text-sky-700">Saved Notes</p>
-                <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
-                  {notesCount}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Knowledge entries currently available in your workspace.
-                </p>
-              </div>
-
-              <div className="rounded-[22px] bg-indigo-50 p-4 ring-1 ring-indigo-100">
-                <div className="flex items-center gap-2 text-indigo-700">
-                  <AutoAwesomeOutlinedIcon sx={{ fontSize: 18 }} />
-                  <p className="text-sm font-medium">AI Search Status</p>
-                </div>
-                <p className="mt-2 text-lg font-semibold text-slate-900">
-                  Ready for grounded answers
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Your notes can already be used as source material for AI
-                  search and references.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <LlmSettingsCard user={user} />
-
-          <div className="rounded-[28px] border border-slate-200 bg-white/92 p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
-              Quick Actions
+    <div className="mx-auto w-full max-w-6xl px-4 pt-6 pb-12 sm:px-6 lg:px-8 lg:pt-8">
+      {/* Identity */}
+      <section className="relative overflow-hidden rounded-3xl border border-line bg-surface">
+        <div aria-hidden className="h-24 bg-linear-to-r from-blue-500 via-indigo-500 to-violet-500 opacity-90 sm:h-28" />
+        <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:px-6">
+          <Avatar name={user.name} size="xl" className="relative -mt-10 sm:-mt-12" />
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-2xl font-bold tracking-tight text-fg">{user.name}</h1>
+            <p className="mt-0.5 flex items-center gap-1.5 truncate text-sm text-fg-muted">
+              <Mail className="size-3.5 shrink-0" /> {user.email}
             </p>
-            <div className="mt-4 flex flex-col gap-3">
-              <Button
-                variant="contained"
-                className="justify-start! rounded-[18px]! px-4! py-3! text-left! normal-case!"
-                onClick={() => router.push("/notes")}
-              >
-                Open Notes Workspace
-              </Button>
-              <Button
-                variant="outlined"
-                className="justify-start! rounded-[18px]! px-4! py-3! text-left! normal-case!"
-                onClick={() => router.back()}
-              >
-                Return To Previous Page
-              </Button>
-            </div>
           </div>
-        </section>
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-xs font-bold tracking-wider text-accent-fg uppercase">
+            <ShieldCheck className="size-3.5" /> {user.type} plan
+          </span>
+        </div>
+      </section>
+
+      {/* Stats */}
+      <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" aria-label="Workspace stats">
+        <Stat Icon={NotebookText} label="Notes" value={notes.length} href="/notes" />
+        <Stat Icon={MessagesSquare} label="Conversations" value={sessionsCount} href="/chat" />
+        <Stat Icon={Paperclip} label={`Attachments · ${categories} categories`} value={attachments} />
+        <Stat Icon={Coins} label="AI tokens used" value={(user.totalTokensUsed ?? 0).toLocaleString()} />
+      </section>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <LlmSettingsCard user={user} />
+
+        <div className="space-y-6">
+          <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
+            <h2 className="font-semibold text-fg">AI search status</h2>
+            {activeConfig ? (
+              <div className="mt-4 flex items-start gap-3 rounded-2xl bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
+                <Cpu className="mt-0.5 size-4 shrink-0" />
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold">Ready for grounded answers</p>
+                  <p className="mt-0.5 truncate opacity-90">
+                    Using <span className="font-medium">{activeConfig.keyName}</span> · {activeConfig.llmModel}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                <div className="text-sm">
+                  <p className="font-semibold">AI answers are off</p>
+                  <p className="mt-0.5 opacity-90">Add an API key and test the connection to enable Ask AI, summaries and chat.</p>
+                </div>
+              </div>
+            )}
+            <div className="mt-4 flex items-center gap-2 text-xs text-fg-subtle">
+              <FolderOpen className="size-3.5" /> {notes.length} notes available as source material
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
+            <h2 className="font-semibold text-fg">Appearance</h2>
+            <p className="mt-1 text-sm text-fg-muted">Choose a theme, or follow your system setting.</p>
+            <ThemeSwitch className="mt-4" />
+          </section>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
