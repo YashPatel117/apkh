@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { AtSign, ChevronDown, Clock, Paperclip, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { INote } from "../models/note";
 import FileDisplay from "./fileDisplay";
-import { normalizeNoteLinksInHtml } from "../service/noteLinkUtils";
+import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "../service/noteLinkUtils";
 import { summarizeNote } from "@/service/noteService";
 import { getErrorMessage } from "@/service/axios/axios";
 import { Modal } from "../ui/Modal";
@@ -80,7 +80,10 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
   const contentRef = useRef<HTMLDivElement>(null);
   const categoryLabel = note.category?.trim() || "Uncategorized";
   const attachmentCount = note.files.length;
-  const normalizedContent = normalizeNoteLinksInHtml(note.content);
+  const normalizedContent = useMemo(
+    () => normalizeNoteLinksInHtml(stripLegacyFileTokenStyles(note.content)),
+    [note.content],
+  );
   const hasContent = Boolean(note.content?.replace(/<[^>]+>/g, "").trim()) || note.content?.includes("file-token");
   const summaryPending = summaryText.trim() === ATTACHMENT_INDEXING_PENDING_SUMMARY;
 

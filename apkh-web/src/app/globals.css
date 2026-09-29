@@ -24,8 +24,8 @@
   --surface-2: #141b34;
   --line: #222b48;
   --fg: #e8ebf4;
-  --fg-muted: #a4adc4;
-  --fg-subtle: #6c7694;
+  --fg-muted: #bcc4d9; /* ~10:1 on --surface */
+  --fg-subtle: #8a94b2; /* ~6:1 on --surface — was #6c7694 (~4:1), too dim in sidebar/header */
   --accent: #818cf8;
   --accent-soft: rgba(99, 102, 241, 0.14);
   --accent-fg: #a5b4fc;
@@ -80,7 +80,7 @@
     @apply h-full;
   }
   body {
-    @apply min-h-full bg-canvas font-sans text-fg antialiased transition-colors duration-300;
+    @apply min-h-full bg-canvas font-sans text-fg antialiased;
   }
   ::selection {
     @apply bg-indigo-500/25;
@@ -88,6 +88,23 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-accent;
   }
+}
+
+/* ── Theme switching ───────────────────────────────────────────────────────
+   While the `dark` class flips, per-element colour transitions are disabled so
+   the page changes in one step; the View Transition below cross-fades it as a
+   single snapshot (browsers without support just switch instantly).          */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: ease-in-out;
 }
 
 @layer components {

@@ -25,7 +25,7 @@ import { NotesContext, SelectedNote } from "../common/context/notesContext";
 import { cleanAiErrorMessage, htmlToText, isAiErrorResponse } from "../common/service/aiResponse";
 import MentionTextField from "../common/components/mentionTextField";
 import { AiAnswerPanel } from "../common/components/aiAnswerPanel";
-import { Avatar, Sidebar } from "../common/components/sidebar";
+import { Sidebar } from "../common/components/sidebar";
 import { Modal } from "../common/ui/Modal";
 import { Button } from "../common/ui/Button";
 import { Tooltip } from "../common/ui/Tooltip";
@@ -340,10 +340,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }}
     >
       <div className="relative flex h-dvh overflow-hidden">
-        {/* Dark-mode neural backdrop */}
-        <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 hidden dark:block">
-          <div className="absolute inset-0 bg-[url(/assets/dark-background.jpg)] bg-cover bg-center opacity-35" />
-          <div className="absolute inset-0 bg-linear-to-b from-canvas/40 via-canvas/70 to-canvas" />
+        {/* Themed backdrop: soft orbs in light mode, neural network in dark */}
+        <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
+          <div className="absolute inset-0 bg-[url(/assets/light-background.jpg)] bg-cover bg-center opacity-75 dark:bg-[url(/assets/dark-background.jpg)] dark:opacity-50" />
+          {/* Light veil keeps text readable without washing the artwork out */}
+          <div className="absolute inset-0 bg-linear-to-b from-canvas/10 via-canvas/30 to-canvas/55 dark:from-canvas/20 dark:via-canvas/40 dark:to-canvas/65" />
         </div>
 
         {/* Desktop sidebar */}
@@ -399,18 +400,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </Tooltip>
             </div>
 
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              <span className="hidden sm:block">
-                <ThemeToggle />
-              </span>
-              <button
-                type="button"
-                onClick={() => router.push("/profile")}
-                className="cursor-pointer rounded-full transition-opacity hover:opacity-85 lg:hidden"
-                aria-label="Profile"
-              >
-                <Avatar name={user.name} />
-              </button>
+            {/* The one appearance control in the app (light / dark / system). */}
+            <div className="ml-auto flex shrink-0 items-center">
+              <ThemeToggle />
             </div>
           </header>
 

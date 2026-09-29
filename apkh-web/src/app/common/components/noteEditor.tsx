@@ -8,7 +8,7 @@ import { Paperclip, Type } from "lucide-react";
 import { INote, INoteDto } from "../models/note";
 import FileDisplay from "./fileDisplay";
 import { CategoryInput } from "./categoryInput";
-import { normalizeNoteLinksInHtml } from "../service/noteLinkUtils";
+import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "../service/noteLinkUtils";
 import { displayFileName } from "../service/fileName";
 import { getErrorMessage } from "@/service/axios/axios";
 import { Input } from "../ui/Input";
@@ -43,7 +43,8 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
   const [note, setNote] = useState<INoteDto>({
     title: initialNote?.title || "",
     category: initialNote?.category || "",
-    content: initialNote?.content || "",
+    // Cleaned on load, so the next save persists chip HTML without the legacy styles.
+    content: stripLegacyFileTokenStyles(initialNote?.content || ""),
   });
   const [files, setFiles] = useState<FileItem[]>([]);
   const [error, setError] = useState<string | null>(null);

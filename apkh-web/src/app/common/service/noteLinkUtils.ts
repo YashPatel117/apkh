@@ -26,6 +26,36 @@ export function normalizeNoteLinkHref(href: string) {
   return trimmedHref;
 }
 
+/**
+ * Notes saved by the old editor gave every `.file-token` inline colours
+ * (`background-color:#e0f7fa; color:#00796b; …`). Quill reads those as
+ * background/colour formats and wraps the chip in a coloured <span>, which shows
+ * up as a pale box around it. This strips the inline styles and unwraps such
+ * spans so the chip is styled only by `.file-token` in globals.css.
+ */
+export function stripLegacyFileTokenStyles(content: string) {
+  if (!content || !content.includes("file-token") || typeof DOMParser === "undefined") return content;
+
+  const doc = new DOMParser().parseFromString(`<body>${content}</body>`, "text/html");
+  doc.body.querySelectorAll<HTMLElement>(".file-token").forEach((token) => {
+    token.removeAttribute("style");
+    // The toolbar has no colour tools, so a styled span wrapping only a chip is legacy.
+    let wrapper = token.parentElement;
+    while (
+      wrapper &&
+      wrapper !== doc.body &&
+      wrapper.tagName === "SPAN" &&
+      !wrapper.classList.contains("file-token") &&
+      wrapper.childNodes.length === 1
+    ) {
+      const next = wrapper.parentElement;
+      wrapper.replaceWith(token);
+      wrapper = next;
+    }
+  });
+  return doc.body.innerHTML;
+}
+
 export function normalizeNoteLinksInHtml(content: string) {
   if (!content) return content;
 

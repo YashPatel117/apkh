@@ -26,7 +26,7 @@ export function AuthShell({
     <main className="relative isolate min-h-dvh overflow-hidden">
       <div
         aria-hidden
-        className="absolute inset-0 -z-20 bg-[url(/assets/auth-background.jpg)] bg-cover bg-center dark:bg-[url(/assets/dark-background.jpg)]"
+        className="absolute inset-0 -z-20 bg-[url(/assets/light-background.jpg)] bg-cover bg-center dark:bg-[url(/assets/dark-background.jpg)]"
       />
       <div className="absolute inset-0 -z-10 bg-white/20 dark:bg-slate-950/40" aria-hidden />
 

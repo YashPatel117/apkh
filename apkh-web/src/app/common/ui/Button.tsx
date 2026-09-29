@@ -9,7 +9,7 @@ type Size = "sm" | "md" | "lg" | "toolbar" | "icon" | "icon-sm" | "fab";
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-linear-to-r from-blue-600 via-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25 hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/30 disabled:from-slate-300 disabled:via-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700 dark:disabled:text-slate-400",
+    "bg-linear-to-r from-blue-600 via-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25 hover:brightness-110 hover:shadow-lg hover:shadow-indigo-500/30 disabled:from-slate-300 disabled:via-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none dark:disabled:from-slate-700/80 dark:disabled:via-slate-700/80 dark:disabled:to-slate-700/80 dark:disabled:text-slate-200",
   secondary:
     "border border-line bg-surface text-fg shadow-xs hover:bg-surface-2 disabled:text-fg-subtle",
   ghost: "text-fg-muted hover:bg-surface-2 hover:text-fg disabled:text-fg-subtle",

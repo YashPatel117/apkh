@@ -4,7 +4,6 @@ import Link from "next/link";
 import { Coins, Cpu, FolderOpen, Mail, MessagesSquare, NotebookText, Paperclip, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useAppSelector } from "@/store/hook";
 import { Avatar } from "@/app/common/components/sidebar";
-import { ThemeSwitch } from "@/app/common/ui/theme";
 import LlmSettingsCard from "./LlmSettingsCard";
 
 function Stat({ Icon, label, value, href }: { Icon: typeof Coins; label: string; value: string | number; href?: string }) {
@@ -93,12 +92,6 @@ export default function ProfilePage() {
             <div className="mt-4 flex items-center gap-2 text-xs text-fg-subtle">
               <FolderOpen className="size-3.5" /> {notes.length} notes available as source material
             </div>
-          </section>
-
-          <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
-            <h2 className="font-semibold text-fg">Appearance</h2>
-            <p className="mt-1 text-sm text-fg-muted">Choose a theme, or follow your system setting.</p>
-            <ThemeSwitch className="mt-4" />
           </section>
         </div>
       </div>

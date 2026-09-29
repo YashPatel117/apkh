@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { cn } from "./cn";
 
-/** Brain-network mark. Swaps to the white glowing variant in dark mode. */
+/** Brain-network mark (logo-main.png) — the same artwork in both themes. */
 export function LogoMark({ className, size = 36 }: { className?: string; size?: number }) {
   return (
     <span className={cn("relative inline-flex shrink-0 overflow-hidden", className)} style={{ width: size, height: size }}>
@@ -12,15 +12,7 @@ export function LogoMark({ className, size = 36 }: { className?: string; size?: 
         width={size * 2}
         height={size * 2}
         priority
-        className="size-full scale-[1.45] object-contain dark:hidden"
-      />
-      <Image
-        src="/assets/logo-white.jpg"
-        alt=""
-        width={size * 2}
-        height={size * 2}
-        priority
-        className="hidden size-full scale-[1.35] rounded-[28%] object-cover dark:block"
+        className="size-full scale-[1.45] object-contain"
       />
     </span>
   );
@@ -35,23 +27,18 @@ export function Wordmark({ className }: { className?: string }) {
 }
 
 /** Full "logo + Knowledge Hub" artwork, used on auth and marketing pages.
- *  logo-with-text.png is a transparent, cropped cut of logo-with-text.jpg. Dark mode
- *  swaps to the mark + live wordmark, since the artwork's navy text disappears on dark. */
+ *  logo-with-text.png is a transparent, cropped cut of logo-with-text.jpg. The same
+ *  image renders in both themes so layout is identical; in dark mode an
+ *  invert + 180° hue-rotate lightens the navy text while keeping the brain blue. */
 export function LogoWithText({ className }: { className?: string }) {
   return (
-    <>
-      <Image
-        src="/assets/logo-with-text.png"
-        alt="Knowledge Hub"
-        width={1016}
-        height={242}
-        priority
-        className={cn("h-auto w-48 dark:hidden", className)}
-      />
-      <span className={cn("hidden items-center gap-2.5 dark:inline-flex", className)}>
-        <LogoMark size={40} />
-        <Wordmark className="text-xl" />
-      </span>
-    </>
+    <Image
+      src="/assets/logo-with-text.png"
+      alt="Knowledge Hub"
+      width={1016}
+      height={242}
+      priority
+      className={cn("h-auto w-48 dark:[filter:invert(1)_hue-rotate(180deg)_saturate(1.4)]", className)}
+    />
   );
 }

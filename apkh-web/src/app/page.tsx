@@ -220,7 +220,7 @@ export default function LandingPage() {
       <footer className="bg-[#0a1428] text-slate-400">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row sm:px-6">
           <div className="flex items-center gap-3">
-            <Image src="/assets/logo-white.jpg" alt="" width={72} height={72} className="size-9 rounded-xl object-cover" />
+            <LogoMark size={36} />
             <span className="font-semibold text-white">Knowledge Hub</span>
           </div>
           <p className="text-sm">© {new Date().getFullYear()} Knowledge Hub. Your knowledge, grounded.</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { cn } from "./cn";
 
@@ -33,34 +33,81 @@ function readPreference(): ThemePreference {
   return "system";
 }
 
+/**
+ * Flips the `dark` class in one step. Every element's own colour transition is
+ * suppressed (see `.theme-switching` in globals.css) so nothing animates at its own
+ * speed while background images swap instantly; where supported, the whole page
+ * cross-fades as a single snapshot instead.
+ */
+// View-transition callbacks run asynchronously, so a queued flip must read the
+// *latest* requested theme rather than the one captured when it was queued.
+let targetDark = false;
+let flipQueued = false;
+
+function applyTheme(dark: boolean, animate: boolean) {
+  targetDark = dark;
+  if (flipQueued) return; // the queued flip will pick up targetDark
+  const root = document.documentElement;
+  if (root.classList.contains("dark") === dark) return;
+
+  const flip = () => {
+    flipQueued = false;
+    if (root.classList.contains("dark") === targetDark) return;
+    root.classList.add("theme-switching");
+    root.classList.toggle("dark", targetDark);
+    void root.offsetHeight; // commit the new styles while transitions are off
+    requestAnimationFrame(() => root.classList.remove("theme-switching"));
+  };
+
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (animate && !reducedMotion && typeof doc.startViewTransition === "function") {
+    flipQueued = true;
+    doc.startViewTransition(flip);
+  } else {
+    flip();
+  }
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [preference, setPref] = useState<ThemePreference>("system");
+  // null until the stored preference is read — applying the "system" default first
+  // would briefly override the class the <head> script already set.
+  const [preference, setPref] = useState<ThemePreference | null>(null);
   const [resolved, setResolved] = useState<"light" | "dark">("light");
+  const animateNext = useRef(false);
 
   useEffect(() => {
     setPref(readPreference());
   }, []);
 
   useEffect(() => {
+    if (!preference) return;
     const media = matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
+    const apply = (animate: boolean) => {
       const dark = preference === "dark" || (preference === "system" && media.matches);
-      document.documentElement.classList.toggle("dark", dark);
+      applyTheme(dark, animate);
       setResolved(dark ? "dark" : "light");
     };
-    apply();
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
+    apply(animateNext.current); // only user-initiated changes animate, never page load
+    animateNext.current = false;
+    const onOsChange = () => apply(true);
+    media.addEventListener("change", onOsChange);
+    return () => media.removeEventListener("change", onOsChange);
   }, [preference]);
 
   const setPreference = useCallback((p: ThemePreference) => {
+    animateNext.current = true;
     setPref(p);
     try {
       localStorage.setItem(STORAGE_KEY, p);
     } catch {}
   }, []);
 
-  return <ThemeContext.Provider value={{ preference, resolved, setPreference }}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={{ preference: preference ?? "system", resolved, setPreference }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
 const options: { value: ThemePreference; label: string; Icon: typeof Sun }[] = [
@@ -69,50 +116,26 @@ const options: { value: ThemePreference; label: string; Icon: typeof Sun }[] = [
   { value: "system", label: "System", Icon: Monitor },
 ];
 
-/** Segmented light / dark / system switch. */
-export function ThemeSwitch({ className, compact = false }: { className?: string; compact?: boolean }) {
-  const { preference, setPreference } = useTheme();
-  return (
-    <div role="radiogroup" aria-label="Theme" className={cn("flex rounded-xl bg-surface-2 p-1", className)}>
-      {options.map(({ value, label, Icon }) => (
-        <button
-          key={value}
-          type="button"
-          role="radio"
-          aria-checked={preference === value}
-          aria-label={label}
-          title={label}
-          onClick={() => setPreference(value)}
-          className={cn(
-            "flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-all",
-            preference === value ? "bg-surface text-fg shadow-sm" : "text-fg-subtle hover:text-fg",
-          )}
-        >
-          <Icon className="size-3.5" />
-          {!compact && label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Single icon button that flips between light and dark. */
+/** The app's single appearance control. Each click cycles Light → Dark → System;
+ *  the icon shows the current mode. */
 export function ThemeToggle({ className }: { className?: string }) {
-  const { resolved, setPreference } = useTheme();
-  const next = resolved === "dark" ? "light" : "dark";
+  const { preference, setPreference } = useTheme();
+  const index = Math.max(0, options.findIndex((o) => o.value === preference));
+  const current = options[index];
+  const next = options[(index + 1) % options.length];
+
   return (
     <button
       type="button"
-      onClick={() => setPreference(next)}
-      aria-label={`Switch to ${next} theme`}
-      title={`Switch to ${next} theme`}
+      onClick={() => setPreference(next.value)}
+      aria-label={`Theme: ${current.label}. Switch to ${next.label}`}
+      title={`Theme: ${current.label} — click for ${next.label}`}
       className={cn(
         "flex size-10 cursor-pointer items-center justify-center rounded-xl text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg",
         className,
       )}
     >
-      <Sun className="hidden size-[1.15rem] dark:block" />
-      <Moon className="size-[1.15rem] dark:hidden" />
+      <current.Icon key={current.value} className="size-[1.15rem] animate-scale-in" />
     </button>
   );
 }

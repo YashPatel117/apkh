@@ -19,7 +19,6 @@ import { IUser } from "../models/user";
 import { LogoMark, Wordmark } from "../ui/Logo";
 import { Button } from "../ui/Button";
 import { Menu, MenuItem } from "../ui/Menu";
-import { ThemeSwitch } from "../ui/theme";
 import { cn } from "../ui/cn";
 
 interface SidebarProps {
@@ -128,7 +127,7 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
                 active ? "bg-accent-soft text-accent-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg",
               )}
             >
-              <Icon className={cn("size-[1.1rem]", active ? "text-accent" : "text-fg-subtle group-hover:text-fg-muted")} />
+              <Icon className={cn("size-[1.1rem]", active ? "text-accent" : "text-fg-muted group-hover:text-fg")} />
               <span className="flex-1">{label}</span>
               {count !== undefined && (
                 <span className={cn("rounded-md px-1.5 text-xs tabular-nums", active ? "text-accent-fg" : "text-fg-subtle")}>{count}</span>
@@ -156,7 +155,7 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
                         active ? "bg-accent-soft font-medium text-accent-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg",
                       )}
                     >
-                      <FolderOpen className={cn("size-4 shrink-0", active ? "text-accent" : "text-fg-subtle")} />
+                      <FolderOpen className={cn("size-4 shrink-0", active ? "text-accent" : "text-fg-muted")} />
                       <span className="flex-1 truncate">{name}</span>
                       <span className="text-xs text-fg-subtle tabular-nums">{count}</span>
                     </button>
@@ -185,8 +184,6 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
             <span className="block truncate opacity-80">{activeConfig ? activeConfig.llmModel : "Add an API key to ask AI"}</span>
           </span>
         </Link>
-
-        <ThemeSwitch />
 
         <Menu
           side="top"
