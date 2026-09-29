@@ -1,11 +1,16 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type ChatMessageDocument = ChatMessage & Document;
 
 @Schema({ timestamps: true })
 export class ChatMessage {
-  @Prop({ type: Types.ObjectId, ref: 'ChatSession', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'ChatSession',
+    required: true,
+    index: true,
+  })
   sessionId: Types.ObjectId;
 
   @Prop({ required: true, enum: ['user', 'assistant'] })
@@ -13,7 +18,7 @@ export class ChatMessage {
 
   @Prop({ required: true })
   content: string;
-  
+
   createdAt: string;
 }
 

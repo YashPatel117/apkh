@@ -44,8 +44,12 @@ export function isAiErrorResponse(response: AiSearchResponse | null | undefined)
   if (response.isError) return true;
   if (response.answer && looksLikeAiFailureMessage(response.answer)) return true;
 
-  // Backward-compatible fallback for older backend responses.
-  return response.confidence === "not_found" && (response.references?.length ?? 0) === 0;
+  // Older backends didn't send isError: an empty "not found" then meant a failure.
+  // Now it is a genuine answer ("nothing in your notes about this").
+  if (response.isError === undefined) {
+    return response.confidence === "not_found" && (response.references?.length ?? 0) === 0;
+  }
+  return false;
 }
 
 /** Strips HTML to searchable plain text. */

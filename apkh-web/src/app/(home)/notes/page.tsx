@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import { FolderOpen, MousePointerClick, Plus, SearchX, Sparkles, X } from "lucide-react";
 import { ShowNote } from "@/app/common/components/showNote";
 import { useNotes } from "@/app/common/context/notesContext";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
-import { deleteNote as deleteNoteAction } from "@/store/slices/noteSlice";
-import { deleteNote } from "@/service/noteService";
+import { deleteNote as deleteNoteAction, markNoteIndexing } from "@/store/slices/noteSlice";
+import { deleteNote, reindexNote } from "@/service/noteService";
 import { getErrorMessage } from "@/service/axios/axios";
 import { INote } from "@/app/common/models/note";
 import { Button } from "@/app/common/ui/Button";
@@ -41,11 +41,13 @@ export default function NotesPage() {
     toggleSelect,
   } = useNotes();
   const totalNotes = useAppSelector((state) => state.note.notes.length);
+  const indexStatus = useAppSelector((state) => state.note.indexStatus);
+  const indexByNote = useMemo(() => new Map(indexStatus?.notes.map((n) => [n.noteId, n])), [indexStatus]);
   const dispatch = useAppDispatch();
   const toast = useToast();
   const [pendingDelete, setPendingDelete] = useState<INote | null>(null);
 
-  const aiLinked = Boolean(aiAnswer && !aiFailed);
+  const aiLinked = Boolean(aiAnswer && !aiFailed && aiAnswer.references.length);
   const filtering = Boolean(query.trim() || activeCategory || aiLinked);
   const attachmentCount = filteredNotes.reduce((total, note) => total + note.files.length, 0);
 
@@ -59,6 +61,16 @@ export default function NotesPage() {
     } catch (error) {
       toast(getErrorMessage(error, "Couldn't delete the note."), "error");
       throw error;
+    }
+  };
+
+  const retryIndexing = async (note: INote) => {
+    try {
+      await reindexNote(note.id);
+      dispatch(markNoteIndexing(note.id));
+      toast("Indexing again…", "info");
+    } catch (error) {
+      toast(getErrorMessage(error, "Couldn't restart indexing."), "error");
     }
   };
 
@@ -194,6 +206,8 @@ export default function NotesPage() {
                 note={note}
                 index={i}
                 selected={selectedNotes.some((s) => s.noteId === note.id)}
+                indexState={indexByNote.get(note.id)}
+                onReindex={() => void retryIndexing(note)}
                 onEdit={() => openNote(note.id)}
                 onToggleSelect={() => toggleSelect(note.id, note.title)}
                 onDelete={() => setPendingDelete(note)}

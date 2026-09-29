@@ -1,12 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { htmlToPlainText } from '../utils/html';
 
 export type NoteDocument = Note & Document;
 
 @Schema({ timestamps: true })
 export class Note {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -36,3 +36,5 @@ NoteSchema.pre('save', function (next) {
 
 // Create a text index
 NoteSchema.index({ title: 'text', category: 'text', contentPlain: 'text' });
+// Listing a user's notes and finding their latest change
+NoteSchema.index({ userId: 1, updatedAt: -1 });

@@ -433,10 +433,11 @@ async def extract_image_content(
     model: str,
     user_id: str | None = None,
     request_id: str | None = None,
-) -> str:
+) -> dict:
     """
     Read an image with the user's model: transcribe visible text (OCR) and
-    describe the visual content. Raises on provider errors.
+    describe the visual content. Returns {text, tokens_used}; raises on
+    provider errors.
     """
     resolved_key = api_key.strip()
     resolved_model = model.strip()
@@ -479,7 +480,7 @@ async def extract_image_content(
         resolved_model,
         result["tokens_used"],
     )
-    return result["answer"]
+    return {"text": result["answer"], "tokens_used": result["tokens_used"]}
 
 
 async def test_llm_connection(

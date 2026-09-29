@@ -9,7 +9,8 @@ import { getValidToken, clearToken } from "@/service/session";
 import { getErrorMessage } from "@/service/axios/axios";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { logout, setToken, setUser } from "@/store/slices/authSlice";
-import { addNote, setNotes } from "@/store/slices/noteSlice";
+import { addNote, markNoteIndexing, setNotes } from "@/store/slices/noteSlice";
+import { useIndexStatusSync } from "../common/hooks/useIndexStatusSync";
 import { addSession, setActiveSession, setSessions } from "@/store/slices/chatSlice";
 import {
   aiSearchNotes,
@@ -79,6 +80,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const searchRef = useRef<HTMLInputElement>(null);
   const activeLlmConfig = user?.llmConfigs?.find((config) => config.isActive) ?? null;
+  const indexCounts = useAppSelector((state) => state.note.indexStatus?.counts);
+  const pendingIndex = indexCounts ? indexCounts.queued + indexCounts.processing : 0;
+
+  useIndexStatusSync(Boolean(user) && notesLoaded);
 
   // ── Auth + initial data ──────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -150,7 +155,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const filteredNotes = useMemo(() => {
     let list = notes;
-    if (aiAnswer && !aiFailed) {
+    if (aiAnswer && !aiFailed && aiAnswer.references.length) {
       const ids = new Set(aiAnswer.references.map((r) => r.note_id));
       return list.filter((n) => ids.has(n.id));
     }
@@ -267,7 +272,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setSaving(true);
     try {
       const res = id ? await updateNote(id, data) : await createNote(data);
-      if (res) dispatch(addNote(res));
+      if (res) {
+        dispatch(addNote(res));
+        dispatch(markNoteIndexing(res.id));
+      }
       setEditorOpen(false);
       toast(id ? "Note updated." : "Note created. Indexing for AI search…", "success");
     } finally {
@@ -401,7 +409,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
 
             {/* The one appearance control in the app (light / dark / system). */}
-            <div className="ml-auto flex shrink-0 items-center">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {pendingIndex > 0 && (
+                <Tooltip label="New and edited notes become searchable by AI once indexed" side="bottom">
+                  <span className="hidden items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs font-medium text-fg-muted md:inline-flex">
+                    <Spinner className="size-3.5" />
+                    Indexing {pendingIndex} note{pendingIndex === 1 ? "" : "s"}
+                  </span>
+                </Tooltip>
+              )}
               <ThemeToggle />
             </div>
           </header>

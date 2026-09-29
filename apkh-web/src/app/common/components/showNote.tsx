@@ -3,7 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { AtSign, ChevronDown, Clock, Paperclip, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { INote } from "../models/note";
+import { INote, NoteIndexState } from "../models/note";
+import { IndexBadge } from "./indexBadge";
 import FileDisplay from "./fileDisplay";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "../service/noteLinkUtils";
 import { summarizeNote } from "@/service/noteService";
@@ -22,9 +23,12 @@ interface NoteProps {
   note: INote;
   index?: number;
   selected?: boolean;
+  /** Search-index state; a badge shows while indexing or when something isn't searchable */
+  indexState?: NoteIndexState;
   onEdit?: () => void;
   onDelete?: () => void;
   onToggleSelect?: () => void;
+  onReindex?: () => void;
 }
 
 const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -67,7 +71,7 @@ function IconAction({
   );
 }
 
-export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = false, onEdit, onDelete, onToggleSelect }) => {
+export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = false, indexState, onEdit, onDelete, onToggleSelect, onReindex }) => {
   const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
   const [previewFile, setPreviewFile] = useState<string | null>(null);
@@ -183,6 +187,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
                 {attachmentCount}
               </span>
             )}
+            <IndexBadge state={indexState} onRetry={onReindex} />
           </div>
           <div
             className={cn(

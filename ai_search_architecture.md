@@ -2,655 +2,229 @@
 
 ## API <-> Search <-> AI Model Flow
 
-This document explains how the `apkh-api` and `apkh-search` projects communicate, what data is stored, what gets indexed, how AI search works, and how note summaries are created.
-
-The goal is to make the backend AI flow easy to understand without needing to read every file again.
+This document explains how `apkh-api` and `apkh-search` work together: what is stored, how notes are indexed (and re-indexed when they change), how AI search, chat and summaries find their context, and what reaches the AI provider.
 
 ## 1. Main Responsibilities
 
 ### `apkh-api`
 
-This is the orchestration layer.
+The orchestration layer. It:
 
-It is responsible for:
-
-- saving notes in MongoDB
-- saving and loading file names through `apkh-storage`
-- reading the user's active AI config
-- triggering ingestion/indexing after note create or update
-- storing indexed chunks in MongoDB
-- running semantic search over stored embeddings
-- caching summaries in MongoDB
-- tracking token usage
+- saves notes, chats and summaries in MongoDB
+- keeps the **search index**: chunks of note text, attachment text and chat transcripts, with their vectors
+- runs the **indexing queue and worker** that keep that index up to date in the background
+- does **retrieval**: hybrid (meaning + keyword) search over the chunks
+- reads the user's active AI config and tracks token usage
+- runs data migrations at startup
 
 ### `apkh-search`
 
-This is the AI processing engine.
+The AI processing engine. It is stateless: it stores nothing and does only what the API asks.
 
-It is responsible for:
+- **extract**: download attachments from `apkh-storage` and read their text (images and scanned PDF pages go to the user's vision model)
+- **chunk**: split note / chat / attachment text into passages
+- **embed**: turn passages and search queries into vectors
+- **generate**: RAG answers, chat replies and summaries with the user's model
 
-- parsing note HTML into plain text
-- extracting text from attached files
-- chunking note/file text into smaller parts
-- generating embeddings for chunks
-- generating one embedding for the user's search query
-- calling the final LLM for RAG answers
-- calling the final LLM for note summaries
+### AI provider
 
-### AI Provider
-
-This is OpenAI, Gemini, or Anthropic depending on the active model.
-
-The provider is only called for:
-
-- embedding generation
-- final answer generation
-- final summary generation
-
-The provider does not directly query your MongoDB or your notes database.
+OpenAI, Gemini or Anthropic, depending on the active config. It is only called to read images, embed text, and generate answers and summaries. It never sees the database.
 
 ## 2. What Is Stored
 
-### Notes collection
+| Collection | What it holds |
+|---|---|
+| `notes` | `userId`, `title`, `content` (Quill HTML), `contentPlain` (one line per paragraph), `category` |
+| `notefiles` | the attachment file names of each note (the bytes live in `apkh-storage`) |
+| `knowledgechunks` | the search index: one document per passage (see below) |
+| `index_jobs` | one job per note or chat: its indexing status, doubling as the queue |
+| `summary` | cached note summaries |
+| `chatsessions`, `chatmessages` | conversations |
+| `migrations` | which startup data migrations have run |
 
-MongoDB stores the original note data:
+### A chunk (`knowledgechunks`)
 
-- `title`
-- `content` as HTML
-- `contentPlain`
-- `category`
-- timestamps
+- `userId`, and `noteId` (note and file passages) or `sessionId` (chat passages)
+- `sourceType`: `note`, `file` or `chat`; `sourceName` / `sourcePage` for attachments
+- `noteTitle`, `chunkIndex`, `text`
+- `textHash`: sha256 of `text`. An unchanged passage keeps its vector (see section 6)
+- `embeddingModel`: the **embedding space** of the vector, e.g. `gemini-embedding-001@1536`; unset for keyword-only chunks
+- `vector`: the embedding as a BSON binary float32 vector (about 6 KB at 1536 dimensions, versus ~21 KB as an array of numbers)
 
-This is defined in `apkh-api/src/common/schema/note.ts`.
+The chunk text is kept on purpose: the index can be rebuilt for another provider from stored text alone, without downloading or reading attachments again.
 
-### File storage
+A MongoDB text index over `text`, `noteTitle` and `sourceName` powers keyword search.
 
-Attached files are stored by `apkh-storage` on disk.
+### An index job (`index_jobs`)
 
-Examples:
+- `kind` (`note` / `chat`), `targetId`, `userId`
+- `status`: `queued` → `processing` → `ready`, or `failed` / `skipped` (no AI key)
+- `files`: what happened to each attachment (`ok`, `empty`, `unsupported`, `no_vision`, `missing`, `failed`, with a reason)
+- `sourceHash`: a hash of everything the last successful run indexed
+- queue fields: `priority`, `runAt` (retry backoff), `attempts`, `lockedBy` / `lockedAt` (heartbeat), `requeue`
 
-- PDFs
-- images
-- DOCX
-- XLSX
-- CSV
-- TXT
+## 3. Where the API Key and Model Come From
 
-The file bytes are not stored in MongoDB by the API project.
+The user saves one or more AI configs in Profile (key name, encrypted API key, model, active flag). When the API needs AI it reads the **active** config, decrypts the key, and sends `api_key` + `model` with that one request to `apkh-search`. The search service never stores keys.
 
-### KnowledgeChunk collection
+## 4. Embedding Spaces
 
-MongoDB also stores indexed chunk documents for AI search.
+Vectors are only comparable when the same model made them at the same size, so every stored vector is labelled with its space:
 
-Each chunk stores:
+| Active provider | Embedding space | Search |
+|---|---|---|
+| Gemini | `gemini-embedding-001@1536` | meaning + keyword |
+| OpenAI | `text-embedding-3-small@1536` | meaning + keyword |
+| Anthropic (Claude) | none — Anthropic has no embedding model | keyword only |
 
-- `noteId`
-- `userId`
-- `noteTitle`
-- `chunkIndex`
-- `text`
-- `sourceType`
-- `sourceName`
-- `sourcePage`
-- `embeddingProvider`
-- `embeddingModel`
-- `embedding`
+Queries are embedded in the same space (for Gemini with the query task type, which pairs with the document task type used for passages). Vectors are L2-normalised.
 
-This is defined in `apkh-api/src/common/schema/chunk.ts`.
+## 5. Indexing
 
-This collection is the core of semantic search.
+Indexing runs in the background. Saving a note returns immediately; the note becomes searchable a few seconds later, and its card shows **Indexing** meanwhile.
 
-### Summary collection
+### When a note is indexed
 
-MongoDB stores generated summaries in a separate `summary` collection.
+- the note is created or edited → its job is (re)queued
+- the note is deleted → its job and chunks are deleted
+- the active provider changes → notes whose vectors are in another space are re-queued
+- "Retry" on a note, "Retry failed" / "Rebuild index" in Profile
 
-Each summary stores:
+### The queue
 
-- `noteId`
-- `userId`
-- `summary`
-- `summaryModel`
-- its own `createdAt`
-- its own `updatedAt`
+`index_jobs` is the queue. The worker in `apkh-api` claims jobs with a single atomic update, so:
 
-This is defined in `apkh-api/src/common/schema/summary.ts`.
+- a note is never indexed twice at the same time; if it changes while being indexed, the job is flagged and runs again right after
+- rapid saves collapse into one run of the latest version
+- a note saved now jumps ahead of a bulk reindex (`priority`)
+- failures retry with backoff (after 15 s, 30 s, 1 min, 2 min); a fifth failed attempt marks the job `failed`. Errors that can't succeed on retry (such as an invalid API key) fail at once
+- a job left behind by a crashed or restarted API is picked up again (heartbeat + stale lock recovery)
 
-This is why clicking the Summary button does not update the note's `updatedAt`.
+The worker runs two jobs at a time. `INDEX_WORKER=off` disables it on an instance.
 
-## 3. Where API Key and Model Come From
-
-The user saves one or more LLM configs in the API project.
-
-Each config contains:
-
-- key name
-- encrypted API key
-- model
-- active/inactive status
-
-When the API needs AI features, it reads the active config from `UsersService`.
-
-Flow:
-
-1. user saves AI config in `apkh-api`
-2. API stores the key encrypted
-3. API decrypts the active key only when needed
-4. API sends `api_key` and `model` to `apkh-search`
-5. `apkh-search` uses them for embeddings or final LLM calls
-
-The search project does not permanently store user provider keys.
-
-## 4. Two Different Search Systems
-
-This project has two separate search paths.
-
-### A. Normal search
-
-This uses MongoDB text search on:
-
-- note title
-- note category
-- `contentPlain`
-
-This is the standard search endpoint and does not use embeddings.
-
-### B. AI search
-
-This uses semantic similarity over stored chunk embeddings.
-
-This path:
-
-- embeds the user's question
-- compares that embedding with stored chunk embeddings
-- picks the most relevant chunks
-- sends those chunks to the LLM
-- returns an answer with references
-
-So normal search and AI search are different systems.
-
-## 5. Ingestion / Indexing Flow
-
-This happens after note create or note update.
-
-### Step 1: Note is saved in API
-
-`apkh-api` saves the note and uploads files first.
-
-Then it triggers ingestion in the background.
-
-That means the user does not wait for indexing to finish before the save completes.
-
-### Step 2: API calls Search `/ingest`
-
-`apkh-api` sends this to `apkh-search`:
-
-- `note_id`
-- `user_id`
-- `title`
-- `content`
-- `files`
-- `api_key`
-- `model`
-
-This call is made from `SearchService.processIngestion()`.
-
-### Step 3: Search parses note HTML
-
-`apkh-search` uses `html_parser.py` to convert the note HTML into plain text.
-
-It extracts:
-
-- visible text
-- links
-- file-token spans
-
-Important detail:
-
-- file token spans are removed from plain text so they do not pollute embeddings
-- links are preserved as structured link lines and appended to the note text
-
-### Step 4: Search fetches attached files from storage
-
-If the note has files, `apkh-search` calls `apkh-storage` for each file using:
-
-- note id
-- filename
-- auth header
-
-This happens in `_fetch_and_extract_files()` in `apkh-search/routes/ingest.py`.
-
-### Step 5: Search extracts text from files
-
-`file_extractor.py` extracts usable text.
-
-Supported flows:
-
-- PDF text extraction with PyMuPDF
-- scanned PDF pages (under 50 characters of text) are rendered and read by the user's model, up to 100 pages per PDF
-- images are read by the user's model
-- DOCX text extraction
-- XLSX extraction
-- CSV extraction
-- TXT and Markdown direct reading
-
-How images are read:
-
-- there is no local OCR engine; `services/vision.py` sends the image to the user's active model with the same API key used for answers
-- the model transcribes all visible text and adds a description, which is detailed when the image has little or no text (photos, diagrams, charts)
-- the result is chunked and embedded like any other file text, with `source_name` set to the image file name (and `source_page` for PDF pages), so answers cite the image
-- results are cached in memory by image hash and model, so saving a note again does not re-send unchanged images
-- text-only models (for example `gpt-3.5-turbo`) cannot read images; those attachments and scanned pages are skipped
-
-### Step 6: Search creates chunks
-
-After note text and file text are ready, `chunker.py` splits the content into smaller chunks.
-
-Current chunking behavior:
-
-- token-aware chunking
-- sentence-aware splitting
-- chunk size: `512` tokens
-- overlap: `64` tokens
-
-Why chunking exists:
-
-- large notes/files are too big to embed and retrieve as one block
-- smaller chunks improve retrieval quality
-- overlap reduces the chance of losing context between chunk boundaries
-
-### Step 7: Search generates embeddings
-
-For every chunk text, `apkh-search` asks an embedding model for a vector.
-
-This happens in `embedder.py`.
-
-Provider behavior:
-
-- Gemini embeddings use `gemini-embedding-001`
-- OpenAI embeddings use `text-embedding-3-small`
-- Anthropic is not supported for embeddings in this project
-
-Important:
-
-- the user's active model determines the provider
-- but the actual embedding model used is fixed by provider
-
-### Step 8: API stores the chunks
-
-`apkh-search` returns all chunks with embeddings to `apkh-api`.
-
-Then `apkh-api`:
-
-1. deletes old chunks for that note
-2. inserts the fresh chunk list into MongoDB
-
-That means the long-term searchable vector data lives in MongoDB inside the API project database.
-
-## 6. What an Embedding Actually Is
-
-An embedding is a list of numbers representing the meaning of a piece of text.
-
-You can think of it like this:
-
-- similar meaning -> vectors are closer
-- unrelated meaning -> vectors are farther apart
-
-Examples:
-
-- "meeting tomorrow at 5" and "tomorrow's meeting is at 5 PM" will be close
-- "banana smoothie recipe" will be far from them
-
-Important:
-
-- embeddings are not human-readable summaries
-- embeddings are not the original text
-- embeddings help find relevant text, but they cannot reconstruct the original content by themselves
-
-That is why your app stores both:
-
-- the original chunk text
-- the embedding vector for that text
-
-## 7. AI Search Flow
-
-This is the flow when the user uses AI search.
-
-### Step 1: API receives the search query
-
-The web app calls `POST /notes/ai-search`.
-
-`apkh-api` receives the user query.
-
-### Step 2: API gets active AI config
-
-The API reads the active user config from `UsersService`.
-
-If there is no active config:
-
-- AI search cannot run
-
-If the active provider is Anthropic:
-
-- semantic search cannot run because embeddings are not supported in this project for Anthropic
-
-### Step 3: API asks Search to embed the query
-
-`apkh-api` sends the user's query text to:
-
-- `apkh-search /ai-search/embed-query`
-
-The search service returns one embedding vector for the query.
-
-### Step 4: API loads all relevant stored chunks
-
-`apkh-api` reads the user's indexed chunks from MongoDB.
-
-It also filters by compatible embedding provider so vector spaces are not mixed incorrectly.
-
-This is important because:
-
-- OpenAI embeddings should be compared with OpenAI embeddings
-- Gemini embeddings should be compared with Gemini embeddings
-
-### Step 5: API calculates similarity
-
-`apkh-api` performs cosine similarity in code between:
-
-- the query embedding
-- each stored chunk embedding
-
-Then it:
-
-- scores each chunk
-- filters weak matches
-- sorts by score
-- keeps the top chunks
-
-Important detail:
-
-- this project is not using Pinecone, FAISS, or Atlas vector search right now
-- embeddings are stored in MongoDB
-- similarity search itself runs inside the API process
-
-### Step 6: API sends top contexts to Search for final answer generation
-
-`apkh-api` builds context strings like:
-
-- note title
-- file name
-- page number
-- chunk text
-
-Then it sends them to:
-
-- `apkh-search /ai-search/rag`
-
-### Step 7: Search calls the LLM
-
-`apkh-search` builds a strict prompt telling the model:
-
-- only use the provided context
-- do not invent facts
-- say when information is missing
-
-Then it calls the active provider:
-
-- Gemini
-- OpenAI
-- Anthropic
-
-Anthropic can be used here because this step is answer generation, not embedding generation.
-
-### Step 8: API returns answer + references
-
-`apkh-search` returns:
-
-- final answer
-- token usage
-
-`apkh-api`:
-
-- stores token usage against the active config
-- returns answer + references to the web app
-
-## 8. Summary Flow
-
-This is the flow when the user clicks the Summary button for one note.
-
-### Step 1: API checks summary cache
-
-`apkh-api` looks in the `summary` collection for:
-
-- `noteId`
-- `userId`
-
-If a summary exists:
-
-- it returns that cached summary immediately
-- no extra LLM tokens are spent
-
-### Step 2: API gathers indexed chunks for that note
-
-If there is no cached summary, the API loads all stored chunks for that note from the `KnowledgeChunk` collection.
-
-These chunks may include:
-
-- note body chunks
-- attachment chunks
-- PDF page chunks
-- OCR-derived image text chunks
-
-### Step 3: API handles indexing-not-ready cases
-
-If the note has attachments but chunk indexing is not ready yet, the API returns a temporary message:
-
-- attachment text is still being indexed
-
-This is not cached as a final summary.
-
-### Step 4: API builds summary contexts
-
-The API converts the note's chunks into ordered context blocks such as:
-
-- note content
-- attachment filename
-- attachment page number
-
-This preserves structure for the summarizer.
-
-### Step 5: API calls Search `/summarize`
-
-`apkh-api` sends:
-
-- note title
-- category
-- content
-- indexed contexts
-- `api_key`
-- `model`
-
-to:
-
-- `apkh-search /ai-search/summarize`
-
-### Step 6: Search calls the LLM for a compact summary
-
-`apkh-search` builds a summary prompt with rules like:
-
-- keep it compact
-- focus on main ideas
-- include tasks, dates, decisions, and links
-- do not invent details
-- keep it under 120 words
-
-Then it calls the active LLM provider.
-
-### Step 7: API stores summary cache
-
-If the result is cacheable, `apkh-api` stores it in the `summary` collection.
-
-That way:
-
-- the next summary click does not spend tokens
-- the note's own `updatedAt` is unchanged
-
-### Step 8: Cache is cleared on note update
-
-Whenever the note is updated or deleted:
-
-- the related summary document is removed
-
-This prevents stale summaries from surviving note edits.
-
-## 9. What Is Searched and On What
-
-### Normal search searches on:
-
-- note title
-- note category
-- plain text version of note HTML
-
-This uses Mongo text indexes.
-
-### AI search searches on:
-
-- stored chunk embeddings
-
-Those chunks come from:
-
-- note text
-- note links
-- extracted file text
-- OCR text from images or scanned PDFs
-
-AI search does not search directly on raw HTML or raw file bytes.
-
-### Summary uses:
-
-- all stored chunks for one note
-
-It does not perform top-k similarity retrieval like AI search.
-
-Instead it gathers the full note context and summarizes that single note.
-
-## 10. Why Reindexing Happens
-
-Reindexing happens when:
-
-- a note is created
-- a note is updated
-- the active LLM config changes
-
-Why active-config changes trigger reindexing:
-
-- embeddings from different providers are not safely comparable
-- if the user switches from Gemini to OpenAI, the stored vectors need to be regenerated in the new provider's vector space
-
-So `apkh-api` triggers full user reindexing when the active config changes.
-
-## 11. Token Usage Tracking
-
-`apkh-search` returns `tokens_used` for:
-
-- RAG answers
-- summaries
-
-Then `apkh-api` increments:
-
-- the user's total token count
-- the active config's token usage
-
-This tracking happens in `UsersService.addTokenUsage()`.
-
-## 12. End-to-End Mental Model
-
-The simplest mental model is:
-
-- `apkh-api` stores data and orchestrates workflows
-- `apkh-search` transforms note/file text into embeddings and LLM outputs
-- MongoDB stores the long-term note, chunk, and summary data
-- `apkh-storage` holds the raw files
-- the AI provider only sees prompt text and chunk text sent for a request
-
-## 13. Short Version
-
-### Ingestion
-
-`note save -> API -> Search parse/extract/chunk/embed -> API stores chunks in MongoDB`
-
-### AI Search
-
-`user query -> API -> Search embeds query -> API compares with stored chunk embeddings -> API sends best chunks to Search -> Search calls LLM -> API returns answer`
-
-### Summary
-
-`summary click -> API checks summary cache -> if missing, API loads note chunks -> API sends contexts to Search -> Search calls LLM -> API stores summary cache -> API returns summary`
-
-## 14. Diagrams
-
-### A. Ingestion / Indexing
+### One indexing run (a note)
 
 ```text
-Web
-  -> apkh-api (save note + files)
-  -> apkh-storage (store raw files)
-  -> apkh-api SearchService.triggerIngestion()
-  -> apkh-search /ingest
-       -> parse note HTML
-       -> fetch files from apkh-storage
-       -> extract text from files
-       -> chunk note/file text
-       -> generate embeddings via provider
-  -> apkh-api receives chunks + embeddings
-  -> MongoDB KnowledgeChunk collection
+index job for note N
+  -> load the note and its attachment names
+  -> nothing changed since the last run (sourceHash)?  -> done, no work
+  -> attachments not indexed yet -> apkh-search /ingest/extract  (download + read)
+  -> note text + newly read attachments -> apkh-search /ingest/chunk
+  -> passages whose text already has a vector in this space -> reuse it
+     the rest -> apkh-search /ingest/embed
+  -> write the new chunks, then remove the old ones
+  -> job ready (or queued for a retry if an attachment failed)
 ```
 
-### B. AI Search
+A note with no text still gets one chunk, its title, so it can be found.
+
+Service calls from the worker carry a short-lived token the API signs for the user, so no user token is stored with jobs.
+
+### Chats
+
+A conversation is indexed once it has 10 new messages since its last indexing, so later chats can draw on it ("related past chats"). Transcripts only grow, so earlier passages keep their vectors and only the new tail is embedded.
+
+## 6. What Editing a Note Costs
+
+Earlier versions re-downloaded and re-read every attachment and re-embedded every passage on every save, even for a category change. Now:
+
+| Change | What happens |
+|---|---|
+| Nothing indexable (e.g. only the category) | nothing: the run stops at the `sourceHash` check |
+| Title only | chunks are rewritten with the new title; no embedding calls |
+| Edit to the text | only passages whose text changed are embedded; attachments are untouched |
+| Attachment added | only that file is downloaded, read and embedded |
+| Attachment removed | its chunks are dropped |
+| Provider switched | vectors rebuilt from the stored text; no attachment is read again |
+| Switched to Claude | nothing: stored chunks already serve keyword search |
+
+One nuance: passages are split by size, so an edit near the start of a long note can shift the passage boundaries after it, and those passages are embedded again. The expensive part (downloading and reading attachments, and image/scanned-page reads by the vision model) is never repeated for unchanged files.
+
+Attachments that had nothing readable (`empty`, `unsupported`, `missing`) are not downloaded again unless you rebuild the index; ones that failed are retried automatically.
+
+## 7. AI Search
 
 ```text
-Web
-  -> apkh-api /notes/ai-search
-  -> apkh-api loads active AI config
-  -> apkh-search /ai-search/embed-query
-       -> generate embedding for user query
-  -> apkh-api loads KnowledgeChunk docs from MongoDB
-  -> apkh-api cosine similarity over stored embeddings
-  -> apkh-api picks top matching chunks
+query
+  -> embed the query (Gemini / OpenAI)            [skipped for Claude]
+  -> hybrid retrieval over note + file chunks:
+       meaning: cosine similarity within the active space
+       keywords: MongoDB text search
+       merged by reciprocal rank fusion
+  -> top 5 passages (up to 12 of the pinned notes, if any)
   -> apkh-search /ai-search/rag
-       -> build RAG prompt from top chunks
-       -> call Gemini / OpenAI / Anthropic
-  -> apkh-api stores token usage
-  -> Web receives answer + references
+  -> answer + references (each marked semantic, keyword or both)
 ```
 
-### C. Summary
+Details:
+
+- **Hybrid** search catches exact terms embeddings blur (names, error codes), and is what keeps Claude users' search working.
+- Semantic matches below a per-provider similarity (Gemini 0.5, OpenAI 0.3) are ignored; confidence is "high" from Gemini 0.7 / OpenAI 0.5, "medium" for keyword-only search.
+- **Pinned notes** (`@mention`) restrict the search to those notes and skip the similarity cutoff, so broad questions ("what are the key points?") still get the note's content.
+- If the query can't be embedded (e.g. a rate limit), the answer comes from keyword matches instead of failing.
+- The response includes `pendingNotes`: how many notes are still being indexed and weren't searched yet.
+- Chat transcripts are never AI-search sources.
+
+## 8. Chat
+
+For each message the API assembles a small, ranked context with the same hybrid retrieval: up to 6 passages from notes and attachments, 3 from this conversation's indexed transcript, and 3 from other conversations, plus the last 10 messages. The answer is generated before anything is saved, so a failed answer leaves no unanswered question in the history.
+
+## 9. Summaries
+
+- A cached summary is returned as-is (no tokens spent).
+- Otherwise the note's chunks (note text + attachments, in order) are sent to `/ai-search/summarize`.
+- While the note is being re-indexed, its current text is used instead of possibly stale chunks, and the result isn't cached.
+- Failures ("model no longer available", ...) are never cached.
+- Editing or deleting the note clears its cached summary.
+
+## 10. Token Usage
+
+`apkh-search` reports tokens for answers, summaries, image reads and embeddings (embedding tokens are counted locally, as the SDKs don't return them), and the API adds them to the active config's and the user's totals.
+
+## 11. Startup Migrations
+
+Before serving requests the API runs any migrations not yet recorded in `migrations`:
+
+1. **object-id-refs**: id fields were declared in a way Mongoose treated as untyped, so notes stored `userId` as a string; they become real ObjectIds.
+2. **chunks-v2**: hashes every chunk's text; converts existing OpenAI vectors (already in today's OpenAI space) to binary vectors; drops old Gemini vectors (3072 dimensions, not comparable with the 1536 space) so those notes are re-embedded from their stored text; removes old chat-transcript chunks, which are rebuilt.
+3. **note-plain-text**: recomputes `contentPlain` with one line per paragraph.
+
+Each is safe to re-run. Notes indexed before the queue existed get their jobs the first time the user opens the app (a background "reconcile" also queues anything missing or in the wrong space).
+
+## 12. Short Version
 
 ```text
-Web
-  -> apkh-api /notes/:id/summary
-  -> apkh-api checks MongoDB summary collection
-     -> if cached, return immediately
-     -> if not cached:
-          -> load KnowledgeChunk docs for that note
-          -> build summary contexts
-          -> apkh-search /ai-search/summarize
-               -> build summary prompt
-               -> call Gemini / OpenAI / Anthropic
-          -> apkh-api stores summary in MongoDB summary collection
-  -> Web receives summary
+Indexing:   note save -> index_jobs -> worker -> extract (new files only) -> chunk -> embed (new text only) -> knowledgechunks
+AI search:  query -> [embed] -> hybrid retrieval (meaning + keywords) -> RAG answer + references
+Chat:       message -> [embed] -> notes + this chat + other chats (ranked, capped) -> answer -> saved
+Summary:    cache hit? -> else note chunks -> summarize -> cache
 ```
 
-### D. One-Line Architecture
+## 13. Diagrams
+
+### Indexing
 
 ```text
-Web -> API -> Search -> AI Provider
-         |      ^
-         v      |
-     MongoDB    |
-         |
-         v
-    Stored note / chunks / summaries
+Web  --save note-->  apkh-api  --queue-->  index_jobs
+                                              |
+                          index worker  <-----+
+                              |
+                              +--> apkh-search /ingest/extract --> apkh-storage (attachments)
+                              |                                --> vision model (images, scans)
+                              +--> apkh-search /ingest/chunk
+                              +--> apkh-search /ingest/embed   --> embedding model
+                              |
+                              +--> knowledgechunks (text, textHash, space, vector)
+```
 
-Search <-> Storage
-          raw attached files
+### AI search and chat
+
+```text
+Web --> apkh-api --> apkh-search /ai-search/embed-query --> embedding model
+            |
+            +--> knowledgechunks: vector similarity  +  text search  --> fused ranking
+            |
+            +--> apkh-search /ai-search/rag or /chat-rag --> chat model
+            |
+            +--> answer + references --> Web
 ```

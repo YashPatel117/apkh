@@ -1,4 +1,4 @@
-import { INote, INoteDto } from "@/app/common/models/note";
+import { INote, INoteDto, IndexStatus } from "@/app/common/models/note";
 import { webApi, storageApi } from "./axios/axios";
 
 export async function getAllNotes() {
@@ -86,6 +86,8 @@ export type AiSearchResponse = {
   answer: string;
   confidence: string;
   isError?: boolean;
+  /** Notes still being indexed, whose content the answer could not use yet */
+  pendingNotes?: number;
   references: {
     note_id: string;
     note_title: string;
@@ -93,7 +95,10 @@ export type AiSearchResponse = {
     source_name?: string;
     source_page?: number;
     excerpt: string;
+    /** Cosine similarity for a meaning match; 0 for a keyword-only match */
     similarity_score: number;
+    /** Why the passage was found (older API versions omit it) */
+    match?: "semantic" | "keyword" | "both";
   }[];
 };
 
@@ -113,4 +118,26 @@ export type NoteSummaryResponse = {
 export async function summarizeNote(noteId: string) {
   const res = await webApi.post(`/notes/${noteId}/summary`);
   return res.data.data as NoteSummaryResponse;
+}
+
+export async function getIndexStatus() {
+  const res = await webApi.get("/notes/index-status");
+  return res.data as IndexStatus;
+}
+
+/** Re-index one note; `force` re-reads its attachments too. */
+export async function reindexNote(noteId: string, force = false) {
+  await webApi.post(`/notes/${noteId}/reindex`, { force });
+}
+
+/** Re-index notes (and attachments) that failed. */
+export async function retryFailedIndexing() {
+  const res = await webApi.post("/notes/index/retry-failed", {});
+  return res.data as IndexStatus;
+}
+
+/** Rebuild the whole search index; `force` downloads and reads every attachment again. */
+export async function rebuildIndex(force: boolean) {
+  const res = await webApi.post("/notes/reindex", { force });
+  return res.data as IndexStatus;
 }

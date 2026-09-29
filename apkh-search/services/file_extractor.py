@@ -107,12 +107,20 @@ async def _extract_pdf(
         if text
     ]
     used_vision = any(read for _, read in results)
+    # Scanned (or blank) pages nobody could read: no vision model, over the
+    # page limit, or the model failed on them.
+    unread_pages = sum(
+        1
+        for (_, original, _), (_, read) in zip(pages, results)
+        if len(original) < MIN_PDF_PAGE_TEXT and not read
+    )
 
     return {
         "file_name": file_name,
         "extracted_text": "\n\n".join(pages_text),
         "extraction_method": "pdf_vision" if used_vision else "pdf_text",
         "page_count": page_count,
+        "unread_pages": unread_pages,
     }
 
 

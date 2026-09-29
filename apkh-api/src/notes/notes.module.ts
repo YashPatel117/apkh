@@ -7,6 +7,7 @@ import { Summary, SummarySchema } from 'src/common/schema/summary';
 import { HttpModule } from '@nestjs/axios';
 import { FileModule } from 'src/file/file.module';
 import { SearchModule } from 'src/search/search.module';
+import { IndexingModule } from 'src/indexing/indexing.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { SearchModule } from 'src/search/search.module';
     ]),
     FileModule,
     SearchModule,
+    IndexingModule,
   ],
   controllers: [NotesController],
   providers: [NotesService],

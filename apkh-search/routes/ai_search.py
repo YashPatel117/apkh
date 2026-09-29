@@ -8,7 +8,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
-from services.embedder import generate_single_embedding
+from services.embedder import EmbeddingError, embed_query as embed_query_text, resolve_space
 from services.llm import generate_note_summary, generate_rag_answer, test_llm_connection
 from services.model_catalog import PROVIDERS, ModelListError, list_chat_models
 
@@ -22,6 +22,9 @@ class EmbedQueryRequest(BaseModel):
     api_key: str | None = None
     apiKey: str | None = None
     model: str | None = None
+    # Embedding space chosen by the API; defaults to the provider's standard one.
+    embedding_model: str | None = None
+    dimensions: int | None = None
 
 
 class RagRequest(BaseModel):
@@ -71,23 +74,15 @@ async def embed_query(body: EmbedQueryRequest, request: Request):
 
     logger.info("Embedding AI query for model: %s", model)
     try:
-        embedding = await generate_single_embedding(
-            body.query,
-            api_key,
-            model,
-        )
-        return {"embedding": embedding}
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:
-        logger.exception("Unexpected embedding error for model %s", model)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Embedding provider request failed unexpectedly.",
-        ) from exc
+        space = resolve_space(model, body.embedding_model, body.dimensions)
+        embedding = await embed_query_text(body.query, api_key, space)
+    except EmbeddingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return {
+        "embedding": embedding,
+        "embedding_model": space.model,
+        "dimensions": space.dimensions,
+    }
 
 
 @router.post("/rag")

@@ -13,7 +13,7 @@ import jwt  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 import main  # noqa: E402
-from services.embedder import embedding_model_for  # noqa: E402
+from services.embedder import EmbeddingError, resolve_space  # noqa: E402
 
 TOKEN = jwt.encode({"_id": "user-1"}, os.environ["JWT_SECRET"], algorithm="HS256")
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -67,11 +67,23 @@ class ErrorFlagTests(unittest.TestCase):
         self.assertEqual(res.status_code, 401)
 
 
-class EmbeddingModelTests(unittest.TestCase):
-    def test_each_provider_has_one_fixed_embedding_model(self):
-        self.assertEqual(embedding_model_for("gemini-2.5-flash"), "gemini-embedding-001")
-        self.assertEqual(embedding_model_for("gpt-4o-mini"), "text-embedding-3-small")
-        self.assertIsNone(embedding_model_for("claude-sonnet-4-5"))
+class EmbeddingSpaceTests(unittest.TestCase):
+    def test_each_provider_has_one_embedding_space(self):
+        gemini = resolve_space("gemini-2.5-flash")
+        self.assertEqual((gemini.model, gemini.dimensions), ("gemini-embedding-001", 1536))
+        openai = resolve_space("gpt-4o-mini")
+        self.assertEqual((openai.model, openai.dimensions), ("text-embedding-3-small", 1536))
+
+    def test_claude_has_no_embedding_space(self):
+        with self.assertRaises(EmbeddingError) as ctx:
+            resolve_space("claude-sonnet-4-5")
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_unknown_spaces_are_rejected(self):
+        with self.assertRaises(EmbeddingError):
+            resolve_space("gpt-4o-mini", "text-embedding-3-large")
+        with self.assertRaises(EmbeddingError):
+            resolve_space("gemini-2.5-flash", dimensions=999)
 
 
 if __name__ == "__main__":

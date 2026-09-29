@@ -1,15 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpService } from '@nestjs/axios';
 import { HttpException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
-import { of } from 'rxjs';
 import { ChatService } from './chat.service';
 import { ChatSession } from 'src/common/schema/chat-session';
 import { ChatMessage } from 'src/common/schema/chat-message';
-import { KnowledgeChunk } from 'src/common/schema/chunk';
 import { UsersService } from 'src/users/users.service';
-import { SearchService } from 'src/search/search.service';
+import { IndexingService } from 'src/indexing/indexing.service';
+import { SearchApiClient } from 'src/search-api/search-api.client';
+import { RetrievalService } from 'src/search/retrieval.service';
 
 /** A mongoose query stand-in: every builder method chains, exec() resolves `result`. */
 function query<T>(result: T) {
@@ -23,6 +22,23 @@ function query<T>(result: T) {
   return proxy;
 }
 
+const chunk = (text: string, extra: Record<string, unknown> = {}) => ({
+  id: text,
+  noteTitle: 'Plan',
+  sourceType: 'note',
+  text,
+  similarity: 0.8,
+  keywordMatch: false,
+  score: 1,
+  ...extra,
+});
+
+type RetrieveOptions = {
+  scope: { sessionId?: string; excludeSessionId?: string };
+  vector: Float32Array | null;
+  space: unknown;
+};
+
 describe('ChatService.sendMessage', () => {
   const sessionId = new Types.ObjectId().toHexString();
   const userId = new Types.ObjectId().toHexString();
@@ -35,9 +51,6 @@ describe('ChatService.sendMessage', () => {
     updatedAt?: Date;
     save: jest.Mock;
   };
-  let postBodies: { notes_chunks: string[] }[];
-  let autoChunk: jest.SpyInstance;
-  let ragResponse: { answer: string; error?: boolean; tokens_used: number };
 
   class MessageModel {
     static find = jest.fn();
@@ -50,31 +63,19 @@ describe('ChatService.sendMessage', () => {
   }
 
   const sessionModel = { findOne: jest.fn() };
-  const chunkModel = { find: jest.fn() };
   const usersService = {
     getActiveLlmSettings: jest.fn(),
     addTokenUsage: jest.fn(),
   };
-  const searchService = {
-    supportsSemanticSearch: (provider: string) =>
-      provider === 'gemini' || provider === 'openai',
-    embedQuery: jest.fn(),
-    similarityThresholds: () => ({ min: 0.3, high: 0.5 }),
-    embeddingProviderFilter: () => ({}),
-    findNotesByKeywords: jest.fn(),
+  const searchApi = { embedQuery: jest.fn(), chatRag: jest.fn() };
+  const retrieval = {
+    retrieve: jest.fn<Promise<unknown[]>, [string, string, RetrieveOptions]>(),
   };
-  const httpService = {
-    post: jest.fn((url: string, body: unknown) => {
-      postBodies.push(body as { notes_chunks: string[] });
-      return of({ data: ragResponse });
-    }),
-  };
+  const indexing = { enqueueChat: jest.fn(), removeChat: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     saved = [];
-    postBodies = [];
-    ragResponse = { answer: 'The answer', tokens_used: 42 };
     session = {
       _id: new Types.ObjectId(sessionId),
       title: 'Chat',
@@ -85,7 +86,6 @@ describe('ChatService.sendMessage', () => {
     sessionModel.findOne.mockReturnValue(query(session));
     MessageModel.find.mockReturnValue(query([]));
     MessageModel.countDocuments.mockResolvedValue(4);
-    chunkModel.find.mockReturnValue(query([]));
     usersService.getActiveLlmSettings.mockResolvedValue({
       provider: 'openai',
       apiKey: 'k',
@@ -93,25 +93,28 @@ describe('ChatService.sendMessage', () => {
       keyName: 'n',
     });
     usersService.addTokenUsage.mockResolvedValue(undefined);
-    searchService.embedQuery.mockResolvedValue([1, 0]);
-    searchService.findNotesByKeywords.mockResolvedValue([]);
+    searchApi.embedQuery.mockResolvedValue(Float32Array.from([1, 0]));
+    searchApi.chatRag.mockResolvedValue({
+      text: 'The answer',
+      error: false,
+      tokensUsed: 42,
+    });
+    retrieval.retrieve.mockResolvedValue([]);
+    indexing.enqueueChat.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatService,
         { provide: getModelToken(ChatSession.name), useValue: sessionModel },
         { provide: getModelToken(ChatMessage.name), useValue: MessageModel },
-        { provide: getModelToken(KnowledgeChunk.name), useValue: chunkModel },
-        { provide: HttpService, useValue: httpService },
         { provide: UsersService, useValue: usersService },
-        { provide: SearchService, useValue: searchService },
+        { provide: SearchApiClient, useValue: searchApi },
+        { provide: RetrievalService, useValue: retrieval },
+        { provide: IndexingService, useValue: indexing },
       ],
     }).compile();
 
     service = module.get(ChatService);
-    autoChunk = jest
-      .spyOn(service, 'autoChunkSession')
-      .mockResolvedValue(undefined);
   });
 
   const send = (message = 'What did we decide?') =>
@@ -129,65 +132,80 @@ describe('ChatService.sendMessage', () => {
   });
 
   it('saves nothing when the model fails, so the question can be retried', async () => {
-    ragResponse = { answer: 'Model unavailable', error: true, tokens_used: 0 };
+    searchApi.chatRag.mockResolvedValue({
+      text: 'Model unavailable',
+      error: true,
+      tokensUsed: 0,
+    });
     await expect(send()).rejects.toBeInstanceOf(HttpException);
     expect(saved).toEqual([]);
   });
 
-  it('re-chunks the transcript once 10 new messages have accumulated', async () => {
+  it('queues the transcript for indexing once 10 new messages have accumulated', async () => {
     MessageModel.countDocuments.mockResolvedValue(9);
     await send();
-    expect(autoChunk).not.toHaveBeenCalled();
+    expect(indexing.enqueueChat).not.toHaveBeenCalled();
 
     MessageModel.countDocuments.mockResolvedValue(10);
     await send();
-    expect(autoChunk).toHaveBeenCalledTimes(1);
+    expect(indexing.enqueueChat).toHaveBeenCalledWith(userId, sessionId);
 
     session.chunkedMessageCount = 10;
     MessageModel.countDocuments.mockResolvedValue(12);
     await send();
-    expect(autoChunk).toHaveBeenCalledTimes(1);
+    expect(indexing.enqueueChat).toHaveBeenCalledTimes(1);
   });
 
-  it('sends only the most similar note chunks, best first', async () => {
-    const chunks = Array.from({ length: 20 }, (_, i) => ({
-      text: `chunk ${i}`,
-      sourceType: 'note',
-      noteTitle: `Note ${i}`,
-      // similarity to [1, 0] grows with i
-      embedding: [i / 20, 1 - i / 20],
-    }));
-    chunkModel.find.mockReturnValue(query(chunks));
+  it('builds the prompt from notes, this chat and other chats separately', async () => {
+    retrieval.retrieve.mockImplementation((_user, _query, options) => {
+      if (options.scope.sessionId) {
+        return Promise.resolve([chunk('earlier in this chat')]);
+      }
+      if (options.scope.excludeSessionId) {
+        return Promise.resolve([
+          chunk('another chat', { noteTitle: 'Old chat' }),
+        ]);
+      }
+      return Promise.resolve([chunk('from a note')]);
+    });
 
     await send();
 
-    const notesChunks = postBodies[0].notes_chunks;
-    expect(notesChunks).toHaveLength(6);
-    expect(notesChunks[0]).toContain('chunk 19');
-    expect(notesChunks[5]).toContain('chunk 14');
+    const prompt = (
+      searchApi.chatRag.mock.calls as [
+        unknown,
+        unknown,
+        Record<string, string[]>,
+      ][]
+    )[0][2];
+    expect(prompt.notesChunks).toEqual(['[SOURCE: Note "Plan"]\nfrom a note']);
+    expect(prompt.currentChatChunks).toEqual(['earlier in this chat']);
+    expect(prompt.similarChatChunks).toEqual([
+      '[RELATED CHAT: Old chat]\nanother chat',
+    ]);
   });
 
-  it('finds notes by keyword when the provider has no embeddings', async () => {
+  it('searches by keyword alone when the provider has no embeddings', async () => {
     usersService.getActiveLlmSettings.mockResolvedValue({
       provider: 'anthropic',
       apiKey: 'k',
       model: 'claude-sonnet-4-5',
       keyName: 'n',
     });
-    searchService.findNotesByKeywords.mockResolvedValue([
-      { noteId: 'n1', title: 'Roadmap', text: 'Ship chat in Q3' },
-    ]);
 
     await send('roadmap for chat');
 
-    expect(searchService.embedQuery).not.toHaveBeenCalled();
-    expect(searchService.findNotesByKeywords).toHaveBeenCalledWith(
-      userId,
-      'roadmap for chat',
-      expect.any(Number),
-    );
-    expect(postBodies[0].notes_chunks).toEqual([
-      '[SOURCE: Note "Roadmap"]\nShip chat in Q3',
-    ]);
+    expect(searchApi.embedQuery).not.toHaveBeenCalled();
+    expect(retrieval.retrieve).toHaveBeenCalledTimes(3);
+    for (const [, query, options] of retrieval.retrieve.mock.calls) {
+      expect(query).toBe('roadmap for chat');
+      expect(options).toMatchObject({ vector: null, space: null });
+    }
+  });
+
+  it('falls back to keyword search when embedding the message fails', async () => {
+    searchApi.embedQuery.mockRejectedValue(new Error('rate limited'));
+    await expect(send()).resolves.toBeDefined();
+    expect(retrieval.retrieve.mock.calls[0][2]).toMatchObject({ vector: null });
   });
 });

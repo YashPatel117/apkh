@@ -1,7 +1,7 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
-import { ArrowUpRight, CircleAlert, FileText, MessageSquarePlus, Paperclip, Settings, Sparkles } from "lucide-react";
+import { ArrowUpRight, CircleAlert, FileText, Hourglass, MessageSquarePlus, Paperclip, Settings, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { AiSearchResponse } from "@/service/noteService";
 import { Button } from "../ui/Button";
@@ -16,6 +16,14 @@ const confidenceTone: Record<string, { label: string; classes: string }> = {
   low: { label: "Low confidence", classes: "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:ring-orange-500/30" },
   not_found: { label: "Not found in notes", classes: "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-500/30" },
 };
+
+/** Why a source matched: by meaning (with its similarity), by the query's words, or both. */
+function matchLabel(reference: Reference) {
+  const similarity = `${Math.round(reference.similarity_score * 100)}%`;
+  if (reference.match === "keyword") return "Keywords";
+  if (reference.match === "both") return `${similarity} · keywords`;
+  return similarity;
+}
 
 function sourceMeta(reference: Reference) {
   if (reference.source_type === "file") {
@@ -100,6 +108,14 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onOpen
               <ReactMarkdown>{answer.answer}</ReactMarkdown>
             </div>
 
+            {Boolean(answer.pendingNotes) && (
+              <p className="mt-4 flex items-start gap-2 rounded-xl bg-surface-2 px-3 py-2 text-xs text-fg-muted">
+                <Hourglass className="mt-px size-3.5 shrink-0" />
+                {answer.pendingNotes === 1 ? "1 note is" : `${answer.pendingNotes} notes are`} still being indexed and
+                weren&apos;t searched yet.
+              </p>
+            )}
+
             <div className="mt-8">
               <h3 className="text-sm font-semibold text-fg">Sources</h3>
               <p className="text-xs text-fg-subtle">Open a source to jump into the note.</p>
@@ -123,8 +139,15 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onOpen
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <p className="truncate font-semibold text-fg">{reference.note_title || "Untitled note"}</p>
-                            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.7rem] font-semibold text-accent-fg">
-                              {Math.round(reference.similarity_score * 100)}%
+                            <span
+                              className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.7rem] font-semibold text-accent-fg"
+                              title={
+                                reference.match === "keyword"
+                                  ? "Matched the words of your question"
+                                  : "Similarity in meaning to your question"
+                              }
+                            >
+                              {matchLabel(reference)}
                             </span>
                           </div>
                           <p className="truncate text-xs text-fg-subtle">{sourceMeta(reference)}</p>

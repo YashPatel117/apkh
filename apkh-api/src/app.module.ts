@@ -10,10 +10,15 @@ import { JwtSecretKey } from './common/constant/jwt';
 import { requireEnv } from './common/constant/env';
 import { FileModule } from './file/file.module';
 import { ChatModule } from './chat/chat.module';
+import { DatabaseModule } from './database/database.module';
+import { IndexingModule } from './indexing/indexing.module';
 
 @Module({
   imports: [
     MongooseModule.forRoot(requireEnv('MONGODB_URI')),
+    // Data migrations run while modules initialise, before the index worker
+    // starts (application bootstrap) and before requests are served.
+    DatabaseModule,
     UsersModule,
     AuthModule,
     JwtModule.register({
@@ -24,6 +29,7 @@ import { ChatModule } from './chat/chat.module';
     NotesModule,
     FileModule,
     ChatModule,
+    IndexingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

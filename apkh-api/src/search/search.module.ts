@@ -1,23 +1,22 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
 import { MongooseModule } from '@nestjs/mongoose';
 import { KnowledgeChunk, KnowledgeChunkSchema } from 'src/common/schema/chunk';
-import { SearchService } from './search.service';
+import { IndexingModule } from 'src/indexing/indexing.module';
+import { SearchApiModule } from 'src/search-api/search-api.module';
 import { UsersModule } from 'src/users/users.module';
-import { Note, NoteSchema } from 'src/common/schema/note';
-import { FileModule } from 'src/file/file.module';
+import { RetrievalService } from './retrieval.service';
+import { SearchService } from './search.service';
 
 @Module({
   imports: [
-    HttpModule,
     MongooseModule.forFeature([
       { name: KnowledgeChunk.name, schema: KnowledgeChunkSchema },
-      { name: Note.name, schema: NoteSchema },
     ]),
-    FileModule,
+    SearchApiModule,
+    IndexingModule,
     forwardRef(() => UsersModule),
   ],
-  providers: [SearchService],
-  exports: [SearchService],
+  providers: [SearchService, RetrievalService],
+  exports: [SearchService, RetrievalService],
 })
 export class SearchModule {}

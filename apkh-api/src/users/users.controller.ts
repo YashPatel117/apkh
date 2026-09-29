@@ -15,6 +15,8 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import {
   IsBoolean,
@@ -31,7 +33,7 @@ import { JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { UserDocument } from 'src/common/schema/user';
-import { SearchService } from 'src/search/search.service';
+import { IndexingService } from 'src/indexing/indexing.service';
 
 import { SEARCH_API } from 'src/common/constant/endpoint';
 
@@ -81,7 +83,8 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly httpService: HttpService,
-    private readonly searchService: SearchService,
+    @Inject(forwardRef(() => IndexingService))
+    private readonly indexing: IndexingService,
   ) {}
 
   @UseGuards(AuthGuard)
@@ -157,7 +160,6 @@ export class UsersController {
   @ApiBearerAuth()
   @Post('/llm-configs')
   async addLlmConfig(
-    @Headers('authorization') authHeader: string,
     @JwtTokenUserId() userId: string,
     @Body() body: AddLlmConfigDto,
   ) {
@@ -169,7 +171,7 @@ export class UsersController {
       body.model,
       body.setActive ?? true,
     );
-    await this.reindexIfProviderChanged(authHeader, userId, previousProvider);
+    await this.reindexIfProviderChanged(userId, previousProvider);
     return this.sanitizeUser(user);
   }
 
@@ -178,13 +180,12 @@ export class UsersController {
   @ApiBearerAuth()
   @Patch('/llm-configs/:keyName/activate')
   async activateLlmConfig(
-    @Headers('authorization') authHeader: string,
     @JwtTokenUserId() userId: string,
     @Param('keyName') keyName: string,
   ) {
     const previousProvider = await this.usersService.getActiveProvider(userId);
     const user = await this.usersService.setActiveConfig(userId, keyName);
-    await this.reindexIfProviderChanged(authHeader, userId, previousProvider);
+    await this.reindexIfProviderChanged(userId, previousProvider);
     return this.sanitizeUser(user);
   }
 
@@ -193,33 +194,29 @@ export class UsersController {
   @ApiBearerAuth()
   @Delete('/llm-configs/:keyName')
   async deleteLlmConfig(
-    @Headers('authorization') authHeader: string,
     @JwtTokenUserId() userId: string,
     @Param('keyName') keyName: string,
   ) {
     const previousProvider = await this.usersService.getActiveProvider(userId);
     const user = await this.usersService.deleteLlmConfig(userId, keyName);
-    await this.reindexIfProviderChanged(authHeader, userId, previousProvider);
+    await this.reindexIfProviderChanged(userId, previousProvider);
     return this.sanitizeUser(user);
   }
 
   /**
-   * Stored vectors only need rebuilding when the embedding provider changes:
-   * the embedding model is fixed per provider, so switching models within a
-   * provider (or deleting an inactive key) must not re-embed every note.
+   * The index only needs work when the embedding provider changes (vectors
+   * then move to the new provider's embedding space): the embedding model is
+   * fixed per provider, so switching models within a provider or deleting an
+   * inactive key changes nothing. Re-embedding reuses the stored chunk text, so
+   * attachments are not downloaded or read again.
    */
   private async reindexIfProviderChanged(
-    authHeader: string,
     userId: string,
     previousProvider: LlmProvider | null,
   ) {
     const provider = await this.usersService.getActiveProvider(userId);
-    if (
-      provider &&
-      provider !== previousProvider &&
-      this.searchService.supportsSemanticSearch(provider)
-    ) {
-      this.searchService.triggerUserReindex(authHeader, userId);
+    if (provider && provider !== previousProvider) {
+      await this.indexing.reconcileUser(userId, { force: true });
     }
   }
 

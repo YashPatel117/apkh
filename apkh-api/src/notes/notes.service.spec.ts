@@ -5,6 +5,7 @@ import { Note } from 'src/common/schema/note';
 import { Summary } from 'src/common/schema/summary';
 import { FileService } from 'src/file/file.service';
 import { SearchService } from 'src/search/search.service';
+import { IndexingService } from 'src/indexing/indexing.service';
 
 describe('NotesService', () => {
   let service: NotesService;
@@ -17,6 +18,7 @@ describe('NotesService', () => {
         { provide: getModelToken(Summary.name), useValue: {} },
         { provide: FileService, useValue: {} },
         { provide: SearchService, useValue: {} },
+        { provide: IndexingService, useValue: {} },
       ],
     }).compile();
 

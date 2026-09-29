@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -12,16 +11,20 @@ import { NoteResponse } from './dto/response.dto';
 import { NoteSummaryResponse } from './dto/summary-response.dto';
 import { SearchService } from 'src/search/search.service';
 import { resolveNoteMetadata } from './utils/note-metadata';
-import { toHttpException } from 'src/common/utils/http-error';
+import { errorMessage, toHttpException } from 'src/common/utils/http-error';
+import { IndexingService } from 'src/indexing/indexing.service';
 
 @Injectable()
 export class NotesService {
+  private readonly logger = new Logger(NotesService.name);
+
   constructor(
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
     @InjectModel(Summary.name) private summaryModel: Model<SummaryDocument>,
     private readonly fileService: FileService,
     private readonly searchService: SearchService,
-  ) { }
+    private readonly indexing: IndexingService,
+  ) {}
 
   /** CREATE */
   async create(
@@ -31,7 +34,9 @@ export class NotesService {
     files: Express.Multer.File[],
   ) {
     try {
-      const existingCategories = await this.noteModel.distinct('category', { userId });
+      const existingCategories = await this.noteModel.distinct('category', {
+        userId,
+      });
       const resolvedMetadata = resolveNoteMetadata({
         title: createNoteDto.title,
         category: createNoteDto.category,
@@ -62,8 +67,8 @@ export class NotesService {
         result.files = notefiles.files;
       }
 
-      // Trigger AI ingestion (fire-and-forget)
-      this.searchService.triggerIngestion(token, String(note._id), userId);
+      // Index in the background; the queue retries until it succeeds
+      this.queueIndexing(userId, String(note._id));
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error: unknown) {
@@ -129,11 +134,16 @@ export class NotesService {
     }
 
     try {
-      const existingCategories = await this.noteModel.distinct('category', { userId });
+      const existingCategories = await this.noteModel.distinct('category', {
+        userId,
+      });
       const nextContent = updateNoteDto.content ?? note.content;
-      const nextTitle = updateNoteDto.title === undefined ? note.title : updateNoteDto.title;
+      const nextTitle =
+        updateNoteDto.title === undefined ? note.title : updateNoteDto.title;
       const nextCategory =
-        updateNoteDto.category === undefined ? note.category : updateNoteDto.category;
+        updateNoteDto.category === undefined
+          ? note.category
+          : updateNoteDto.category;
       const resolvedMetadata = resolveNoteMetadata({
         title: nextTitle,
         category: nextCategory,
@@ -180,8 +190,8 @@ export class NotesService {
 
       await this.clearSummaryCache(_id, userId);
 
-      // Trigger AI re-ingestion (fire-and-forget)
-      this.searchService.triggerIngestion(token, _id, userId);
+      // Re-index in the background: only what changed is re-read and re-embedded
+      this.queueIndexing(userId, _id);
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error) {
@@ -200,8 +210,8 @@ export class NotesService {
       // Delete related files
       await this.fileService.removeNoteFiles(token, _id);
 
-      // Delete AI chunks
-      await this.searchService.deleteChunks(_id);
+      // Delete the note's search index
+      await this.indexing.removeNote(_id);
 
       // Delete cached summaries
       await this.clearSummaryCache(_id, userId);
@@ -249,7 +259,8 @@ export class NotesService {
           summary: cachedSummary.summary,
           cached: true,
           model: cachedSummary.summaryModel ?? null,
-          generatedAt: cachedSummary.updatedAt ?? cachedSummary.createdAt ?? null,
+          generatedAt:
+            cachedSummary.updatedAt ?? cachedSummary.createdAt ?? null,
         });
       }
 
@@ -284,6 +295,25 @@ export class NotesService {
     } catch (error) {
       throw toHttpException(error);
     }
+  }
+
+  /** Queue a note for re-indexing (e.g. to retry an attachment). */
+  async reindex(userId: string, _id: string, force = false) {
+    const note = await this.noteModel.exists({ userId, _id });
+    if (!note) {
+      throw new HttpException('Note not found', HttpStatus.BAD_REQUEST);
+    }
+    await this.indexing.enqueueNote(userId, _id, { force });
+    return new ApiResponseDto<{ queued: boolean }>().ok({ queued: true });
+  }
+
+  private queueIndexing(userId: string, noteId: string) {
+    // If this fails the note is still saved; the next reconcile queues it.
+    this.indexing.enqueueNote(userId, noteId).catch((err) => {
+      this.logger.error(
+        `Queueing note ${noteId} for indexing failed: ${errorMessage(err)}`,
+      );
+    });
   }
 
   private async clearSummaryCache(noteId: string, userId: string) {

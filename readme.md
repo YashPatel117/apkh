@@ -82,6 +82,7 @@ For a fresh clone, the full flow is:
 
 - `apkh-search/.env` is ignored by git, so each machine should create its own copy.
 - If `start-all.bat` does not open tabs, make sure `wt` (Windows Terminal) is installed and available.
+- On startup the API runs any pending data migrations (recorded in the `migrations` collection) before it serves requests, then starts the background indexing worker. See [ai_search_architecture.md](ai_search_architecture.md) for how notes are indexed and searched.
 
 ## macOS
 
@@ -134,3 +135,13 @@ cd apkh-search && .venv/bin/python main.py
 2. Create `apkh-search/.env` from `.env.example`
 3. Install dependencies for all projects
 4. Start each service in its own terminal
+
+## Tests
+
+```bash
+cd apkh-api && npm test                     # unit tests
+cd apkh-api && MONGODB_TEST_URI=mongodb://localhost:27017 npm run test:integration
+cd apkh-search && .venv/bin/python -B -m unittest discover -s tests
+```
+
+Integration tests need a MongoDB (local or Atlas). Each run creates a throwaway `apkh-test-*` database and drops only that; without `MONGODB_TEST_URI` they are skipped. The search-service tests never call an AI provider.

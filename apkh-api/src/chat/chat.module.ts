@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { HttpModule } from '@nestjs/axios';
 import { UsersModule } from 'src/users/users.module';
 import { SearchModule } from 'src/search/search.module';
+import { IndexingModule } from 'src/indexing/indexing.module';
+import { SearchApiModule } from 'src/search-api/search-api.module';
 import { ChatSession, ChatSessionSchema } from 'src/common/schema/chat-session';
 import { ChatMessage, ChatMessageSchema } from 'src/common/schema/chat-message';
-import { KnowledgeChunk, KnowledgeChunkSchema } from 'src/common/schema/chunk';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 
@@ -14,11 +14,11 @@ import { ChatService } from './chat.service';
     MongooseModule.forFeature([
       { name: ChatSession.name, schema: ChatSessionSchema },
       { name: ChatMessage.name, schema: ChatMessageSchema },
-      { name: KnowledgeChunk.name, schema: KnowledgeChunkSchema },
     ]),
-    HttpModule,
     UsersModule,
     SearchModule,
+    IndexingModule,
+    SearchApiModule,
   ],
   controllers: [ChatController],
   providers: [ChatService],

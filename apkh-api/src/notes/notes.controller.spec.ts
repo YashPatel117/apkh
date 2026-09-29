@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { NotesController } from './notes.controller';
 import { NotesService } from './notes.service';
 import { SearchService } from 'src/search/search.service';
+import { IndexingService } from 'src/indexing/indexing.service';
 
 describe('NotesController', () => {
   let controller: NotesController;
@@ -15,6 +16,7 @@ describe('NotesController', () => {
         { provide: JwtService, useValue: {} },
         { provide: NotesService, useValue: {} },
         { provide: SearchService, useValue: {} },
+        { provide: IndexingService, useValue: {} },
       ],
     }).compile();
 

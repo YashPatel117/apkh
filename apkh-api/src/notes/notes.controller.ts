@@ -10,11 +10,15 @@ import {
   UseInterceptors,
   UploadedFiles,
   Query,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { NotesService } from './notes.service';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 import { AiSearchDto } from './dto/ai-search.dto';
+import { ReindexDto } from './dto/reindex.dto';
+import { IndexingService } from 'src/indexing/indexing.service';
 import { SearchService } from 'src/search/search.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
@@ -28,7 +32,8 @@ export class NotesController {
   constructor(
     private readonly notesService: NotesService,
     private readonly searchService: SearchService,
-  ) { }
+    private readonly indexing: IndexingService,
+  ) {}
 
   /** CREATE */
   @Post()
@@ -89,6 +94,29 @@ export class NotesController {
     return this.notesService.searchNotes(userId, search);
   }
 
+  /** SEARCH INDEX STATUS of every note (polled while indexing runs) */
+  @Get('index-status')
+  async indexStatus(@JwtTokenUserId() userId: string) {
+    await this.indexing.reconcileUser(userId);
+    return this.indexing.getStatus(userId);
+  }
+
+  /** REBUILD THE SEARCH INDEX of all notes */
+  @Post('reindex')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async reindexAll(@JwtTokenUserId() userId: string, @Body() dto: ReindexDto) {
+    await this.indexing.reindexAll(userId, { force: dto.force });
+    return this.indexing.getStatus(userId);
+  }
+
+  /** RETRY notes (and attachments) that failed to index */
+  @Post('index/retry-failed')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async retryFailed(@JwtTokenUserId() userId: string) {
+    await this.indexing.retryFailed(userId);
+    return this.indexing.getStatus(userId);
+  }
+
   /** AI SEARCH (RAG) */
   @Post('ai-search')
   @ApiBody({ type: AiSearchDto })
@@ -97,7 +125,13 @@ export class NotesController {
     @JwtTokenUserId() userId: string,
     @Body() aiSearchDto: AiSearchDto,
   ) {
-    return this.searchService.performAiSearch(token, userId, aiSearchDto.query, 5, aiSearchDto.referencedNoteIds);
+    return this.searchService.performAiSearch(
+      token,
+      userId,
+      aiSearchDto.query,
+      5,
+      aiSearchDto.referencedNoteIds,
+    );
   }
 
   @Post(':id/summary')
@@ -107,6 +141,17 @@ export class NotesController {
     @Param('id') id: string,
   ) {
     return this.notesService.summarize(token, userId, id);
+  }
+
+  /** RE-INDEX one note */
+  @Post(':id/reindex')
+  @HttpCode(HttpStatus.ACCEPTED)
+  reindexNote(
+    @JwtTokenUserId() userId: string,
+    @Param('id') id: string,
+    @Body() dto: ReindexDto,
+  ) {
+    return this.notesService.reindex(userId, id, dto.force);
   }
 
   /** READ ONE */

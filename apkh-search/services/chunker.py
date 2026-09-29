@@ -49,8 +49,12 @@ def chunk_text(
     return _split_source_documents(source_docs, chunk_size=chunk_size, overlap=overlap)
 
 
-def chunk_document(note_text: str, file_extractions: list[dict]) -> list[dict]:
-    """Chunk note content and all extracted file contents."""
+def chunk_document(
+    note_text: str,
+    file_extractions: list[dict],
+    main_source_type: str = "note",
+) -> list[dict]:
+    """Chunk the main text (a note, or a chat transcript) and all extracted file contents."""
     source_docs: list[Document] = []
     source_index = 0
 
@@ -59,8 +63,8 @@ def chunk_document(note_text: str, file_extractions: list[dict]) -> list[dict]:
             Document(
                 page_content=note_text,
                 metadata={
-                    "source_type": "note",
-                    "_source_id": _source_id("note", None, None, source_index),
+                    "source_type": main_source_type,
+                    "_source_id": _source_id(main_source_type, None, None, source_index),
                     "_source_text": note_text,
                 },
             )

@@ -6,6 +6,7 @@ import { useAppSelector } from "@/store/hook";
 import { Avatar } from "@/app/common/components/sidebar";
 import { supportsSemanticSearch } from "@/app/common/models/user";
 import LlmSettingsCard from "./LlmSettingsCard";
+import SearchIndexCard from "./SearchIndexCard";
 
 function Stat({ Icon, label, value, href }: { Icon: typeof Coins; label: string; value: string | number; href?: string }) {
   const body = (
@@ -87,8 +88,8 @@ export default function ProfilePage() {
                 <div className="min-w-0 text-sm">
                   <p className="font-semibold">Keyword matching only</p>
                   <p className="mt-0.5 opacity-90">
-                    {activeConfig.llmModel} can answer and summarize, but Claude has no embedding model, so notes are
-                    found by keywords rather than meaning. Add a Gemini or OpenAI key for semantic search.
+                    {activeConfig.llmModel} can answer and summarize, but Claude has no embedding model, so notes and
+                    attachments are found by keywords rather than meaning. Add a Gemini or OpenAI key for semantic search.
                   </p>
                 </div>
               </div>
@@ -105,6 +106,7 @@ export default function ProfilePage() {
               <FolderOpen className="size-3.5" /> {notes.length} notes available as source material
             </div>
           </section>
+          <SearchIndexCard />
         </div>
       </div>
     </div>
