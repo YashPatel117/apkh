@@ -38,9 +38,12 @@
         },
         {
             "name": "Search (FastAPI)",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
-            "python": "${workspaceFolder}/apkh-search/.venv/Scripts/python.exe",
+            "python": "${workspaceFolder}/apkh-search/.venv/bin/python",
+            "windows": {
+                "python": "${workspaceFolder}/apkh-search/.venv/Scripts/python.exe"
+            },
             "module": "uvicorn",
             "cwd": "${workspaceFolder}/apkh-search",
             "args": [
