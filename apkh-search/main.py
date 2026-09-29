@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 import logging
+import os
 
 # Load environment variables
 load_dotenv()
@@ -21,13 +22,19 @@ app = FastAPI(title="APKH Search Module", version="1.0.0")
 # CORS — allow API module and frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3002"],
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3002").split(",")
+        if origin.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-JWT_SECRET_KEY = "0ef16fe111b8e19e2d58fa0a17c5f214c6742616163eec3db89013dec3eb282bfa88294224d42317aab605fb224b494b26f575f665a28c9f65332f14c1a22210"
+JWT_SECRET_KEY = os.getenv("JWT_SECRET", "").strip()
+if not JWT_SECRET_KEY:
+    raise RuntimeError("Missing JWT_SECRET. Copy .env.example to .env and fill it in.")
 JWT_ALGORITHM = "HS256"
 
 bearer_scheme = HTTPBearer(auto_error=False)

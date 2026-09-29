@@ -50,8 +50,12 @@ export class AuthService {
 
   async resetPassword(resetDto: ResetPasswordDto) {
     const user = await this.userService.findOne(resetDto.email);
-    if (!user) {
-      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    // Same error for unknown email and wrong password so accounts can't be enumerated
+    if (
+      !user ||
+      !(await comparePassword(resetDto.currentPassword, user.password))
+    ) {
+      throw new UnauthorizedException('Email or current password is incorrect');
     }
 
     await this.userService.updatePassword(

@@ -4,19 +4,16 @@ import { AppService } from './app.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
-import * as dotenv from 'dotenv';
 import { JwtModule } from '@nestjs/jwt';
 import { NotesModule } from './notes/notes.module';
 import { JwtSecretKey } from './common/constant/jwt';
+import { requireEnv } from './common/constant/env';
 import { FileModule } from './file/file.module';
 import { ChatModule } from './chat/chat.module';
-dotenv.config();
 
 @Module({
   imports: [
-    MongooseModule.forRoot(
-      'mongodb+srv://yp7112003_db_user:YeKd5huDb9ozI8Rg@apkh-v1.vbuvkfe.mongodb.net/apkh?retryWrites=true&w=majority',
-    ),
+    MongooseModule.forRoot(requireEnv('MONGODB_URI')),
     UsersModule,
     AuthModule,
     JwtModule.register({

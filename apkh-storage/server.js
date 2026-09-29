@@ -6,15 +6,28 @@ const jwt = require("jsonwebtoken");
 const archiver = require("archiver");
 const cors = require("cors");
 
-const app = express();
-const port = 3001;
+// Load .env if present (Node >= 20.12); real env vars take precedence
+try {
+  process.loadEnvFile(path.join(__dirname, ".env"));
+} catch {}
 
-const FRONTEND_URL = "http://localhost:3002";
-const LAN_URL = "http://192.168.3.172:3002";
+const JwtSecretKey = process.env.JWT_SECRET;
+if (!JwtSecretKey) {
+  console.error("Missing JWT_SECRET. Copy .env.example to .env and fill it in.");
+  process.exit(1);
+}
+
+const app = express();
+const port = process.env.PORT || 3001;
+
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || "http://localhost:3002")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
-    origin: [FRONTEND_URL, LAN_URL],
+    origin: CORS_ORIGINS,
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
   })
@@ -26,8 +39,24 @@ if (!fs.existsSync(baseFolder)) fs.mkdirSync(baseFolder, { recursive: true });
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-const JwtSecretKey =
-  "0ef16fe111b8e19e2d58fa0a17c5f214c6742616163eec3db89013dec3eb282bfa88294224d42317aab605fb224b494b26f575f665a28c9f65332f14c1a22210";
+/**
+ * Resolves a path under baseFolder from user-supplied segments (user id, noteId,
+ * filename). Returns null if any segment could escape its directory.
+ */
+function safePath(...segments) {
+  for (const segment of segments) {
+    if (
+      typeof segment !== "string" ||
+      !segment ||
+      segment === "." ||
+      segment === ".." ||
+      /[\\/\0]/.test(segment)
+    )
+      return null;
+  }
+  const target = path.resolve(baseFolder, ...segments);
+  return target.startsWith(baseFolder + path.sep) ? target : null;
+}
 
 app.use(express.json());
 
@@ -38,7 +67,7 @@ app.use((req, res, next) => {
   const token = auth.split(" ")[1];
   try {
     const payload = jwt.verify(token, JwtSecretKey);
-    req.id = payload._id;
+    req.id = String(payload._id);
     next();
   } catch (err) {
     return res.status(401).send("Invalid token");
@@ -47,17 +76,16 @@ app.use((req, res, next) => {
 
 // 📌 Upload files under noteId
 app.post("/upload/:noteId", upload.array("files"), (req, res) => {
-  const folderPath = path.join(baseFolder, req.id, req.params.noteId);
-  if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+  const folderPath = safePath(req.id, req.params.noteId);
+  if (!folderPath) return res.status(400).send("Invalid noteId");
 
-  const urls = [];
-  req.files.forEach((f) => {
-    const filename = f.originalname;
-    const filePath = path.join(folderPath, filename);
-    fs.writeFileSync(filePath, f.buffer);
-    urls.push(filename);
-  });
-  res.json(urls);
+  const files = req.files || [];
+  const filePaths = files.map((f) => safePath(req.id, req.params.noteId, f.originalname));
+  if (filePaths.some((p) => !p)) return res.status(400).send("Invalid filename");
+
+  if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+  files.forEach((f, i) => fs.writeFileSync(filePaths[i], f.buffer));
+  res.json(files.map((f) => f.originalname));
 });
 
 app.post("/files", (req, res) => {
@@ -66,7 +94,8 @@ app.post("/files", (req, res) => {
     return res.status(400).send("noteId and files array are required");
   }
 
-  const folderPath = path.join(baseFolder, req.id, noteId);
+  const folderPath = safePath(req.id, noteId);
+  if (!folderPath) return res.status(400).send("Invalid noteId");
   if (!fs.existsSync(folderPath))
     return res.status(404).send("Note ID not found");
 
@@ -84,8 +113,8 @@ app.post("/files", (req, res) => {
   archive.pipe(res);
 
   files.forEach((filename) => {
-    const filePath = path.join(folderPath, filename);
-    if (fs.existsSync(filePath)) {
+    const filePath = safePath(req.id, noteId, filename);
+    if (filePath && fs.existsSync(filePath)) {
       archive.file(filePath, { name: filename });
     }
   });
@@ -95,19 +124,16 @@ app.post("/files", (req, res) => {
 
 // 📌 Get specific file
 app.get("/files/:noteId/:filename", (req, res) => {
-  const filePath = path.join(
-    baseFolder,
-    req.id,
-    req.params.noteId,
-    req.params.filename
-  );
+  const filePath = safePath(req.id, req.params.noteId, req.params.filename);
+  if (!filePath) return res.status(400).send("Invalid path");
   if (!fs.existsSync(filePath)) return res.status(404).send("File not found");
   res.sendFile(filePath);
 });
 
 // 📌 Delete all files for user
 app.delete("/files", (req, res) => {
-  const userFolder = path.join(baseFolder, req.id);
+  const userFolder = safePath(req.id);
+  if (!userFolder) return res.status(400).send("Invalid user");
   if (!fs.existsSync(userFolder)) return res.status(404).send("ID not found");
   fs.rmSync(userFolder, { recursive: true, force: true });
   res.send("All files deleted for user");
@@ -115,7 +141,8 @@ app.delete("/files", (req, res) => {
 
 // 📌 Delete noteId folder
 app.delete("/files/:noteId", (req, res) => {
-  const folderPath = path.join(baseFolder, req.id, req.params.noteId);
+  const folderPath = safePath(req.id, req.params.noteId);
+  if (!folderPath) return res.status(400).send("Invalid noteId");
   if (!fs.existsSync(folderPath))
     return res.status(404).send("Note ID not found");
   fs.rmSync(folderPath, { recursive: true, force: true });
@@ -124,7 +151,8 @@ app.delete("/files/:noteId", (req, res) => {
 
 // 📌 Delete selected files inside noteId
 app.delete("/files/:noteId/files", (req, res) => {
-  const folderPath = path.join(baseFolder, req.id, req.params.noteId);
+  const folderPath = safePath(req.id, req.params.noteId);
+  if (!folderPath) return res.status(400).send("Invalid noteId");
   if (!fs.existsSync(folderPath))
     return res.status(404).send("Note ID not found");
 
@@ -133,8 +161,8 @@ app.delete("/files/:noteId/files", (req, res) => {
     return res.status(400).send("filenames[] required");
 
   filenames.forEach((filename) => {
-    const filePath = path.join(folderPath, filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    const filePath = safePath(req.id, req.params.noteId, filename);
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
   });
 
   res.send("Selected files deleted");

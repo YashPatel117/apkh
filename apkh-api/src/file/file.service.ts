@@ -49,11 +49,18 @@ export class FileService {
     return await this.fileModel.findOne({ noteId: new Types.ObjectId(noteId) });
   }
 
+  // 📌 Get files for many notes in one query, keyed by noteId
+  async getFilesForNotes(noteIds: string[]) {
+    const records = await this.fileModel
+      .find({ noteId: { $in: noteIds.map((id) => new Types.ObjectId(id)) } })
+      .lean();
+    return new Map(records.map((r) => [r.noteId.toString(), r.files]));
+  }
+
   // 📌 Download one file
   async getFile(token: string, noteId: string, filename: string) {
-    const response$ = this.httpService.post(
-      `${fileStorageApi}files`,
-      { noteId, files: filename },
+    const response$ = this.httpService.get(
+      `${fileStorageApi}files/${encodeURIComponent(noteId)}/${encodeURIComponent(filename)}`,
       {
         headers: { Authorization: token },
         responseType: 'stream',

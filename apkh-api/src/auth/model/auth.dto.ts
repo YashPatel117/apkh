@@ -33,6 +33,11 @@ export class ResetPasswordDto {
   @IsEmail({}, { message: 'Email must be a valid email address' })
   email: string;
 
+  @ApiProperty({ example: 'oldpassword123' })
+  @IsString({ message: 'Current password must be a string' })
+  @IsNotEmpty({ message: 'Current password is required' })
+  currentPassword: string;
+
   @ApiProperty({ example: 'newpassword123' })
   @IsString({ message: 'Password must be a string' })
   @MinLength(6, { message: 'Password must be at least 6 characters' })

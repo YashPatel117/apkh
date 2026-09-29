@@ -26,7 +26,7 @@ import { firstValueFrom } from 'rxjs';
 import { UserDocument } from 'src/common/schema/user';
 import { SearchService } from 'src/search/search.service';
 
-const SEARCH_API = 'http://localhost:8000';
+import { SEARCH_API } from 'src/common/constant/endpoint';
 
 class TestLlmDto {
   @IsString()

@@ -1,10 +1,10 @@
 import axios from "axios"; // use plain axios for login (no interceptor)
-import { webApi } from "./axios/axios";
+import { API_URL, webApi } from "./axios/axios";
 import { IUser } from "@/app/common/models/user";
 
 // Login (no interceptor)
 export async function login(email: string, password: string) {
-  const res = await axios.post("http://localhost:3000/auth/login", {
+  const res = await axios.post(`${API_URL}/auth/login`, {
     email,
     password,
   });
@@ -20,7 +20,7 @@ export async function profile() {
 
 /** Registers and signs the user in (the API returns a token on success). */
 export async function register(data: { name: string; email: string; password: string }) {
-  const res = await axios.post("http://localhost:3000/auth/register", data);
+  const res = await axios.post(`${API_URL}/auth/register`, data);
   const token = res.data?.data;
   if (typeof token !== "string") {
     throw new Error(res.data?.message || "Registration failed. Please check your details.");
@@ -29,8 +29,12 @@ export async function register(data: { name: string; email: string; password: st
   return res.data;
 }
 
-export async function resetPassword(data: { email: string; password: string }) {
-  const res = await axios.post("http://localhost:3000/auth/reset-password", data);
+export async function resetPassword(data: {
+  email: string;
+  currentPassword: string;
+  password: string;
+}) {
+  const res = await axios.post(`${API_URL}/auth/reset-password`, data);
   return res.data;
 }
 

@@ -11,7 +11,9 @@ import { firstValueFrom } from 'rxjs';
 import { UsersService } from 'src/users/users.service';
 import { SearchService } from 'src/search/search.service';
 
-const SEARCH_API = 'http://localhost:8000';
+import { SEARCH_API } from 'src/common/constant/endpoint';
+import { cosineSimilarity } from 'src/common/utils/vector';
+import { toHttpException } from 'src/common/utils/http-error';
 
 interface ChatRagResponse {
   answer: string;
@@ -66,7 +68,7 @@ export class ChatService {
       };
     } catch (error: any) {
       this.logger.error(`Failed to create session: ${error.message}`);
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -95,7 +97,7 @@ export class ChatService {
         messageCount: MapMessageCount.get((s._id as Types.ObjectId).toHexString()) || 0,
       }));
     } catch (error: any) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -125,7 +127,7 @@ export class ChatService {
         createdAt: (m as any).createdAt,
       }));
     } catch (error: any) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -149,7 +151,7 @@ export class ChatService {
 
       return { success: true };
     } catch (error: any) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -250,7 +252,7 @@ export class ChatService {
           // Priority 3 (prepare for ranking)
           scoredOtherChatChunks.push({
             text: `[RELATED CHAT: ${chunk.noteTitle}]\n${chunk.text}`,
-            score: this.cosineSimilarity(queryVector, chunk.embedding),
+            score: cosineSimilarity(queryVector, chunk.embedding),
           });
         }
       }
@@ -300,8 +302,8 @@ export class ChatService {
       });
       await aiMessage.save();
 
-      // Update session time
-      session.updatedAt = new Date().toISOString();
+      // Update session time — assigning marks the doc modified so save() persists and bumps the timestamp
+      session.updatedAt = new Date();
       await session.save();
 
       if (tokensUsed > 0) {
@@ -328,7 +330,7 @@ export class ChatService {
         tokens_used: tokensUsed,
       };
     } catch (error: any) {
-      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -400,26 +402,5 @@ export class ChatService {
         { _id: new Types.ObjectId(sessionId) }, 
         { $set: { isChunked: true } }
     );
-  }
-
-  /**
-   * Fast cosine similarity between two numeric vectors.
-   */
-  private cosineSimilarity(vecA: number[], vecB: number[]): number {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < vecA.length; i++) {
-        dotProduct += vecA[i] * vecB[i];
-        normA += vecA[i] * vecA[i];
-        normB += vecB[i] * vecB[i];
-    }
-
-    if (normA === 0 || normB === 0) {
-        return 0;
-    }
-
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 }
