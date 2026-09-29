@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
-import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig } from "@/service/authService";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
+import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels } from "@/service/authService";
 import { getErrorMessage } from "@/service/axios/axios";
 import { useAppDispatch } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
-import { ILlmConfig, IUser } from "@/app/common/models/user";
+import { ILlmConfig, ILlmModel, IUser, LlmProvider } from "@/app/common/models/user";
 import { Button } from "@/app/common/ui/Button";
 import { Input, fieldClass } from "@/app/common/ui/Input";
 import { ConfirmDialog } from "@/app/common/ui/ConfirmDialog";
@@ -15,41 +15,47 @@ import { Spinner } from "@/app/common/ui/Spinner";
 import { cn } from "@/app/common/ui/cn";
 
 // ── Provider catalogue ───────────────────────────────────────────────────────
-const PROVIDER_GROUPS = [
-  {
-    label: "Google Gemini",
-    prefix: "gemini",
-    docsUrl: "https://aistudio.google.com/app/apikey",
-    models: ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
-  },
-  {
-    label: "OpenAI",
-    prefix: "gpt",
-    docsUrl: "https://platform.openai.com/api-keys",
-    models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
-  },
-  {
-    label: "Anthropic Claude",
-    prefix: "claude",
-    docsUrl: "https://console.anthropic.com/settings/keys",
-    models: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
-  },
+// Models are not listed here: they are fetched live from the provider with the
+// user's key, so new releases appear and retired models disappear on their own.
+const PROVIDER_GROUPS: { id: LlmProvider; label: string; docsUrl: string }[] = [
+  { id: "gemini", label: "Google Gemini", docsUrl: "https://aistudio.google.com/app/apikey" },
+  { id: "openai", label: "OpenAI", docsUrl: "https://platform.openai.com/api-keys" },
+  { id: "anthropic", label: "Anthropic Claude", docsUrl: "https://console.anthropic.com/settings/keys" },
 ];
 
+// Shorter input is still being typed or pasted; don't query the provider yet.
+const MIN_KEY_LENGTH = 20;
+
 function detectProvider(model: string) {
-  return PROVIDER_GROUPS.find((g) => model.toLowerCase().startsWith(g.prefix)) ?? null;
+  const normalized = model.trim().toLowerCase();
+  const id: LlmProvider | null = normalized.startsWith("gemini")
+    ? "gemini"
+    : /^(gpt|chatgpt|o\d)/.test(normalized)
+      ? "openai"
+      : normalized.startsWith("claude")
+        ? "anthropic"
+        : null;
+  return PROVIDER_GROUPS.find((g) => g.id === id) ?? null;
+}
+
+function modelOptionLabel(model: ILlmModel) {
+  return model.label && model.label !== model.id ? `${model.label} (${model.id})` : model.id;
 }
 
 type TestStatus = "idle" | "testing" | "ok" | "error";
+type ModelRequest = { provider: LlmProvider; apiKey?: string; keyName?: string };
+type LoadedModels = { request: ModelRequest; ok: boolean; items: ILlmModel[]; error: string | null };
 
 // ── Saved config row ─────────────────────────────────────────────────────────
 function ConfigRow({
   config,
   onActivate,
+  onEdit,
   onDelete,
 }: {
   config: ILlmConfig;
   onActivate: (keyName: string) => Promise<void>;
+  onEdit: (config: ILlmConfig) => void;
   onDelete: (config: ILlmConfig) => void;
 }) {
   const [activating, setActivating] = useState(false);
@@ -118,6 +124,9 @@ function ConfigRow({
         {config.tokensUsed.toLocaleString()}
       </span>
 
+      <Button size="icon-sm" variant="ghost" onClick={() => onEdit(config)} aria-label={`Change model for ${config.keyName}`} title="Change model">
+        <Pencil className="size-4" />
+      </Button>
       <Button size="icon-sm" variant="ghost-danger" onClick={() => onDelete(config)} aria-label={`Remove ${config.keyName}`}>
         <Trash2 className="size-4" />
       </Button>
@@ -133,19 +142,64 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const [showForm, setShowForm] = useState(configs.length === 0);
   const [pendingDelete, setPendingDelete] = useState<ILlmConfig | null>(null);
 
+  // The saved config whose model is being changed; null when adding a new one.
+  const [editing, setEditing] = useState<ILlmConfig | null>(null);
   const [keyName, setKeyName] = useState("");
-  const [model, setModel] = useState("gemini-2.5-flash");
+  const [providerId, setProviderId] = useState<LlmProvider | "custom">("gemini");
+  const [model, setModel] = useState("");
   const [customModel, setCustomModel] = useState("");
-  const [useCustom, setUseCustom] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [loaded, setLoaded] = useState<LoadedModels | null>(null);
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testError, setTestError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const activeModel = useCustom ? customModel.trim() : model;
-  const provider = detectProvider(activeModel);
-  const canTest = keyName.trim().length > 0 && activeModel.length > 0 && apiKey.trim().length > 0;
+  const trimmedKey = apiKey.trim();
+  const isCustom = providerId === "custom";
+  const group = isCustom ? detectProvider(customModel) : (PROVIDER_GROUPS.find((g) => g.id === providerId) ?? null);
+
+  // When changing a saved config's model, its stored key is reused unless a new
+  // key is typed, as long as the provider stays the same.
+  const savedProviderId = editing ? detectProvider(editing.llmModel)?.id : undefined;
+  const editingKeyName = editing?.keyName;
+  const useSavedKey = Boolean(editingKeyName) && !trimmedKey && savedProviderId !== undefined && group?.id === savedProviderId;
+
+  const modelRequest = useMemo<ModelRequest | null>(() => {
+    if (providerId === "custom") return null;
+    if (trimmedKey) return trimmedKey.length >= MIN_KEY_LENGTH ? { provider: providerId, apiKey: trimmedKey } : null;
+    return useSavedKey ? { provider: providerId, keyName: editingKeyName } : null;
+  }, [providerId, trimmedKey, useSavedKey, editingKeyName]);
+
+  useEffect(() => {
+    if (!modelRequest) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      listLlmModels(modelRequest)
+        .then((res) => {
+          if (!cancelled) setLoaded({ request: modelRequest, ok: res.ok, items: res.models ?? [], error: res.error });
+        })
+        .catch((err) => {
+          if (!cancelled) setLoaded({ request: modelRequest, ok: false, items: [], error: getErrorMessage(err, "Couldn't load models.") });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [modelRequest]);
+
+  const current = loaded && loaded.request === modelRequest ? loaded : null;
+  const modelsStatus = !modelRequest ? "idle" : !current ? "loading" : current.ok ? "ok" : "error";
+  const models = current?.ok ? current.items : [];
+  const selectedModel = models.some((m) => m.id === model) ? model : "";
+  const savedModelRetired =
+    modelsStatus === "ok" && editing !== null && providerId === savedProviderId && !models.some((m) => m.id === editing.llmModel);
+
+  const activeModel = isCustom ? customModel.trim() : selectedModel;
+  const hasKey = Boolean(trimmedKey) || useSavedKey;
+  const canTest = keyName.trim().length > 0 && activeModel.length > 0 && hasKey;
   const canSave = testStatus === "ok" && canTest && !saving;
+  const keySource = trimmedKey ? { apiKey: trimmedKey } : { keyName: editingKeyName };
 
   const resetTest = () => {
     setTestStatus("idle");
@@ -153,20 +207,33 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   };
 
   function resetForm() {
+    setEditing(null);
     setKeyName("");
-    setModel("gemini-2.5-flash");
+    setProviderId("gemini");
+    setModel("");
     setCustomModel("");
-    setUseCustom(false);
     setApiKey("");
     resetTest();
     setShowForm(false);
+  }
+
+  function startEdit(config: ILlmConfig) {
+    const provider = detectProvider(config.llmModel);
+    setEditing(config);
+    setKeyName(config.keyName);
+    setProviderId(provider?.id ?? "custom");
+    setModel(config.llmModel);
+    setCustomModel(provider ? "" : config.llmModel);
+    setApiKey("");
+    resetTest();
+    setShowForm(true);
   }
 
   async function handleTest() {
     setTestStatus("testing");
     setTestError(null);
     try {
-      const result = await testLlmSettings({ apiKey: apiKey.trim(), model: activeModel });
+      const result = await testLlmSettings({ ...keySource, model: activeModel });
       setTestStatus(result.ok ? "ok" : "error");
       if (!result.ok) setTestError(result.error ?? "Connection failed.");
     } catch (err) {
@@ -178,9 +245,10 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   async function handleSave() {
     setSaving(true);
     try {
-      const updatedUser = await addLlmConfig({ keyName: keyName.trim(), apiKey: apiKey.trim(), model: activeModel, setActive: true });
+      const name = keyName.trim();
+      const updatedUser = await addLlmConfig({ keyName: name, apiKey: trimmedKey || undefined, model: activeModel, setActive: true });
       dispatch(setUser({ ...user, ...updatedUser }));
-      toast(`“${keyName.trim()}” saved and set as active.`, "success");
+      toast(editing ? `“${name}” now uses ${activeModel}.` : `“${name}” saved and set as active.`, "success");
       resetForm();
     } catch (err) {
       setTestError(getErrorMessage(err, "Save failed. Please try again."));
@@ -212,6 +280,13 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     }
   }
 
+  const modelPlaceholder = {
+    idle: "Enter your API key to load models",
+    loading: "Loading models…",
+    error: "Couldn't load models",
+    ok: models.length > 0 ? "Choose a model" : "No chat models available for this key",
+  }[modelsStatus];
+
   return (
     <section id="ai" className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
@@ -229,20 +304,21 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
       {configs.length > 0 && (
         <div role="radiogroup" aria-label="Saved AI configs" className="mt-5 space-y-2">
           {configs.map((cfg) => (
-            <ConfigRow key={cfg.keyName} config={cfg} onActivate={handleActivate} onDelete={setPendingDelete} />
+            <ConfigRow key={cfg.keyName} config={cfg} onActivate={handleActivate} onEdit={startEdit} onDelete={setPendingDelete} />
           ))}
         </div>
       )}
 
       {showForm && (
         <div className={cn("space-y-4", configs.length > 0 ? "mt-5 border-t border-line pt-5" : "mt-5")}>
-          <h3 className="text-sm font-semibold text-fg">New config</h3>
+          <h3 className="text-sm font-semibold text-fg">{editing ? `Change model for “${editing.keyName}”` : "New config"}</h3>
 
           <Input
             label="Name"
             icon={<Tag />}
             placeholder="e.g. Work Gemini"
             value={keyName}
+            disabled={Boolean(editing)}
             onChange={(e) => {
               setKeyName(e.target.value);
               resetTest();
@@ -252,17 +328,17 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-fg">Provider</span>
             <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Provider">
-              {PROVIDER_GROUPS.map((pg) => {
-                const selected = !useCustom && detectProvider(model)?.prefix === pg.prefix;
+              {[...PROVIDER_GROUPS, { id: "custom" as const, label: "Custom" }].map((pg) => {
+                const selected = providerId === pg.id;
                 return (
                   <button
-                    key={pg.prefix}
+                    key={pg.id}
                     type="button"
                     role="radio"
                     aria-checked={selected}
                     onClick={() => {
-                      setUseCustom(false);
-                      setModel(pg.models[0]);
+                      setProviderId(pg.id);
+                      setModel("");
                       resetTest();
                     }}
                     className={cn(
@@ -274,25 +350,30 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
                   </button>
                 );
               })}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={useCustom}
-                onClick={() => {
-                  setUseCustom(true);
-                  resetTest();
-                }}
-                className={cn(
-                  "cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
-                  useCustom ? "border-accent bg-accent-soft text-accent-fg" : "border-line text-fg-muted hover:bg-surface-2 hover:text-fg",
-                )}
-              >
-                Custom
-              </button>
             </div>
           </div>
 
-          {useCustom ? (
+          <Input
+            label="API key"
+            type="password"
+            icon={<KeyRound />}
+            placeholder={editing ? "Leave blank to keep the saved key" : "Paste your API key"}
+            autoComplete="off"
+            value={apiKey}
+            onChange={(e) => {
+              setApiKey(e.target.value);
+              resetTest();
+            }}
+            hint={
+              group ? (
+                <a href={group.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+                  Get a {group.label} API key <ExternalLink className="size-3" />
+                </a>
+              ) : undefined
+            }
+          />
+
+          {isCustom ? (
             <Input
               label="Model identifier"
               placeholder="e.g. gpt-4o"
@@ -301,6 +382,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
                 setCustomModel(e.target.value);
                 resetTest();
               }}
+              hint="Any model ID starting with gemini-, gpt-, chatgpt-, o1/o3/…, or claude-."
             />
           ) : (
             <div className="flex flex-col gap-1.5">
@@ -310,43 +392,42 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
               <div className="relative">
                 <select
                   id="llm-model"
-                  value={model}
+                  value={selectedModel}
+                  disabled={modelsStatus !== "ok" || models.length === 0}
                   onChange={(e) => {
                     setModel(e.target.value);
                     resetTest();
                   }}
-                  className={cn(fieldClass, "h-11 cursor-pointer appearance-none pr-10")}
+                  className={cn(fieldClass, "h-11 cursor-pointer appearance-none pr-10 disabled:cursor-default")}
                 >
-                  {(provider?.models ?? PROVIDER_GROUPS[0].models).map((m) => (
-                    <option key={m} value={m}>
-                      {m}
+                  <option value="" disabled>
+                    {modelPlaceholder}
+                  </option>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {modelOptionLabel(m)}
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-fg-subtle" />
+                {modelsStatus === "loading" ? (
+                  <Spinner className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-accent" />
+                ) : (
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-fg-subtle" />
+                )}
               </div>
+              {modelsStatus === "error" && current?.error ? (
+                <p className="text-xs break-words text-rose-600 dark:text-rose-400" role="alert">
+                  {current.error}
+                </p>
+              ) : savedModelRetired && editing ? (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  “{editing.llmModel}” is no longer offered to this key. Pick a current model.
+                </p>
+              ) : modelsStatus === "ok" && models.length > 0 ? (
+                <p className="text-xs text-fg-subtle">Live list from {group?.label}, newest first.</p>
+              ) : null}
             </div>
           )}
-
-          <Input
-            label="API key"
-            type="password"
-            icon={<KeyRound />}
-            placeholder="Paste your API key"
-            autoComplete="off"
-            value={apiKey}
-            onChange={(e) => {
-              setApiKey(e.target.value);
-              resetTest();
-            }}
-            hint={
-              provider ? (
-                <a href={provider.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-                  Get a {provider.label} API key <ExternalLink className="size-3" />
-                </a>
-              ) : undefined
-            }
-          />
 
           {testStatus === "ok" && (
             <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" role="status">
@@ -370,7 +451,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
                 {testStatus === "testing" ? "Testing…" : "Test connection"}
               </Button>
             )}
-            {configs.length > 0 && (
+            {(configs.length > 0 || editing) && (
               <Button variant="ghost" onClick={resetForm} disabled={saving}>
                 Cancel
               </Button>

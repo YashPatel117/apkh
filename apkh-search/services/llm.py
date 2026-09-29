@@ -3,11 +3,13 @@ LLM service for answer generation using only per-request credentials.
 
 Supported providers (detected by model name prefix):
   - Google Gemini  : model starts with "gemini-"
-  - OpenAI         : model starts with "gpt-" or "o1" / "o3" / "o4"
+  - OpenAI         : model starts with "gpt-", "chatgpt-" or "o<N>" (o1, o3, o4-mini, ...)
   - Anthropic      : model starts with "claude-"
 """
 
+import base64
 import logging
+import re
 import traceback
 from typing import Any
 
@@ -71,24 +73,62 @@ _CHAT_SYSTEM_INSTRUCTION = (
     "- Never fabricate information not present in the context above."
 )
 
+_IMAGE_EXTRACTION_INSTRUCTION = (
+    "You turn images into searchable text for a personal knowledge base.\n"
+    "Rules:\n"
+    "- If the image contains readable text (documents, scans, screenshots, slides, handwriting, "
+    "code, signs), transcribe ALL of it exactly as written. Keep line breaks and lists; write "
+    "table rows with ' | ' between cells. Do not summarize, translate or correct it.\n"
+    "- Then describe what the image shows: subject, objects, people, setting, and any diagram, "
+    "chart or UI (include labels, values and trends for charts). Keep this to one or two "
+    "sentences when the image is mostly text; be detailed when it has little or no text.\n"
+    "- Never guess at text you cannot read and do not invent details.\n"
+    "Respond in exactly this format, leaving out the Text section when there is no readable text:\n"
+    "Text:\n<transcription>\n\nDescription:\n<description>"
+)
+
+# Models the supported providers serve without image input.
+_TEXT_ONLY_MODEL_PREFIXES = ("gpt-3.5", "o1-mini", "o1-preview", "o3-mini")
+
 
 def detect_provider(model: str) -> str:
     """Detect provider from model name."""
     normalized = model.lower()
     if normalized.startswith("gemini"):
         return "gemini"
-    if normalized.startswith(("gpt", "o1", "o3", "o4")):
+    if normalized.startswith(("gpt", "chatgpt")) or re.match(r"o\d", normalized):
         return "openai"
     if normalized.startswith("claude"):
         return "anthropic"
     raise ValueError(
         f"Cannot detect provider for model '{model}'. "
-        "Model name must start with 'gemini-', 'gpt-', 'o1'/'o3'/'o4', or 'claude-'."
+        "Model name must start with 'gemini-', 'gpt-', 'chatgpt-', 'o<N>', or 'claude-'."
     )
 
 
+def _is_model_unavailable(exc: Exception) -> bool:
+    """Whether the provider says the model does not exist (retired or renamed)."""
+    if getattr(exc, "status_code", None) == 404 or getattr(exc, "code", None) == 404:
+        return True
+    message = str(exc)
+    return any(marker in message for marker in ("NOT_FOUND", "model_not_found", "not_found_error"))
+
+
+def _model_unavailable_message(model: str) -> str:
+    return (
+        f"The model '{model}' is no longer available from your provider. "
+        "Choose another model in Profile → AI models."
+    )
+
+
+def supports_vision(model: str) -> bool:
+    """Whether the model accepts images (used for OCR and image descriptions)."""
+    normalized = model.strip().lower()
+    return normalized != "gpt-4" and not normalized.startswith(_TEXT_ONLY_MODEL_PREFIXES)
+
+
 async def _call_gemini(
-    api_key: str, model: str, system: str, user_prompt: str,
+    api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
     config: dict[str, Any] | None = None,
 ) -> dict:
     chat = ChatGoogleGenerativeAI(
@@ -111,7 +151,7 @@ async def _call_gemini(
 
 
 async def _call_openai(
-    api_key: str, model: str, system: str, user_prompt: str,
+    api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
     config: dict[str, Any] | None = None,
 ) -> dict:
     chat = ChatOpenAI(
@@ -134,7 +174,7 @@ async def _call_openai(
 
 
 async def _call_anthropic(
-    api_key: str, model: str, system: str, user_prompt: str,
+    api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
     config: dict[str, Any] | None = None,
 ) -> dict:
     chat = ChatAnthropic(
@@ -233,6 +273,12 @@ async def generate_rag_answer(
         return result
     except Exception as exc:
         logger.error("LLM call failed [%s/%s]: %s", provider, resolved_model, exc)
+        if _is_model_unavailable(exc):
+            return {
+                "answer": _model_unavailable_message(resolved_model),
+                "tokens_used": 0,
+                "run_id": None,
+            }
         return {
             "answer": "I'm sorry, I encountered an error while formulating the answer.",
             "tokens_used": 0,
@@ -355,11 +401,73 @@ async def generate_note_summary(
         }
     except Exception as exc:
         logger.error("Note summary failed [%s/%s]: %s", provider, resolved_model, exc)
+        if _is_model_unavailable(exc):
+            return {
+                "summary": _model_unavailable_message(resolved_model),
+                "tokens_used": 0,
+                "run_id": None,
+            }
         return {
             "summary": "I'm sorry, I encountered an error while generating the summary.",
             "tokens_used": 0,
             "run_id": None,
         }
+
+
+async def extract_image_content(
+    image: bytes,
+    mime_type: str,
+    api_key: str,
+    model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> str:
+    """
+    Read an image with the user's model: transcribe visible text (OCR) and
+    describe the visual content. Raises on provider errors.
+    """
+    resolved_key = api_key.strip()
+    resolved_model = model.strip()
+    provider = detect_provider(resolved_model)
+
+    trace_config = build_langchain_config(
+        run_name=f"image_extract:{request_id or 'unknown'}",
+        metadata={
+            "provider": provider,
+            "model_name": resolved_model,
+            "user_id": user_id or "anonymous",
+            "endpoint_name": "image_extract",
+            "request_id": request_id or "unknown",
+        },
+    )
+
+    encoded = base64.b64encode(image).decode("ascii")
+    user_content = [
+        {"type": "text", "text": "Extract the searchable content of this image."},
+        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}},
+    ]
+
+    if provider == "gemini":
+        caller = _call_gemini
+    elif provider == "openai":
+        caller = _call_openai
+    else:
+        caller = _call_anthropic
+
+    result = await caller(
+        resolved_key,
+        resolved_model,
+        _IMAGE_EXTRACTION_INSTRUCTION,
+        user_content,
+        config=trace_config,
+    )
+    logger.info(
+        "Image content extracted via %s/%s - %s tokens",
+        provider,
+        resolved_model,
+        result["tokens_used"],
+    )
+    return result["answer"]
 
 
 async def test_llm_connection(
@@ -510,6 +618,12 @@ async def generate_chat_rag_answer(
         }
     except Exception as exc:
         logger.error("Chat RAG call failed [%s/%s]: %s", provider, resolved_model, exc)
+        if _is_model_unavailable(exc):
+            return {
+                "answer": _model_unavailable_message(resolved_model),
+                "tokens_used": 0,
+                "run_id": None,
+            }
         return {
             "answer": "I'm sorry, I encountered an error while formulating the response.",
             "tokens_used": 0,

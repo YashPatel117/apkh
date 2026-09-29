@@ -157,7 +157,9 @@ export class SearchService {
         },
         {
           headers: { Authorization: token },
-          timeout: 120000,
+          // Images and scanned PDF pages are read by the user's vision model,
+          // which can take minutes for large attachments.
+          timeout: 600000,
         },
       );
 

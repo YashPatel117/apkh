@@ -1,6 +1,6 @@
 import axios from "axios"; // use plain axios for login (no interceptor)
 import { API_URL, webApi } from "./axios/axios";
-import { IUser } from "@/app/common/models/user";
+import { ILlmModel, IUser, LlmProvider } from "@/app/common/models/user";
 
 // Login (no interceptor)
 export async function login(email: string, password: string) {
@@ -38,16 +38,28 @@ export async function resetPassword(data: {
   return res.data;
 }
 
+/**
+ * Where the API key comes from: a key typed in the form, or the saved key of
+ * an existing config (by keyName) when only its model is being changed.
+ */
+type LlmKeySource = { apiKey?: string; keyName?: string };
+
 /** Test an API key + model without saving */
-export async function testLlmSettings(data: { apiKey: string; model: string }) {
+export async function testLlmSettings(data: LlmKeySource & { model: string }) {
   const res = await webApi.post("/users/llm-settings/test", data);
   return res.data as { ok: boolean; error: string | null; provider?: string };
 }
 
-/** Add (or update) a named LLM config */
+/** List the chat models the key can use, fetched live from the provider */
+export async function listLlmModels(data: LlmKeySource & { provider: LlmProvider }) {
+  const res = await webApi.post("/users/llm-settings/models", data);
+  return res.data as { ok: boolean; error: string | null; models: ILlmModel[] };
+}
+
+/** Add (or update) a named LLM config. Leave apiKey out to keep a saved config's key. */
 export async function addLlmConfig(data: {
   keyName: string;
-  apiKey: string;
+  apiKey?: string;
   model: string;
   setActive?: boolean;
 }) {

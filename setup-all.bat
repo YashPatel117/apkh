@@ -14,13 +14,6 @@ call :setup_python "%ROOT%apkh-search" || goto :error
 
 echo.
 echo Setup completed successfully.
-if exist "%ROOT%tesseract-ocr-w64-setup-5.5.0.20241111.exe" (
-  echo.
-  echo OCR note:
-  echo Tesseract is still an OS dependency for image/PDF OCR.
-  echo If OCR is needed on this machine, run:
-  echo "%ROOT%tesseract-ocr-w64-setup-5.5.0.20241111.exe"
-)
 echo.
 echo Next step: run start-all.bat
 exit /b 0

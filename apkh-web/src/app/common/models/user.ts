@@ -1,3 +1,10 @@
+export type LlmProvider = "gemini" | "openai" | "anthropic";
+
+export interface ILlmModel {
+  id: string;
+  label: string;
+}
+
 export interface ILlmConfig {
   keyName: string;
   llmModel: string;

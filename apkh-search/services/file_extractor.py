@@ -1,57 +1,61 @@
 """
 File content extractor.
 Handles PDF, images, docx, xlsx, csv, txt, md files.
-Extracts text content for embedding.
+Extracts text content for embedding. Images and scanned PDF pages are read by
+the user's own multimodal model (OCR + description) through an ImageReader.
 """
 
+import asyncio
 import csv
 import io
 import logging
-import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import fitz  # PyMuPDF
-from PIL import Image
+from PIL import Image, ImageOps
 
 logger = logging.getLogger(__name__)
 
-# Try importing pytesseract. OCR is enabled only when the binary is available.
-try:
-    import pytesseract
+# Turns image bytes + MIME type into searchable text (transcription + description).
+ImageReader = Callable[[bytes, str], Awaitable[str]]
 
-    configured_tesseract_cmd = os.getenv("TESSERACT_CMD", "").strip()
-    if configured_tesseract_cmd:
-        pytesseract.pytesseract.tesseract_cmd = configured_tesseract_cmd
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff")
 
-    # Validate the configured command or PATH installation.
-    pytesseract.get_tesseract_version()
-    TESSERACT_AVAILABLE = True
-except Exception:
-    TESSERACT_AVAILABLE = False
-    logger.warning(
-        "Tesseract binary not found or pytesseract not available. "
-        "Set TESSERACT_CMD or add Tesseract to PATH. OCR will be skipped."
-    )
+# PDF pages with less extractable text than this are treated as scanned.
+MIN_PDF_PAGE_TEXT = 50
+MAX_VISION_PAGES_PER_PDF = 100
+PDF_RENDER_DPI = 150
+
+# Longest image side sent to the model; providers downscale beyond this anyway.
+MAX_IMAGE_SIDE = 2000
+# Keeps the base64 payload under the strictest provider limit (Anthropic, 5 MB).
+MAX_IMAGE_BYTES = 3_500_000
 
 
-def extract_text_from_bytes(file_bytes: bytes, file_name: str) -> dict:
+async def extract_text_from_bytes(
+    file_bytes: bytes,
+    file_name: str,
+    read_image: ImageReader | None = None,
+) -> dict:
     """
     Extract text from file bytes based on file extension.
     Returns a dict with extracted_text, extraction_method, page_count.
+    Without read_image, images are skipped and scanned PDF pages stay empty.
     """
     ext = Path(file_name).suffix.lower()
 
     try:
         if ext == ".pdf":
-            return _extract_pdf(file_bytes, file_name)
-        elif ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"):
-            return _extract_image(file_bytes, file_name)
+            return await _extract_pdf(file_bytes, file_name, read_image)
+        elif ext in IMAGE_EXTENSIONS:
+            return await _extract_image(file_bytes, file_name, read_image)
         elif ext in (".txt", ".md"):
-            return _extract_text_file(file_bytes, file_name)
+            return await asyncio.to_thread(_extract_text_file, file_bytes, file_name)
         elif ext == ".docx":
-            return _extract_docx(file_bytes, file_name)
+            return await asyncio.to_thread(_extract_docx, file_bytes, file_name)
         elif ext in (".xlsx", ".csv"):
-            return _extract_spreadsheet(file_bytes, file_name, ext)
+            return await asyncio.to_thread(_extract_spreadsheet, file_bytes, file_name, ext)
         else:
             logger.warning(f"Unsupported file type: {ext} for file {file_name}")
             return {
@@ -70,57 +74,117 @@ def extract_text_from_bytes(file_bytes: bytes, file_name: str) -> dict:
         }
 
 
-def _extract_pdf(file_bytes: bytes, file_name: str) -> dict:
-    """Extract text from PDF. Falls back to OCR if text is too short."""
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
-    pages_text = []
-    extraction_method = "pdf_text"
+async def _extract_pdf(
+    file_bytes: bytes,
+    file_name: str,
+    read_image: ImageReader | None,
+) -> dict:
+    """Extract text from PDF. Scanned pages are read by the vision model."""
+    pages, page_count = await asyncio.to_thread(
+        _read_pdf_pages,
+        file_bytes,
+        file_name,
+        read_image is not None,
+    )
 
-    for page_num in range(len(doc)):
-        page = doc[page_num]
-        text = page.get_text("text").strip()
+    async def _page_text(page_num: int, text: str, image: bytes | None) -> tuple[str, bool]:
+        if image is None or read_image is None:
+            return text, False
+        try:
+            vision_text = (await read_image(image, "image/jpeg")).strip()
+        except Exception as e:
+            logger.warning(f"Vision read failed on page {page_num} of {file_name}: {e}")
+            return text, False
+        return (vision_text, True) if vision_text else (text, False)
 
-        # If text is too short, try OCR on rendered page image.
-        if len(text) < 50 and TESSERACT_AVAILABLE:
-            try:
-                pix = page.get_pixmap(dpi=200)
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                ocr_text = pytesseract.image_to_string(img).strip()
-                if ocr_text:
-                    text = ocr_text
-                    extraction_method = "pdf_ocr"
-            except Exception as e:
-                logger.warning(f"OCR failed on page {page_num + 1} of {file_name}: {e}")
+    results = await asyncio.gather(
+        *[_page_text(page_num, text, image) for page_num, text, image in pages]
+    )
 
-        if text:
-            pages_text.append(f"[Page {page_num + 1}]\n{text}")
-
-    page_count = len(doc)
-    doc.close()
+    pages_text = [
+        f"[Page {page_num}]\n{text}"
+        for (page_num, _, _), (text, _) in zip(pages, results)
+        if text
+    ]
+    used_vision = any(read for _, read in results)
 
     return {
         "file_name": file_name,
         "extracted_text": "\n\n".join(pages_text),
-        "extraction_method": extraction_method,
+        "extraction_method": "pdf_vision" if used_vision else "pdf_text",
         "page_count": page_count,
     }
 
 
-def _extract_image(file_bytes: bytes, file_name: str) -> dict:
-    """Extract text from image using OCR."""
-    text = ""
-    method = "image_ocr"
+def _read_pdf_pages(
+    file_bytes: bytes,
+    file_name: str,
+    render_scanned: bool,
+) -> tuple[list[tuple[int, str, bytes | None]], int]:
+    """
+    Return (page_num, text, rendered JPEG or None) per page, plus the page count.
+    Pages with too little text are rendered so the vision model can read them.
+    """
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    try:
+        pages: list[tuple[int, str, bytes | None]] = []
+        rendered = 0
+        skipped = 0
 
-    if TESSERACT_AVAILABLE:
-        try:
-            img = Image.open(io.BytesIO(file_bytes))
-            text = pytesseract.image_to_string(img).strip()
-        except Exception as e:
-            logger.error(f"Image OCR failed for {file_name}: {e}")
-            method = "image_ocr_failed"
-    else:
-        logger.warning(f"Tesseract not available, skipping OCR for {file_name}")
-        method = "image_no_tesseract"
+        for page_num, page in enumerate(doc, start=1):
+            text = page.get_text("text").strip()
+            image = None
+
+            if render_scanned and len(text) < MIN_PDF_PAGE_TEXT:
+                if rendered < MAX_VISION_PAGES_PER_PDF:
+                    image = _render_pdf_page(page)
+                    rendered += 1
+                else:
+                    skipped += 1
+
+            pages.append((page_num, text, image))
+
+        if skipped:
+            logger.warning(
+                f"{file_name}: skipped vision on {skipped} scanned pages "
+                f"(limit {MAX_VISION_PAGES_PER_PDF} per PDF)"
+            )
+
+        return pages, len(doc)
+    finally:
+        doc.close()
+
+
+def _render_pdf_page(page: fitz.Page) -> bytes:
+    long_side_points = max(page.rect.width, page.rect.height)
+    zoom = min(PDF_RENDER_DPI / 72, MAX_IMAGE_SIDE / long_side_points)
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    return pix.tobytes("jpeg", jpg_quality=85)
+
+
+async def _extract_image(
+    file_bytes: bytes,
+    file_name: str,
+    read_image: ImageReader | None,
+) -> dict:
+    """Transcribe and describe an image with the vision model."""
+    if read_image is None:
+        logger.warning(f"Active model cannot read images, skipping {file_name}")
+        return {
+            "file_name": file_name,
+            "extracted_text": "",
+            "extraction_method": "image_no_vision",
+            "page_count": 0,
+        }
+
+    text = ""
+    method = "image_vision"
+    try:
+        image, mime_type = await asyncio.to_thread(_prepare_image, file_bytes)
+        text = (await read_image(image, mime_type)).strip()
+    except Exception as e:
+        logger.error(f"Vision read failed for {file_name}: {e}")
+        method = "image_vision_failed"
 
     return {
         "file_name": file_name,
@@ -128,6 +192,34 @@ def _extract_image(file_bytes: bytes, file_name: str) -> dict:
         "extraction_method": method,
         "page_count": 0,
     }
+
+
+def _prepare_image(file_bytes: bytes) -> tuple[bytes, str]:
+    """
+    Convert any supported image to PNG (or JPEG when too large) within the
+    size limits every provider accepts. Returns (bytes, mime_type).
+    """
+    with Image.open(io.BytesIO(file_bytes)) as source:
+        img = ImageOps.exif_transpose(source)
+
+        # Flatten transparency onto white so dark text on a clear background stays readable.
+        if img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info:
+            rgba = img.convert("RGBA")
+            img = Image.new("RGB", rgba.size, "white")
+            img.paste(rgba, mask=rgba.getchannel("A"))
+        else:
+            img = img.convert("RGB")
+
+    img.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    if buffer.tell() <= MAX_IMAGE_BYTES:
+        return buffer.getvalue(), "image/png"
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="JPEG", quality=85)
+    return buffer.getvalue(), "image/jpeg"
 
 
 def _extract_text_file(file_bytes: bytes, file_name: str) -> dict:

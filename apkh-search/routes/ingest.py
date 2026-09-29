@@ -12,8 +12,9 @@ from pydantic import BaseModel
 
 from services.chunker import chunk_document
 from services.embedder import generate_embeddings
-from services.file_extractor import extract_text_from_bytes
+from services.file_extractor import ImageReader, extract_text_from_bytes
 from services.html_parser import parse_note_html
+from services.vision import build_image_reader
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,8 @@ async def ingest_note(body: IngestRequest, request: Request):
     """
     Process a note for AI indexing:
     1. Parse HTML into text + file tokens
-    2. Fetch and extract text from attached files
+    2. Fetch and extract text from attached files (images and scanned PDF
+       pages are transcribed/described by the user's model)
     3. Chunk the combined text
     4. Generate embeddings using the user's active provider credentials
     5. Return chunks + embeddings
@@ -92,10 +94,23 @@ async def ingest_note(body: IngestRequest, request: Request):
         len(body.files) if body.files else 0,
     )
     if body.files:
+        read_image = build_image_reader(
+            api_key,
+            model,
+            user_id=body.user_id,
+            request_id=body.note_id,
+        )
+        if read_image is None:
+            logger.warning(
+                "Model %s cannot read images; image attachments and scanned PDF "
+                "pages will not be indexed",
+                model,
+            )
         file_extractions = await _fetch_and_extract_files(
             auth_header,
             body.note_id,
             body.files,
+            read_image,
         )
         logger.info(
             "Extracted text from %s/%s files",
@@ -186,6 +201,7 @@ async def _fetch_and_extract_files(
     auth_header: str,
     note_id: str,
     filenames: list[str],
+    read_image: ImageReader | None,
 ) -> list[dict]:
     """Fetch files from the storage service and extract text from each."""
     if not filenames:
@@ -220,10 +236,10 @@ async def _fetch_and_extract_files(
                         filename,
                         len(file_bytes),
                     )
-                    extraction = await asyncio.to_thread(
-                        extract_text_from_bytes,
+                    extraction = await extract_text_from_bytes(
                         file_bytes,
                         filename,
+                        read_image,
                     )
 
                     logger.info(

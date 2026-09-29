@@ -16,8 +16,15 @@ import {
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { UsersService } from './users.service';
+import type { LlmProvider } from './users.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
@@ -28,14 +35,26 @@ import { SearchService } from 'src/search/search.service';
 
 import { SEARCH_API } from 'src/common/constant/endpoint';
 
-class TestLlmDto {
+/** Either a new apiKey, or the keyName of a saved config whose key to reuse */
+class LlmKeySourceDto {
   @IsString()
-  @IsNotEmpty()
-  apiKey!: string;
+  @IsOptional()
+  apiKey?: string;
 
+  @IsString()
+  @IsOptional()
+  keyName?: string;
+}
+
+class TestLlmDto extends LlmKeySourceDto {
   @IsString()
   @IsNotEmpty()
   model!: string;
+}
+
+class ListLlmModelsDto extends LlmKeySourceDto {
+  @IsIn(['gemini', 'openai', 'anthropic'])
+  provider!: LlmProvider;
 }
 
 class AddLlmConfigDto {
@@ -43,9 +62,10 @@ class AddLlmConfigDto {
   @IsNotEmpty()
   keyName!: string;
 
+  /** Optional when updating an existing config: the saved key is kept */
   @IsString()
-  @IsNotEmpty()
-  apiKey!: string;
+  @IsOptional()
+  apiKey?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -79,11 +99,10 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async testLlmSettings(
     @Headers('authorization') authHeader: string,
+    @JwtTokenUserId() userId: string,
     @Body() body: TestLlmDto,
   ) {
-    if (!body.apiKey || !body.model) {
-      throw new BadRequestException('apiKey and model are required');
-    }
+    const apiKey = await this.resolveApiKey(userId, body);
     try {
       const res$ = this.httpService.post<{
         ok: boolean;
@@ -91,13 +110,45 @@ export class UsersController {
         provider?: string;
       }>(
         `${SEARCH_API}/ai-search/test`,
-        { api_key: body.apiKey, model: body.model },
+        { api_key: apiKey, model: body.model },
         { headers: { Authorization: authHeader } },
       );
       const res = await firstValueFrom(res$);
       return res.data;
     } catch {
       return { ok: false, error: 'Could not reach the search service.' };
+    }
+  }
+
+  /** List the chat models the key can use, fetched live from the provider */
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @Post('/llm-settings/models')
+  @HttpCode(HttpStatus.OK)
+  async listLlmModels(
+    @Headers('authorization') authHeader: string,
+    @JwtTokenUserId() userId: string,
+    @Body() body: ListLlmModelsDto,
+  ) {
+    const apiKey = await this.resolveApiKey(userId, body);
+    try {
+      const res$ = this.httpService.post<{
+        ok: boolean;
+        error: string | null;
+        models: { id: string; label: string }[];
+      }>(
+        `${SEARCH_API}/ai-search/models`,
+        { provider: body.provider, api_key: apiKey },
+        { headers: { Authorization: authHeader }, timeout: 30000 },
+      );
+      const res = await firstValueFrom(res$);
+      return res.data;
+    } catch {
+      return {
+        ok: false,
+        error: 'Could not reach the search service.',
+        models: [],
+      };
     }
   }
 
@@ -113,7 +164,7 @@ export class UsersController {
     const user = await this.usersService.addLlmConfig(
       userId,
       body.keyName,
-      body.apiKey,
+      body.apiKey?.trim() || undefined,
       body.model,
       body.setActive ?? true,
     );
@@ -152,6 +203,19 @@ export class UsersController {
     const user = await this.usersService.deleteLlmConfig(userId, keyName);
     this.searchService.triggerUserReindex(authHeader, userId);
     return this.sanitizeUser(user);
+  }
+
+  /** Use the key typed in the form, else the saved key of the named config */
+  private async resolveApiKey(
+    userId: string,
+    source: LlmKeySourceDto,
+  ): Promise<string> {
+    const apiKey = source.apiKey?.trim();
+    if (apiKey) return apiKey;
+    if (source.keyName) {
+      return this.usersService.getLlmConfigApiKey(userId, source.keyName);
+    }
+    throw new BadRequestException('apiKey or keyName is required');
   }
 
   /** Strip encrypted keys before sending to frontend */

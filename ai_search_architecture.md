@@ -226,17 +226,20 @@ This happens in `_fetch_and_extract_files()` in `apkh-search/routes/ingest.py`.
 Supported flows:
 
 - PDF text extraction with PyMuPDF
-- PDF OCR fallback if page text is too short
-- image OCR using Tesseract
+- scanned PDF pages (under 50 characters of text) are rendered and read by the user's model, up to 100 pages per PDF
+- images are read by the user's model
 - DOCX text extraction
 - XLSX extraction
 - CSV extraction
 - TXT and Markdown direct reading
 
-Important limitation:
+How images are read:
 
-- images are handled as OCR text extraction, not full image understanding
-- if an image has no readable text, it contributes little or nothing
+- there is no local OCR engine; `services/vision.py` sends the image to the user's active model with the same API key used for answers
+- the model transcribes all visible text and adds a description, which is detailed when the image has little or no text (photos, diagrams, charts)
+- the result is chunked and embedded like any other file text, with `source_name` set to the image file name (and `source_page` for PDF pages), so answers cite the image
+- results are cached in memory by image hash and model, so saving a note again does not re-send unchanged images
+- text-only models (for example `gpt-3.5-turbo`) cannot read images; those attachments and scanned pages are skipped
 
 ### Step 6: Search creates chunks
 

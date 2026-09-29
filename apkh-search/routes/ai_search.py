@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from services.embedder import generate_single_embedding
 from services.llm import generate_note_summary, generate_rag_answer, test_llm_connection
+from services.model_catalog import PROVIDERS, ModelListError, list_chat_models
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,12 @@ class TestLLMRequest(BaseModel):
     api_key: str | None = None
     apiKey: str | None = None
     model: str | None = None
+
+
+class ListModelsRequest(BaseModel):
+    provider: str
+    api_key: str | None = None
+    apiKey: str | None = None
 
 
 @router.post("/embed-query")
@@ -188,3 +195,25 @@ async def test_connection(body: TestLLMRequest, request: Request):
         request_id=request_id,
     )
     return result
+
+
+@router.post("/models")
+async def list_models(body: ListModelsRequest):
+    """
+    List the chat models the given API key can use, fetched live from the provider.
+    """
+    api_key = (body.api_key or body.apiKey or "").strip()
+
+    if not api_key or body.provider not in PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"api_key and a provider ({', '.join(PROVIDERS)}) are required.",
+        )
+
+    try:
+        models = await list_chat_models(body.provider, api_key)
+    except ModelListError as exc:
+        return {"ok": False, "error": str(exc), "models": []}
+
+    logger.info("Listed %s %s models", len(models), body.provider)
+    return {"ok": True, "error": None, "models": models}

@@ -62,33 +62,36 @@ export class UsersService {
       .exec();
   }
 
-  /** Add a new LLM config for a user. If keyName already exists, update it. */
+  /**
+   * Add a new LLM config for a user. If keyName already exists, update it;
+   * an empty apiKey then keeps the saved key (used to switch models).
+   */
   async addLlmConfig(
     userId: string,
     keyName: string,
-    apiKey: string,
+    apiKey: string | undefined,
     model: string,
     setActive: boolean,
   ): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) throw new NotFoundException('User not found');
 
-    const encryptedKey = this.encryption.encrypt(apiKey);
-
     // Check if keyName already exists → update in place
     const existing = user.llmConfigs.find((c) => c.keyName === keyName);
     if (existing) {
-      existing.llmApiKey = encryptedKey;
+      if (apiKey) existing.llmApiKey = this.encryption.encrypt(apiKey);
       existing.llmModel = model;
-    } else {
+    } else if (apiKey) {
       (user.llmConfigs as any[]).push({
         keyName,
         llmModel: model,
-        llmApiKey: encryptedKey,
+        llmApiKey: this.encryption.encrypt(apiKey),
         isActive: false,
         tokensUsed: 0,
         createdAt: new Date(),
       });
+    } else {
+      throw new BadRequestException('apiKey is required for a new config');
     }
 
     // Set active if requested — deactivate all others
@@ -142,6 +145,21 @@ export class UsersService {
     return user.save();
   }
 
+  /** Decrypted API key of a saved config (never sent to the frontend) */
+  async getLlmConfigApiKey(userId: string, keyName: string): Promise<string> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('llmConfigs')
+      .lean()
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+
+    const config = user.llmConfigs?.find((c) => c.keyName === keyName);
+    if (!config) throw new BadRequestException(`Config "${keyName}" not found`);
+
+    return this.encryption.decrypt(config.llmApiKey);
+  }
+
   /** Get the active config's decrypted key + model (used internally for RAG) */
   async getActiveLlmSettings(
     userId: string,
@@ -176,12 +194,8 @@ export class UsersService {
       return 'gemini';
     }
 
-    if (
-      normalized.startsWith('gpt') ||
-      normalized.startsWith('o1') ||
-      normalized.startsWith('o3') ||
-      normalized.startsWith('o4')
-    ) {
+    // gpt-*, chatgpt-* and the o-series (o1, o3, o4-mini, ...)
+    if (/^(gpt|chatgpt|o\d)/.test(normalized)) {
       return 'openai';
     }
 
