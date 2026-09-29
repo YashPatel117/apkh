@@ -93,7 +93,7 @@ export default function LoginPage() {
             href="/reset-password"
             className="self-end text-xs font-medium text-indigo-700 hover:underline dark:text-indigo-300"
           >
-            Forgot password?
+            Reset password?
           </Link>
         </div>
         <Button type="submit" size="lg" loading={isLoading} className="mt-2 w-full">

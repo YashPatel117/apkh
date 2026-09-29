@@ -1,13 +1,16 @@
 import axios, { AxiosInstance } from "axios";
 import { clearToken } from "../session";
 
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+export const STORAGE_URL = process.env.NEXT_PUBLIC_STORAGE_URL ?? "http://localhost:3001";
+
 const webApi = axios.create({
-  baseURL: "http://localhost:3000",
+  baseURL: API_URL,
   withCredentials: true,
 });
 
 const storageApi = axios.create({
-  baseURL: "http://localhost:3001",
+  baseURL: STORAGE_URL,
   withCredentials: true,
 });
 

@@ -26,12 +26,12 @@ export class LlmConfig {
 
 export const LlmConfigSchema = SchemaFactory.createForClass(LlmConfig);
 
-@Schema()
+@Schema({ timestamps: true })
 export class User {
   @Prop({ required: true })
   name: string;
 
-  @Prop()
+  @Prop({ required: true, unique: true })
   email: string;
 
   @Prop()

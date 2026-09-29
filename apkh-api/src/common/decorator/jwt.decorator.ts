@@ -1,5 +1,9 @@
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { getIdFromToken } from '../utils';
+import {
+  createParamDecorator,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { getIdFromToken } from '../utils/jwt';
 
 export const JwtToken = createParamDecorator(
   (data: unknown, ctx: ExecutionContext) => {
@@ -11,7 +15,15 @@ export const JwtToken = createParamDecorator(
 export const JwtTokenUserId = createParamDecorator(
   (data: unknown, ctx: ExecutionContext) => {
     const request = ctx.switchToHttp().getRequest<Request>();
-    const token = (request.headers['authorization'] as string).split(' ')[1];
-    return getIdFromToken(token);
+    const auth = request.headers['authorization'] as string | undefined;
+    const [type, token] = auth?.split(' ') ?? [];
+    if (type !== 'Bearer' || !token) {
+      throw new UnauthorizedException();
+    }
+    try {
+      return getIdFromToken(token);
+    } catch {
+      throw new UnauthorizedException();
+    }
   },
 );

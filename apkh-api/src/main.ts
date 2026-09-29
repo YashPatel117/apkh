@@ -1,7 +1,10 @@
+// Must be the first import so .env is loaded before any module reads process.env
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
+import { getCorsOrigins } from './common/constant/env';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -19,7 +22,7 @@ async function bootstrap() {
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
   );
   app.enableCors({
-    origin: ['http://localhost:3002', 'http://192.168.3.172:3002'], // Next.js frontend
+    origin: getCorsOrigins(), // Next.js frontend
     credentials: true, // allows cookies & auth headers
   });
   await app.listen(process.env.PORT ?? 3000);

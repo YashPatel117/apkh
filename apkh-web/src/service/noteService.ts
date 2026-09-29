@@ -70,14 +70,14 @@ export async function deleteNote(id: string) {
 }
 
 export async function getFile(noteId: string, fileName: string) {
-  const res = await storageApi.get(`/files/${noteId}/${fileName}`, {
+  const res = await storageApi.get(`/files/${encodeURIComponent(noteId)}/${encodeURIComponent(fileName)}`, {
     responseType: "blob",
   });
   return res;
 }
 
 export async function searchNotes(searchQuery: string) {
-  const res = await webApi.get(`/notes/search?search=${searchQuery}`);
+  const res = await webApi.get("/notes/search", { params: { search: searchQuery } });
   return res.data as INote[];
 }
 

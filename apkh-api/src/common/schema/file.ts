@@ -5,7 +5,7 @@ export type NoteFileDocument = NoteFiles & Document;
 
 @Schema()
 export class NoteFiles {
-  @Prop({ required: true, type: Types.ObjectId })
+  @Prop({ required: true, type: Types.ObjectId, unique: true })
   noteId: Types.ObjectId;
 
   @Prop({ type: [String], default: [] })

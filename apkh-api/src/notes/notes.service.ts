@@ -12,6 +12,7 @@ import { NoteResponse } from './dto/response.dto';
 import { NoteSummaryResponse } from './dto/summary-response.dto';
 import { SearchService } from 'src/search/search.service';
 import { resolveNoteMetadata } from './utils/note-metadata';
+import { toHttpException } from 'src/common/utils/http-error';
 
 @Injectable()
 export class NotesService {
@@ -73,7 +74,7 @@ export class NotesService {
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error: unknown) {
-      throw new HttpException(error as string, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -81,24 +82,21 @@ export class NotesService {
   async findAll(userId: string) {
     try {
       const notes = await this.noteModel.find({ userId }).exec();
-      const result: NoteResponse[] = [];
-      for (const note of notes) {
-        const noteFiles = await this.fileService.getNoteFiles(
-          note._id as string,
-        );
-        result.push({
-          id: note._id as string,
-          title: note.title,
-          content: note.content,
-          category: note.category,
-          createdAt: note.createdAt,
-          updatedAt: note.updatedAt,
-          files: noteFiles?.files || [],
-        });
-      }
+      const filesByNote = await this.fileService.getFilesForNotes(
+        notes.map((note) => String(note._id)),
+      );
+      const result: NoteResponse[] = notes.map((note) => ({
+        id: note._id as string,
+        title: note.title,
+        content: note.content,
+        category: note.category,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+        files: filesByNote.get(String(note._id)) ?? [],
+      }));
       return new ApiResponseDto<NoteResponse[]>().ok(result);
     } catch (error) {
-      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -120,7 +118,7 @@ export class NotesService {
         files: noteFiles?.files || [],
       });
     } catch (error) {
-      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -201,7 +199,7 @@ export class NotesService {
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error) {
-      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -224,7 +222,7 @@ export class NotesService {
 
       return new ApiResponseDto<NoteDocument>().ok(note);
     } catch (error) {
-      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 
@@ -298,7 +296,7 @@ export class NotesService {
         generatedAt,
       });
     } catch (error) {
-      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+      throw toHttpException(error);
     }
   }
 

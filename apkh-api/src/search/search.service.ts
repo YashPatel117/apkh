@@ -11,8 +11,8 @@ import {
 import { Note, NoteDocument } from 'src/common/schema/note';
 import { ActiveLlmSettings, UsersService } from 'src/users/users.service';
 import { FileService } from 'src/file/file.service';
-
-const SEARCH_API = 'http://localhost:8000';
+import { SEARCH_API } from 'src/common/constant/endpoint';
+import { cosineSimilarity } from 'src/common/utils/vector';
 
 interface IngestChunk {
   chunk_index: number;
@@ -64,6 +64,10 @@ export interface AiSearchResult {
   references: AiSearchResultReference[];
   isError: boolean;
 }
+
+// Chunks below this similarity are ignored; above HIGH_CONFIDENCE the answer is marked "high"
+const MIN_SIMILARITY_THRESHOLD = 0.5;
+const HIGH_CONFIDENCE_THRESHOLD = 0.7;
 
 const SUMMARY_CONTEXT_CHAR_LIMIT = 24000;
 const SUMMARY_CONTEXT_MAX_CHUNKS = 36;
@@ -483,34 +487,35 @@ export class SearchService {
       }
 
       const userChunks = await this.chunkModel.find(chunkFilter).lean();
-      let contexts: string[] = ["search on web for more information on this topic"];
-      let topChunks: any[] = [];
-
-      if (userChunks.length) {
-        const scoredChunks = userChunks.map((chunk) => ({
+      const topChunks = userChunks
+        .map((chunk) => ({
           ...chunk,
-          score: this.cosineSimilarity(queryVector, chunk.embedding),
-        }));
+          score: cosineSimilarity(queryVector, chunk.embedding),
+        }))
+        .filter((chunk) => chunk.score >= MIN_SIMILARITY_THRESHOLD)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
 
-        const minSimilarityThreshold = 0.5;
-        const relevantChunks = scoredChunks
-          .filter((chunk) => chunk.score >= minSimilarityThreshold)
-          .sort((a, b) => b.score - a.score);
-
-        topChunks = relevantChunks.slice(0, topK);
-
-        if (topChunks.length)
-          contexts = topChunks.map((chunk) => {
-            let source = `Note "${chunk.noteTitle}"`;
-            if (chunk.sourceType === 'file' && chunk.sourceName) {
-              source += ` | File: ${chunk.sourceName}`;
-              if (chunk.sourcePage) {
-                source += ` | Page ${chunk.sourcePage}`;
-              }
-            }
-            return `[SOURCE: ${source}]\n${chunk.text}`;
-          });
+      if (!topChunks.length) {
+        return {
+          query,
+          answer: "I couldn't find any relevant information in your notes.",
+          confidence: 'not_found',
+          references: [],
+          isError: false,
+        };
       }
+
+      const contexts = topChunks.map((chunk) => {
+        let source = `Note "${chunk.noteTitle}"`;
+        if (chunk.sourceType === 'file' && chunk.sourceName) {
+          source += ` | File: ${chunk.sourceName}`;
+          if (chunk.sourcePage) {
+            source += ` | Page ${chunk.sourcePage}`;
+          }
+        }
+        return `[SOURCE: ${source}]\n${chunk.text}`;
+      });
 
       let answer = '';
       let tokensUsed = 0;
@@ -554,7 +559,8 @@ export class SearchService {
       return {
         query,
         answer,
-        confidence: topChunks[0]?.score > 0.35 ? 'high' : 'low',
+        confidence:
+          topChunks[0].score >= HIGH_CONFIDENCE_THRESHOLD ? 'high' : 'low',
         references: topChunks.map((chunk) => ({
           note_id: chunk.noteId.toString(),
           note_title: chunk.noteTitle,
@@ -640,26 +646,5 @@ export class SearchService {
 
   private supportsSemanticSearch(provider: ActiveLlmSettings['provider']) {
     return provider === 'gemini' || provider === 'openai';
-  }
-
-  /**
-   * Fast cosine similarity between two numeric vectors.
-   */
-  private cosineSimilarity(vecA: number[], vecB: number[]): number {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
-
-    if (normA === 0 || normB === 0) {
-      return 0;
-    }
-
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 }

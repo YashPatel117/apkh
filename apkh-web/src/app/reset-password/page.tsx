@@ -15,6 +15,7 @@ const MIN_PASSWORD = 6;
 
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -36,12 +37,12 @@ export default function ResetPasswordPage() {
     setIsLoading(true);
     setError(null);
     try {
-      await resetPassword({ email: email.trim(), password });
+      await resetPassword({ email: email.trim(), currentPassword, password });
       router.replace("/login?reset=1");
     } catch (err) {
       setError(
-        axios.isAxiosError(err) && err.response?.status === 404
-          ? "We couldn't find an account with that email."
+        axios.isAxiosError(err) && err.response?.status === 401
+          ? "Email or current password is incorrect."
           : getErrorMessage(err, "Password reset failed. Please try again."),
       );
       setIsLoading(false);
@@ -51,7 +52,7 @@ export default function ResetPasswordPage() {
   return (
     <AuthShell
       title="Reset your password"
-      subtitle="Enter your account email and choose a new password."
+      subtitle="Confirm your current password, then choose a new one."
       footer={
         <>
           Remembered it?{" "}
@@ -73,6 +74,16 @@ export default function ResetPasswordPage() {
           onChange={(e) => setEmail(e.target.value)}
           required
           autoFocus
+        />
+        <Input
+          label="Current password"
+          type="password"
+          autoComplete="current-password"
+          placeholder="Your current password"
+          icon={<Lock />}
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          required
         />
         <Input
           label="New password"

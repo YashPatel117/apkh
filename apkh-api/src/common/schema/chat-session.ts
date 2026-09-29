@@ -14,7 +14,7 @@ export class ChatSession {
   @Prop({ default: false })
   isChunked: boolean;
   
-  updatedAt: string;
+  updatedAt: Date;
 }
 
 export const ChatSessionSchema = SchemaFactory.createForClass(ChatSession);

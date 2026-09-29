@@ -485,8 +485,14 @@ async def generate_chat_rag_answer(
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
     messages = [SystemMessage(content=system_content)]
-    
-    for msg in chat_history:
+
+    # The caller saves the new user message before loading history, so drop it
+    # here to avoid sending the same question twice.
+    history = list(chat_history)
+    if history and history[-1].get("role") == "user" and history[-1].get("content") == query:
+        history.pop()
+
+    for msg in history:
         if msg["role"] == "user":
             messages.append(HumanMessage(content=msg["content"]))
         else:
