@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { profile } from "@/service/authService";
 import { useAppSelector, useAppDispatch } from "@/store/hook";
@@ -23,6 +23,8 @@ import { addNote } from "@/store/slices/noteSlice";
 import { modalStyle } from "../common/style/modal";
 import { INote } from "../common/models/note";
 import { NotesContext } from "../common/context/notesContext";
+import { createChatSession } from "@/service/chatService";
+import { setActiveSession } from "@/store/slices/chatSlice";
 import { CircularProgress, Tooltip } from "@mui/material";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
@@ -31,6 +33,8 @@ import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
 import ReactMarkdown from "react-markdown";
 import MentionTextField from "../common/components/mentionTextField";
+import ForumIcon from '@mui/icons-material/Forum';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 
 const NoteEditor = dynamic(() => import("../common/components/noteEditor"), {
   ssr: false,
@@ -254,6 +258,17 @@ export default function DashboardLayout({
     }
   };
 
+  const handleContinueConversation = async () => {
+    if (!aiAnswer || !search) return;
+    try {
+      const newSession = await createChatSession(search, aiAnswer.answer);
+      dispatch(setActiveSession(newSession.id));
+      router.push(`/chat?session=${newSession.id}`);
+    } catch (e) {
+      console.error("Failed to start chat session", e);
+    }
+  };
+
   const trimmedSearch = search.trim();
   const aiErrorMessage =
     isAiErrorResponse(aiAnswer) && aiAnswer?.answer
@@ -325,6 +340,9 @@ export default function DashboardLayout({
                     >
                       <Link href="/profile" className="block px-4 py-2 text-gray-800 hover:bg-gray-100" onClick={() => setOpenProfileMenu(false)}>
                         Profile
+                      </Link>
+                      <Link href="/chat" className="block px-4 py-2 text-gray-800 hover:bg-gray-100" onClick={() => setOpenProfileMenu(false)}>
+                        Chat History
                       </Link>
                       <div className="cursor-pointer px-4 py-2 text-gray-800 hover:bg-gray-100" onClick={() => setOpenProfileMenu(false)}>
                         {user.type.toUpperCase()} (Upgrade)
@@ -483,6 +501,22 @@ export default function DashboardLayout({
                         <div className={`prose max-w-none ${aiErrorMessage ? "prose-red text-red-700" : "prose-slate text-slate-700"}`}>
                           <ReactMarkdown>{aiErrorMessage || aiAnswer.answer}</ReactMarkdown>
                         </div>
+                        {!aiErrorMessage && (
+                          <div className="mt-6 border-t border-slate-100 pt-5 flex justify-end">
+                            <Button
+                              variant="outlined"
+                              onClick={handleContinueConversation}
+                              endIcon={<ChatBubbleOutlineIcon fontSize="small" />}
+                              sx={{ 
+                                borderRadius: "20px", textTransform: "none", fontWeight: 600,
+                                borderColor: "#bae6fd", color: "#0284c7",
+                                "&:hover": { borderColor: "#7dd3fc", backgroundColor: "#f0f9ff" }
+                              }}
+                            >
+                              Continue this conversation
+                            </Button>
+                          </div>
+                        )}
                       </div>
                       {!aiErrorMessage && (
                         <div className="space-y-3">

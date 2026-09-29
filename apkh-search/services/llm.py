@@ -50,6 +50,27 @@ _SUMMARY_SYSTEM_INSTRUCTION = (
     "- If the note is mostly empty, say that clearly in one short sentence."
 )
 
+_CHAT_SYSTEM_INSTRUCTION = (
+    "You are a helpful AI assistant with access to the user's personal knowledge base.\n\n"
+    "You are given context from three sources in order of priority:\n\n"
+    "[CURRENT CHAT CONTEXT]\n"
+    "{current_chat_chunks}\n"
+    "This is from the ongoing conversation. Treat this as the most relevant context.\n\n"
+    "[NOTES CONTEXT]\n"
+    "{notes_chunks}\n"
+    "This is from the user's saved notes and documents.\n\n"
+    "[RELATED PAST CHATS]\n"
+    "{similar_chat_chunks}\n"
+    "These are from previous conversations on similar topics. Use as supporting context only.\n\n"
+    "Instructions:\n"
+    "- Prioritize CURRENT CHAT CONTEXT over everything else for follow-up questions\n"
+    "- Use NOTES CONTEXT as your primary knowledge source\n"
+    "- Reference RELATED PAST CHATS only when current context is insufficient\n"
+    "- If the user asks a follow-up question, resolve pronouns and references using CURRENT CHAT CONTEXT first\n"
+    "- Always be concise. If unsure, say so.\n"
+    "- Never fabricate information not present in the context above."
+)
+
 
 def detect_provider(model: str) -> str:
     """Detect provider from model name."""
@@ -400,6 +421,94 @@ async def test_llm_connection(
         return {"ok": True, "error": None, "provider": provider}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+async def generate_chat_rag_answer(
+    query: str,
+    chat_history: list[dict],
+    current_chat_chunks: list[str],
+    notes_chunks: list[str],
+    similar_chat_chunks: list[str],
+    api_key: str,
+    model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> dict:
+    resolved_key = api_key.strip()
+    resolved_model = model.strip()
+
+    if not resolved_key or not resolved_model:
+        return {
+            "answer": "Add an active API key and model in profile settings to enable AI search.",
+            "tokens_used": 0,
+            "run_id": None,
+        }
+
+    formatted_current = "\n\n".join(current_chat_chunks) if current_chat_chunks else "None"
+    formatted_notes = "\n\n".join(notes_chunks) if notes_chunks else "None"
+    formatted_similar = "\n\n".join(similar_chat_chunks) if similar_chat_chunks else "None"
+
+    system_content = _CHAT_SYSTEM_INSTRUCTION.format(
+        current_chat_chunks=formatted_current,
+        notes_chunks=formatted_notes,
+        similar_chat_chunks=formatted_similar
+    )
+
+    try:
+        provider = detect_provider(resolved_model)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return {
+            "answer": "Unsupported model. Please check your AI settings.",
+            "tokens_used": 0,
+            "run_id": None,
+        }
+
+    trace_config = build_langchain_config(
+        run_name=f"chat_rag:{request_id or 'unknown'}",
+        metadata={
+            "provider": provider,
+            "model_name": resolved_model,
+            "user_id": user_id or "anonymous",
+            "endpoint_name": "chat_rag",
+            "request_id": request_id or "unknown",
+        },
+    )
+
+    if provider == "gemini":
+        llm = ChatGoogleGenerativeAI(model=resolved_model, api_key=resolved_key, temperature=0.7)
+    elif provider == "openai":
+        llm = ChatOpenAI(model=resolved_model, api_key=resolved_key, temperature=0.7)
+    else:
+        llm = ChatAnthropic(model_name=resolved_model, anthropic_api_key=resolved_key, temperature=0.7)
+
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+    messages = [SystemMessage(content=system_content)]
+    
+    for msg in chat_history:
+        if msg["role"] == "user":
+            messages.append(HumanMessage(content=msg["content"]))
+        else:
+            messages.append(AIMessage(content=msg["content"]))
+            
+    messages.append(HumanMessage(content=query))
+
+    try:
+        response = await llm.ainvoke(messages, config=trace_config or {})
+        
+        return {
+            "answer": _extract_message_text(response.content),
+            "tokens_used": _extract_tokens_used(response),
+            "run_id": _extract_run_id(trace_config)
+        }
+    except Exception as exc:
+        logger.error("Chat RAG call failed [%s/%s]: %s", provider, resolved_model, exc)
+        return {
+            "answer": "I'm sorry, I encountered an error while formulating the response.",
+            "tokens_used": 0,
+            "run_id": None,
+        }
 
 
 def _extract_run_id(config: dict[str, Any] | None) -> str | None:

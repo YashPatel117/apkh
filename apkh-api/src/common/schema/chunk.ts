@@ -20,8 +20,11 @@ export class KnowledgeChunk {
   @Prop({ required: true })
   text: string;
 
-  @Prop({ required: true, enum: ['note', 'file'] })
+  @Prop({ required: true, enum: ['note', 'file', 'chat'] })
   sourceType: string;
+
+  @Prop()
+  sourceId: string;
 
   @Prop()
   sourceName: string;
@@ -46,3 +49,5 @@ export const KnowledgeChunkSchema =
 KnowledgeChunkSchema.index({ noteId: 1 });
 // Index for user-scoped queries
 KnowledgeChunkSchema.index({ userId: 1 });
+// Compound index for chat chunks lookup
+KnowledgeChunkSchema.index({ userId: 1, sourceType: 1, sourceId: 1 });
