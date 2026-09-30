@@ -1,7 +1,7 @@
 """
 Live model discovery.
 
-Asks the provider which chat models an API key can use, so the model picker
+Asks the provider which models an API key can use, so the model picker
 follows the provider as models are released and retired instead of relying on
 a hardcoded list.
 """
@@ -20,14 +20,8 @@ GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
 ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models"
 
-# Name fragments of models that cannot answer text chat through this app
-# (embeddings, speech, realtime, image generation, tool-only agents).
-_GEMINI_EXCLUDED = ("embedding", "tts", "image", "live", "audio", "computer-use", "robotics", "aqa")
-_OPENAI_EXCLUDED = (
-    "audio", "realtime", "tts", "transcribe", "search", "image", "embedding",
-    "moderation", "instruct", "codex", "computer-use", "deep-research",
-    "-pro",  # Responses-API-only and priced for long reasoning runs
-)
+# Every model the key can use is listed, not only chat models: picking one that
+# can't answer text chat (speech, image, embeddings…) fails when it's asked.
 # Dated snapshots duplicate their alias (gpt-4o-2024-08-06, gpt-4-0613).
 _OPENAI_SNAPSHOT = re.compile(r"-\d{4}(-\d{2}-\d{2})?(-preview)?$")
 
@@ -37,7 +31,7 @@ class ModelListError(Exception):
 
 
 async def list_chat_models(provider: str, api_key: str) -> list[dict[str, str]]:
-    """Return [{id, label}] for the chat models the key can use, newest first."""
+    """Return [{id, label}] for the models the key can use, newest first."""
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         if provider == "gemini":
             return await _list_gemini(client, api_key)
@@ -56,11 +50,8 @@ async def _list_gemini(client: httpx.AsyncClient, api_key: str) -> list[dict[str
         data = await _get_json(client, GEMINI_MODELS_URL, {"x-goog-api-key": api_key}, params)
         for model in data.get("models", []):
             model_id = str(model.get("name", "")).removeprefix("models/")
-            if (
-                model_id.startswith("gemini")
-                and "generateContent" in model.get("supportedGenerationMethods", [])
-                and not any(part in model_id for part in _GEMINI_EXCLUDED)
-            ):
+            # generateContent is the only call the app makes to Gemini
+            if "generateContent" in model.get("supportedGenerationMethods", []):
                 models.append({"id": model_id, "label": model.get("displayName") or model_id})
 
         page_token = data.get("nextPageToken")
@@ -87,18 +78,10 @@ async def _list_openai(client: httpx.AsyncClient, api_key: str) -> list[dict[str
     data = await _get_json(client, OPENAI_MODELS_URL, {"Authorization": f"Bearer {api_key}"})
     models = [
         model for model in data.get("data", [])
-        if _is_openai_chat_model(str(model.get("id", "")))
+        if model.get("id") and not _OPENAI_SNAPSHOT.search(str(model["id"]))
     ]
     models.sort(key=lambda model: model.get("created", 0), reverse=True)
     return [{"id": model["id"], "label": model["id"]} for model in models]
-
-
-def _is_openai_chat_model(model_id: str) -> bool:
-    return (
-        (model_id.startswith(("gpt-", "chatgpt-")) or re.match(r"o\d", model_id) is not None)
-        and not any(part in model_id for part in _OPENAI_EXCLUDED)
-        and not _OPENAI_SNAPSHOT.search(model_id)
-    )
 
 
 async def _list_anthropic(client: httpx.AsyncClient, api_key: str) -> list[dict[str, str]]:
@@ -111,7 +94,7 @@ async def _list_anthropic(client: httpx.AsyncClient, api_key: str) -> list[dict[
         data = await _get_json(client, ANTHROPIC_MODELS_URL, headers, params)
         for model in data.get("data", []):
             model_id = str(model.get("id", ""))
-            if model_id.startswith("claude"):
+            if model_id:
                 models.append({"id": model_id, "label": model.get("display_name") or model_id})
 
         if not data.get("has_more") or not data.get("last_id"):

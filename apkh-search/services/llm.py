@@ -129,6 +129,62 @@ def detect_provider(model: str) -> str:
     )
 
 
+# Longest provider error message shown to users; the raw ones can run to pages.
+_MAX_ERROR_MESSAGE = 300
+
+
+def provider_error_message(exc: Exception) -> str:
+    """
+    Turn SDK/provider exceptions into a clean, short message that can be sent to
+    clients: the provider's own message, first line only.
+    """
+    return _first_line(_raw_provider_error_message(exc))
+
+
+def _raw_provider_error_message(exc: Exception) -> str:
+    response_json: Any = getattr(exc, "response_json", None)
+    if isinstance(response_json, dict):
+        error = response_json.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+
+        message = response_json.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+
+    message = str(exc).strip()
+    if not message:
+        return exc.__class__.__name__
+
+    lowered = message.lower()
+    if (
+        "api key not found" in lowered
+        or "api_key_invalid" in lowered
+        or "invalid api key" in lowered
+    ):
+        return "API key is invalid for the selected provider/model."
+
+    single_quoted_message = re.search(r"'message':\s*'([^']+)'", message)
+    if single_quoted_message and single_quoted_message.group(1).strip():
+        return single_quoted_message.group(1).strip()
+
+    double_quoted_message = re.search(r'"message"\s*:\s*"([^"]+)"', message)
+    if double_quoted_message and double_quoted_message.group(1).strip():
+        return double_quoted_message.group(1).strip()
+
+    return message
+
+
+def _first_line(message: str) -> str:
+    # Messages quoted from a repr carry escaped newlines ("\\n")
+    line = re.split(r"\\n|\n", message, maxsplit=1)[0].strip() or message.strip()
+    if len(line) > _MAX_ERROR_MESSAGE:
+        line = line[: _MAX_ERROR_MESSAGE - 1].rstrip() + "…"
+    return line
+
+
 def _is_model_unavailable(exc: Exception) -> bool:
     """Whether the provider says the model does not exist (retired or renamed)."""
     if getattr(exc, "status_code", None) == 404 or getattr(exc, "code", None) == 404:
@@ -586,7 +642,8 @@ async def test_llm_connection(
 
         return {"ok": True, "error": None, "provider": provider}
     except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+        logger.info("Connection test for %s failed: %s", resolved_model, exc)
+        return {"ok": False, "error": provider_error_message(exc)}
 
 
 async def generate_chat_rag_answer(

@@ -409,7 +409,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
                 )}
               </div>
               {modelsStatus === "error" && current?.error ? (
-                <p className="text-xs break-words text-rose-600 dark:text-rose-400" role="alert">
+                <p className="text-xs [overflow-wrap:anywhere] text-rose-600 dark:text-rose-400" role="alert">
                   {current.error}
                 </p>
               ) : savedModelRetired && editing ? (
@@ -430,7 +430,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           {testStatus === "error" && testError && (
             <p className="flex items-start gap-2 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300" role="alert">
               <CircleAlert className="mt-0.5 size-4 shrink-0" />
-              <span className="break-words">{testError}</span>
+              <span className="max-h-40 min-w-0 flex-1 overflow-y-auto [overflow-wrap:anywhere]">{testError}</span>
             </p>
           )}
 

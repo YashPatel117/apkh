@@ -13,7 +13,6 @@ correctly.
 
 import logging
 import math
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,7 +20,7 @@ import tiktoken
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-from services.llm import detect_provider
+from services.llm import detect_provider, provider_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +149,7 @@ _AUTH_MARKERS = ("api key not found", "api_key_invalid", "invalid api key", "inc
 
 
 def _to_embedding_error(space: EmbeddingSpace, exc: Exception) -> EmbeddingError:
-    message = _extract_provider_error_message(exc)
+    message = provider_error_message(exc)
     lowered = f"{message} {exc}".lower()
     label = "Gemini" if space.provider == "gemini" else "OpenAI"
     if any(marker in lowered for marker in _RATE_LIMIT_MARKERS):
@@ -160,40 +159,3 @@ def _to_embedding_error(space: EmbeddingSpace, exc: Exception) -> EmbeddingError
     return EmbeddingError(f"{label} embedding request failed: {message}", 502)
 
 
-def _extract_provider_error_message(exc: Exception) -> str:
-    """
-    Turn SDK/provider exceptions into a clean message that can be sent to clients.
-    """
-    response_json: Any = getattr(exc, "response_json", None)
-    if isinstance(response_json, dict):
-        error = response_json.get("error")
-        if isinstance(error, dict):
-            message = error.get("message")
-            if isinstance(message, str) and message.strip():
-                return message.strip()
-
-        message = response_json.get("message")
-        if isinstance(message, str) and message.strip():
-            return message.strip()
-
-    message = str(exc).strip()
-    if not message:
-        return exc.__class__.__name__
-
-    lowered = message.lower()
-    if (
-        "api key not found" in lowered
-        or "api_key_invalid" in lowered
-        or "invalid api key" in lowered
-    ):
-        return "API key is invalid for the selected provider/model."
-
-    single_quoted_message = re.search(r"'message':\s*'([^']+)'", message)
-    if single_quoted_message and single_quoted_message.group(1).strip():
-        return single_quoted_message.group(1).strip()
-
-    double_quoted_message = re.search(r'"message"\s*:\s*"([^"]+)"', message)
-    if double_quoted_message and double_quoted_message.group(1).strip():
-        return double_quoted_message.group(1).strip()
-
-    return message
