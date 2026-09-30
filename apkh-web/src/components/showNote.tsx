@@ -44,7 +44,8 @@ function IconAction({
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip label={label}>
+    // Below the button: an above-tooltip on a column's top card spills out of the column box and gets split by CSS columns.
+    <Tooltip label={label} side="bottom">
       <button
         type="button"
         aria-label={label}
