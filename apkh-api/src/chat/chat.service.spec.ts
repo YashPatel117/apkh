@@ -9,6 +9,7 @@ import { UsersService } from 'src/users/users.service';
 import { IndexingService } from 'src/indexing/indexing.service';
 import { SearchApiClient } from 'src/search-api/search-api.client';
 import { RetrievalService } from 'src/search/retrieval.service';
+import { QueryRewriteService } from 'src/search/query-rewrite.service';
 
 /** A mongoose query stand-in: every builder method chains, exec() resolves `result`. */
 function query<T>(result: T) {
@@ -72,6 +73,7 @@ describe('ChatService.sendMessage', () => {
     retrieve: jest.fn<Promise<unknown[]>, [string, string, RetrieveOptions]>(),
   };
   const indexing = { enqueueChat: jest.fn(), removeChat: jest.fn() };
+  const queryRewrite = { rewrite: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -101,6 +103,7 @@ describe('ChatService.sendMessage', () => {
     });
     retrieval.retrieve.mockResolvedValue([]);
     indexing.enqueueChat.mockResolvedValue(undefined);
+    queryRewrite.rewrite.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -111,6 +114,7 @@ describe('ChatService.sendMessage', () => {
         { provide: SearchApiClient, useValue: searchApi },
         { provide: RetrievalService, useValue: retrieval },
         { provide: IndexingService, useValue: indexing },
+        { provide: QueryRewriteService, useValue: queryRewrite },
       ],
     }).compile();
 
@@ -207,5 +211,58 @@ describe('ChatService.sendMessage', () => {
     searchApi.embedQuery.mockRejectedValue(new Error('rate limited'));
     await expect(send()).resolves.toBeDefined();
     expect(retrieval.retrieve.mock.calls[0][2]).toMatchObject({ vector: null });
+  });
+
+  it('searches for a standalone version of a follow-up question', async () => {
+    MessageModel.find.mockReturnValue(
+      query([
+        { role: 'assistant', content: 'The Q3 launch is on September 30.' },
+        { role: 'user', content: 'When is the Q3 launch?' },
+      ]),
+    );
+    queryRewrite.rewrite.mockResolvedValue({
+      query: 'Q3 launch budget',
+      searchText: 'Q3 launch budget costs',
+    });
+
+    await send('and the budget for it?');
+
+    expect(queryRewrite.rewrite).toHaveBeenCalledWith(
+      'Bearer t',
+      expect.anything(),
+      userId,
+      'and the budget for it?',
+      [
+        { role: 'user', content: 'When is the Q3 launch?' },
+        { role: 'assistant', content: 'The Q3 launch is on September 30.' },
+      ],
+    );
+    expect(searchApi.embedQuery).toHaveBeenCalledWith(
+      'Bearer t',
+      expect.anything(),
+      expect.anything(),
+      'Q3 launch budget',
+    );
+    expect(retrieval.retrieve.mock.calls.map(([, text]) => text)).toEqual([
+      'Q3 launch budget costs',
+      'Q3 launch budget costs',
+      'Q3 launch budget costs',
+    ]);
+    // the model still answers the question as asked
+    expect(searchApi.chatRag).toHaveBeenCalledWith(
+      'Bearer t',
+      expect.anything(),
+      expect.objectContaining({ query: 'and the budget for it?' }),
+    );
+  });
+
+  it('does not rewrite a self-contained question or the first message', async () => {
+    MessageModel.find.mockReturnValue(
+      query([{ role: 'user', content: 'Earlier question' }]),
+    );
+    await send('What did the team decide about the database migration plan?');
+    MessageModel.find.mockReturnValue(query([]));
+    await send('it?');
+    expect(queryRewrite.rewrite).not.toHaveBeenCalled();
   });
 });

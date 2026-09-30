@@ -12,6 +12,8 @@ export class FakeSearchApi {
   embedCalls: string[][] = [];
   queryCalls: string[] = [];
   embedError: SearchApiError | null = null;
+  rewrites = new Map<string, { query: string; keywords: string[] }>();
+  rewriteCalls: string[] = [];
 
   async extractFiles(
     _token: string,
@@ -121,6 +123,14 @@ export class FakeSearchApi {
     return fakeVector(query, space.dimensions);
   }
 
+  async rewriteQuery(_token: string, _llm: unknown, query: string) {
+    this.rewriteCalls.push(query);
+    const rewrite = this.rewrites.get(query);
+    return rewrite
+      ? { ...rewrite, error: false, tokensUsed: 1 }
+      : { query, keywords: [], error: true, tokensUsed: 0 };
+  }
+
   get embeddedTexts() {
     return this.embedCalls.flat();
   }
@@ -129,6 +139,8 @@ export class FakeSearchApi {
     this.extractCalls = [];
     this.embedCalls = [];
     this.queryCalls = [];
+    this.rewriteCalls = [];
+    this.rewrites.clear();
     this.embedError = null;
   }
 }

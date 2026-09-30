@@ -56,6 +56,10 @@ const CANDIDATE_FIELDS =
 const CANDIDATES_PER_LEG = 30;
 // Reciprocal rank fusion constant: dampens the weight of the very top ranks.
 const RRF_K = 60;
+// Atlas Vector Search: approximate candidates examined per result (its docs suggest 10-20x).
+const ATLAS_NUM_CANDIDATES = CANDIDATES_PER_LEG * 15;
+// After an Atlas Vector Search error, scan in the API for a while before trying again.
+const ATLAS_RETRY_MS = 10 * 60_000;
 
 /**
  * Hybrid retrieval over the chunk index: a semantic leg (cosine similarity in
@@ -67,6 +71,13 @@ const RRF_K = 60;
 @Injectable()
 export class RetrievalService {
   private readonly logger = new Logger(RetrievalService.name);
+  /**
+   * Name of an Atlas Vector Search index on knowledgechunks.vector
+   * (ATLAS_VECTOR_INDEX; create it with `npm run search:vector-index`). Without
+   * one, similarity is computed in the API over the user's vectors.
+   */
+  private readonly atlasIndex = process.env.ATLAS_VECTOR_INDEX?.trim() || null;
+  private atlasPausedUntil = 0;
 
   constructor(
     @InjectModel(KnowledgeChunk.name)
@@ -130,7 +141,24 @@ export class RetrievalService {
     vector: Float32Array,
     space: EmbeddingSpace,
     minSimilarity: number | null,
-  ) {
+  ): Promise<{ doc: CandidateDoc; similarity: number }[]> {
+    if (this.atlasIndex && Date.now() >= this.atlasPausedUntil) {
+      try {
+        return await this.atlasSemanticLeg(
+          this.atlasIndex,
+          filter,
+          vector,
+          space,
+          minSimilarity,
+        );
+      } catch (error) {
+        this.atlasPausedUntil = Date.now() + ATLAS_RETRY_MS;
+        this.logger.warn(
+          `Atlas Vector Search failed (${errorMessage(error)}); computing similarity in the API for the next ${ATLAS_RETRY_MS / 60_000} minutes`,
+        );
+      }
+    }
+
     const docs = await this.chunkModel
       .find({ ...filter, embeddingModel: space.id })
       .select(`${CANDIDATE_FIELDS} vector`)
@@ -147,6 +175,43 @@ export class RetrievalService {
       )
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, CANDIDATES_PER_LEG);
+  }
+
+  /** The semantic leg on Atlas: the database ranks vectors instead of the API. */
+  private async atlasSemanticLeg(
+    index: string,
+    filter: FilterQuery<KnowledgeChunkDocument>,
+    vector: Float32Array,
+    space: EmbeddingSpace,
+    minSimilarity: number | null,
+  ) {
+    const projection = Object.fromEntries(
+      CANDIDATE_FIELDS.split(' ').map((field) => [field, 1]),
+    );
+    const docs = await this.chunkModel
+      .aggregate<CandidateDoc & { score: number }>([
+        {
+          $vectorSearch: {
+            index,
+            path: 'vector',
+            queryVector: Array.from(vector),
+            numCandidates: ATLAS_NUM_CANDIDATES,
+            limit: CANDIDATES_PER_LEG,
+            filter: { ...filter, embeddingModel: space.id },
+          },
+        },
+        { $project: { ...projection, score: { $meta: 'vectorSearchScore' } } },
+      ])
+      .exec();
+    return (
+      docs
+        // Atlas reports cosine similarity rescaled to 0..1 as (1 + cosine) / 2
+        .map(({ score, ...doc }) => ({ doc, similarity: score * 2 - 1 }))
+        .filter(
+          ({ similarity }) =>
+            minSimilarity === null || similarity >= minSimilarity,
+        )
+    );
   }
 
   private async keywordLeg(
@@ -174,6 +239,36 @@ export class RetrievalService {
       return [];
     }
   }
+}
+
+/**
+ * Merge several ranked result lists (e.g. the original and a rewritten query)
+ * by reciprocal rank fusion; a passage found by both rises to the top.
+ */
+export function mergeRankings(
+  lists: RetrievedChunk[][],
+  limit: number,
+): RetrievedChunk[] {
+  const merged = new Map<string, RetrievedChunk>();
+  for (const list of lists) {
+    list.forEach((chunk, i) => {
+      const existing = merged.get(chunk.id);
+      const score = 1 / (RRF_K + i + 1);
+      if (existing) {
+        existing.score += score;
+        existing.keywordMatch ||= chunk.keywordMatch;
+        if (chunk.similarity !== null) {
+          existing.similarity = Math.max(
+            existing.similarity ?? -1,
+            chunk.similarity,
+          );
+        }
+      } else {
+        merged.set(chunk.id, { ...chunk, score });
+      }
+    });
+  }
+  return [...merged.values()].sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 function scopeFilter(

@@ -15,7 +15,12 @@ import {
   SearchApiError,
 } from 'src/search-api/search-api.client';
 import { LlmProvider, UsersService } from 'src/users/users.service';
-import { RetrievedChunk, RetrievalService } from './retrieval.service';
+import {
+  mergeRankings,
+  RetrievedChunk,
+  RetrievalService,
+} from './retrieval.service';
+import { isWeakResult, QueryRewriteService } from './query-rewrite.service';
 
 interface NoteSummaryGenerationResult {
   summary: string;
@@ -51,6 +56,8 @@ export interface AiSearchResult {
   isError: boolean;
   /** Notes still being (re)indexed, which the answer could not use yet */
   pendingNotes?: number;
+  /** The rewritten query also searched for, when the question was too vague */
+  searchedFor?: string;
 }
 
 // Semantic matches below `min` similarity are ignored; at `high` the answer is
@@ -90,6 +97,7 @@ export class SearchService {
     private readonly searchApi: SearchApiClient,
     private readonly retrieval: RetrievalService,
     private readonly indexing: IndexingService,
+    private readonly queryRewrite: QueryRewriteService,
   ) {}
 
   /**
@@ -144,16 +152,45 @@ export class SearchService {
 
     const pinned = Boolean(referencedNoteIds?.length);
     const thresholds = similarityThresholds(activeLlm.provider);
-    const [chunks, pendingNotes] = await Promise.all([
-      this.retrieval.retrieve(userId, query, {
+    const limit = pinned ? PINNED_NOTES_MAX_CHUNKS : topK;
+    const retrieveFor = (text: string, queryVector: Float32Array | null) =>
+      this.retrieval.retrieve(userId, text, {
         scope: { sourceTypes: ['note', 'file'], noteIds: referencedNoteIds },
-        limit: pinned ? PINNED_NOTES_MAX_CHUNKS : topK,
-        vector,
+        limit,
+        vector: queryVector,
         space,
         minSimilarity: pinned ? null : thresholds.min,
-      }),
+      });
+
+    const [firstPass, pendingNotes] = await Promise.all([
+      retrieveFor(query, vector),
       this.indexing.countPendingNotes(userId),
     ]);
+    let chunks = firstPass;
+
+    // A vague question finds little: rewrite it ("that thing about the
+    // launch" -> "Q3 product launch plan") and search again with both.
+    let searchedFor: string | undefined;
+    if (!pinned && isWeakResult(chunks, vector !== null, thresholds.high)) {
+      const rewritten = await this.queryRewrite.rewrite(
+        token,
+        activeLlm,
+        userId,
+        query,
+      );
+      if (rewritten) {
+        const rewrittenVector = space
+          ? await this.searchApi
+              .embedQuery(token, activeLlm, space, rewritten.query)
+              .catch(() => null)
+          : null;
+        chunks = mergeRankings(
+          [chunks, await retrieveFor(rewritten.searchText, rewrittenVector)],
+          limit,
+        );
+        searchedFor = rewritten.query;
+      }
+    }
 
     if (!chunks.length) {
       return {
@@ -163,6 +200,7 @@ export class SearchService {
         references: [],
         isError: false,
         pendingNotes,
+        searchedFor,
       };
     }
 
@@ -200,6 +238,7 @@ export class SearchService {
       references: chunks.map(toReference),
       isError: false,
       pendingNotes,
+      searchedFor,
     };
   }
 

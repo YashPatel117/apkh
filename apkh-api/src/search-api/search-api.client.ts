@@ -216,6 +216,40 @@ export class SearchApiClient {
     };
   }
 
+  /**
+   * A standalone search query (plus extra keywords) for a vague question or a
+   * chat follow-up. `error` is set, and the original query returned, on failure.
+   */
+  async rewriteQuery(
+    token: string,
+    llm: ActiveLlmSettings,
+    query: string,
+    history: { role: string; content: string }[] = [],
+  ): Promise<{
+    query: string;
+    keywords: string[];
+    error: boolean;
+    tokensUsed: number;
+  }> {
+    const data = await this.post<{
+      query: string;
+      keywords: string[];
+      error?: boolean;
+      tokens_used: number;
+    }>(
+      '/ai-search/rewrite-query',
+      { query, history, api_key: llm.apiKey, model: llm.model },
+      token,
+      ANSWER_TIMEOUT_MS,
+    );
+    return {
+      query: data.query || query,
+      keywords: data.keywords ?? [],
+      error: Boolean(data.error),
+      tokensUsed: data.tokens_used ?? 0,
+    };
+  }
+
   async summarize(
     token: string,
     llm: ActiveLlmSettings,

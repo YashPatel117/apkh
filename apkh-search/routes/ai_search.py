@@ -9,7 +9,12 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from services.embedder import EmbeddingError, embed_query as embed_query_text, resolve_space
-from services.llm import generate_note_summary, generate_rag_answer, test_llm_connection
+from services.llm import (
+    generate_note_summary,
+    generate_rag_answer,
+    rewrite_search_query,
+    test_llm_connection,
+)
 from services.model_catalog import PROVIDERS, ModelListError, list_chat_models
 
 logger = logging.getLogger(__name__)
@@ -165,6 +170,38 @@ async def summarize_note(body: SummaryRequest, request: Request):
         "request_id": request_id,
         "run_id": result.get("run_id"),
     }
+
+
+class ConversationMessage(BaseModel):
+    role: str
+    content: str
+
+
+class RewriteQueryRequest(BaseModel):
+    query: str
+    # Recent messages, for follow-up questions in a chat
+    history: list[ConversationMessage] = []
+    api_key: str
+    model: str
+
+
+@router.post("/rewrite-query")
+async def rewrite_query(body: RewriteQueryRequest, request: Request):
+    """
+    Rewrite a vague or follow-up question into a standalone search query plus
+    extra keywords. Falls back to the original query (error: true) on failure.
+    """
+    request_id = str(uuid.uuid4())
+    result = await rewrite_search_query(
+        query=body.query,
+        history=[message.model_dump() for message in body.history],
+        api_key=body.api_key,
+        model=body.model,
+        user_id=getattr(request.state, "user_id", None),
+        request_id=request_id,
+    )
+    logger.info("Rewrote query %r -> %r [request_id=%s]", body.query, result["query"], request_id)
+    return result
 
 
 @router.post("/test")

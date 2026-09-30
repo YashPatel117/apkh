@@ -62,7 +62,12 @@ export class ChatController {
     @Param('id') sessionId: string,
     @Body() dto: SendMessageDto,
   ) {
-    const data = await this.chatService.sendMessage(token, userId, sessionId, dto);
+    const data = await this.chatService.sendMessage(
+      token,
+      userId,
+      sessionId,
+      dto,
+    );
     return new ApiResponseDto().ok(data);
   }
 }

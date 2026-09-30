@@ -8,6 +8,7 @@ Supported providers (detected by model name prefix):
 """
 
 import base64
+import json
 import logging
 import re
 import traceback
@@ -85,6 +86,17 @@ _IMAGE_EXTRACTION_INSTRUCTION = (
     "- Never guess at text you cannot read and do not invent details.\n"
     "Respond in exactly this format, leaving out the Text section when there is no readable text:\n"
     "Text:\n<transcription>\n\nDescription:\n<description>"
+)
+
+_REWRITE_INSTRUCTION = (
+    "You turn a user's question into a search query for their personal notes.\n"
+    "Rules:\n"
+    "- If a conversation is given, resolve references (it, that, the second one, he...) from it, "
+    "so the query makes sense on its own.\n"
+    "- Keep names, codes, numbers and quoted phrases exactly as written.\n"
+    "- When the question is vague, add a few likely synonyms or related terms.\n"
+    "- Do not answer the question.\n"
+    'Respond with JSON only: {"query": "<standalone search query>", "keywords": ["<term>", ...]}'
 )
 
 # Models the supported providers serve without image input.
@@ -653,6 +665,77 @@ async def generate_chat_rag_answer(
             "tokens_used": 0,
             "run_id": None,
         }
+
+
+async def rewrite_search_query(
+    query: str,
+    history: list[dict],
+    api_key: str,
+    model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> dict:
+    """
+    Rewrite a vague or follow-up question into a standalone search query plus
+    extra keywords. On any failure the original query comes back, flagged.
+    """
+    fallback = {"query": query, "keywords": [], "tokens_used": 0, "error": True}
+    resolved_key = api_key.strip()
+    resolved_model = model.strip()
+    try:
+        provider = detect_provider(resolved_model)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return fallback
+
+    conversation = "\n".join(
+        f"{'User' if msg.get('role') == 'user' else 'Assistant'}: {str(msg.get('content', ''))[:1000]}"
+        for msg in history[-4:]
+    )
+    user_prompt = (f"Conversation:\n{conversation}\n\n" if conversation else "") + f"Question: {query}"
+
+    trace_config = build_langchain_config(
+        run_name=f"rewrite_query:{request_id or 'unknown'}",
+        metadata={
+            "provider": provider,
+            "model_name": resolved_model,
+            "user_id": user_id or "anonymous",
+            "endpoint_name": "rewrite_query",
+            "request_id": request_id or "unknown",
+        },
+    )
+    caller = _call_gemini if provider == "gemini" else _call_openai if provider == "openai" else _call_anthropic
+    try:
+        result = await caller(resolved_key, resolved_model, _REWRITE_INSTRUCTION, user_prompt, config=trace_config)
+    except Exception as exc:
+        logger.error("Query rewrite failed [%s/%s]: %s", provider, resolved_model, exc)
+        return fallback
+
+    parsed = _parse_json_object(result["answer"])
+    rewritten = parsed.get("query")
+    if not isinstance(rewritten, str) or not rewritten.strip():
+        return {**fallback, "tokens_used": result["tokens_used"]}
+    keywords = parsed.get("keywords")
+    return {
+        "query": rewritten.strip()[:500],
+        "keywords": [k.strip() for k in keywords if isinstance(k, str) and k.strip()][:8]
+        if isinstance(keywords, list)
+        else [],
+        "tokens_used": result["tokens_used"],
+        "error": False,
+    }
+
+
+def _parse_json_object(text: str) -> dict:
+    """The first JSON object in a model reply (models often wrap JSON in code fences)."""
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return {}
+    try:
+        value = json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _extract_run_id(config: dict[str, Any] | None) -> str | None:

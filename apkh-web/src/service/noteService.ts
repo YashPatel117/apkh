@@ -88,6 +88,8 @@ export type AiSearchResponse = {
   isError?: boolean;
   /** Notes still being indexed, whose content the answer could not use yet */
   pendingNotes?: number;
+  /** A clearer version of the question that was also searched for */
+  searchedFor?: string;
   references: {
     note_id: string;
     note_title: string;

@@ -53,6 +53,11 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onOpen
         <div className="rounded-2xl bg-surface-2 px-4 py-3">
           <p className="text-[0.7rem] font-semibold tracking-wider text-fg-subtle uppercase">You asked</p>
           <p className="mt-1 font-medium text-fg">{answer?.query || query}</p>
+          {answer?.searchedFor && !isSearching && (
+            <p className="mt-1.5 text-xs text-fg-muted">
+              Also searched for <span className="font-medium text-fg">“{answer.searchedFor}”</span>
+            </p>
+          )}
         </div>
 
         {isSearching && (

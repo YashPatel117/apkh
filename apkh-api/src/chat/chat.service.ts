@@ -24,6 +24,10 @@ import {
 } from 'src/search-api/search-api.client';
 import { RetrievalService } from 'src/search/retrieval.service';
 import { contextBlock, similarityThresholds } from 'src/search/search.service';
+import {
+  looksLikeFollowUp,
+  QueryRewriteService,
+} from 'src/search/query-rewrite.service';
 
 interface ChatContext {
   currentChatChunks: string[];
@@ -54,6 +58,7 @@ export class ChatService {
     private readonly searchApi: SearchApiClient,
     private readonly retrieval: RetrievalService,
     private readonly indexing: IndexingService,
+    private readonly queryRewrite: QueryRewriteService,
   ) {}
 
   /** CREATE SESSION */
@@ -230,6 +235,7 @@ export class ChatService {
         userId,
         sessionId,
         sendMessageDto.message,
+        chatHistory,
         activeLlm,
       );
 
@@ -323,8 +329,24 @@ export class ChatService {
     userId: string,
     sessionId: string,
     message: string,
+    chatHistory: { role: string; content: string }[],
     activeLlm: ActiveLlmSettings,
   ): Promise<ChatContext> {
+    // "And the budget for it?" retrieves nothing useful on its own: search for
+    // a standalone version of a follow-up question instead.
+    const rewritten =
+      chatHistory.length && looksLikeFollowUp(message)
+        ? await this.queryRewrite.rewrite(
+            token,
+            activeLlm,
+            userId,
+            message,
+            chatHistory,
+          )
+        : null;
+    const embedText = rewritten?.query ?? message;
+    const searchText = rewritten?.searchText ?? message;
+
     const space = embeddingSpaceFor(activeLlm.provider);
     let vector: Float32Array | null = null;
     if (space) {
@@ -333,7 +355,7 @@ export class ChatService {
           token,
           activeLlm,
           space,
-          message,
+          embedText,
         );
       } catch (error: unknown) {
         const reason =
@@ -346,7 +368,7 @@ export class ChatService {
 
     const { min } = similarityThresholds(activeLlm.provider);
     const [notes, currentChat, otherChats] = await Promise.all([
-      this.retrieval.retrieve(userId, message, {
+      this.retrieval.retrieve(userId, searchText, {
         scope: { sourceTypes: ['note', 'file'] },
         limit: NOTE_CONTEXT_LIMIT,
         vector,
@@ -354,14 +376,14 @@ export class ChatService {
         minSimilarity: min,
       }),
       // Already-indexed parts of this conversation are relevant by definition.
-      this.retrieval.retrieve(userId, message, {
+      this.retrieval.retrieve(userId, searchText, {
         scope: { sourceTypes: ['chat'], sessionId },
         limit: CURRENT_CHAT_CONTEXT_LIMIT,
         vector,
         space,
         minSimilarity: null,
       }),
-      this.retrieval.retrieve(userId, message, {
+      this.retrieval.retrieve(userId, searchText, {
         scope: { sourceTypes: ['chat'], excludeSessionId: sessionId },
         limit: OTHER_CHATS_CONTEXT_LIMIT,
         vector,

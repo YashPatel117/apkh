@@ -682,6 +682,86 @@ describeWithDb('indexing pipeline', () => {
     expect(ragContexts[0]).toContain('[SOURCE: Note "Deploy runbook"]');
   });
 
+  it('a vague question is rewritten and searched again', async () => {
+    await createNote('Launch', '<p>Q3 product launch plan and dates</p>');
+    await createNote('Recipes', '<p>Banana bread with walnuts</p>');
+    await indexing.reindexAll(userId.toHexString());
+    await drain();
+    (fake as any).rag = async () => ({
+      text: 'The plan.',
+      error: false,
+      tokensUsed: 1,
+    });
+    fake.rewrites.set('that thing about shipping', {
+      query: 'product launch plan',
+      keywords: ['launch', 'release'],
+    });
+
+    const result = await app
+      .get(SearchService)
+      .performAiSearch(
+        'Bearer t',
+        userId.toHexString(),
+        'that thing about shipping',
+      );
+
+    expect(fake.rewriteCalls).toEqual(['that thing about shipping']);
+    expect(result).toMatchObject({
+      isError: false,
+      searchedFor: 'product launch plan',
+    });
+    expect(result.references[0].note_title).toBe('Launch');
+
+    // A question that finds good matches is not rewritten
+    fake.rewriteCalls = [];
+    await app
+      .get(SearchService)
+      .performAiSearch('Bearer t', userId.toHexString(), 'product launch plan');
+    expect(fake.rewriteCalls).toEqual([]);
+  });
+
+  it('ATLAS_VECTOR_INDEX falls back to in-app similarity where $vectorSearch is unavailable', async () => {
+    await createNote('Deploy runbook', '<p>Rollout steps for production</p>');
+    await indexing.reindexAll(userId.toHexString());
+    await drain();
+
+    process.env.ATLAS_VECTOR_INDEX = 'chunk_vectors';
+    const atlasRetrieval = new RetrievalService(chunkModel);
+    delete process.env.ATLAS_VECTOR_INDEX;
+    const aggregate = jest.spyOn(chunkModel, 'aggregate');
+    const search = () =>
+      atlasRetrieval.retrieve(userId.toHexString(), 'rollout', {
+        scope: { sourceTypes: ['note', 'file'] },
+        limit: 3,
+        vector: fakeVector('rollout steps production', 1536),
+        space: {
+          id: 'text-embedding-3-small@1536',
+          provider: 'openai',
+          model: 'text-embedding-3-small',
+          dimensions: 1536,
+        },
+        minSimilarity: 0.3,
+      });
+
+    const first = await search();
+    expect(first[0]).toMatchObject({ noteTitle: 'Deploy runbook' });
+    expect(first[0].similarity).toBeGreaterThan(0.5);
+    const pipeline = aggregate.mock.calls[0][0] as any[];
+    expect(pipeline[0].$vectorSearch).toMatchObject({
+      index: 'chunk_vectors',
+      path: 'vector',
+      filter: {
+        embeddingModel: 'text-embedding-3-small@1536',
+        sourceType: { $in: ['note', 'file'] },
+      },
+    });
+
+    // After a failure it stops trying for a while
+    await search();
+    expect(aggregate).toHaveBeenCalledTimes(1);
+    aggregate.mockRestore();
+  });
+
   it('chat transcripts are indexed and extended incrementally', async () => {
     const sessionModel = app.get<Model<any>>(getModelToken(ChatSession.name));
     const messageModel = app.get<Model<any>>(getModelToken(ChatMessage.name));

@@ -162,12 +162,14 @@ Details:
 - Semantic matches below a per-provider similarity (Gemini 0.5, OpenAI 0.3) are ignored; confidence is "high" from Gemini 0.7 / OpenAI 0.5, "medium" for keyword-only search.
 - **Pinned notes** (`@mention`) restrict the search to those notes and skip the similarity cutoff, so broad questions ("what are the key points?") still get the note's content.
 - If the query can't be embedded (e.g. a rate limit), the answer comes from keyword matches instead of failing.
+- **Query rewrite**: when the first search is weak (no keyword match and nothing close in meaning), the model rewrites the question into a standalone search query with a few extra terms, and the results of both searches are merged. The answer shows what was also searched for. Clear questions never pay for this extra call.
+- **Vector search in the database** (optional, Atlas only): with `ATLAS_VECTOR_INDEX` set (create the index with `npm run search:vector-index`), Atlas ranks the vectors instead of the API loading them. If it fails, the API falls back to its own scan and tries Atlas again 10 minutes later.
 - The response includes `pendingNotes`: how many notes are still being indexed and weren't searched yet.
 - Chat transcripts are never AI-search sources.
 
 ## 8. Chat
 
-For each message the API assembles a small, ranked context with the same hybrid retrieval: up to 6 passages from notes and attachments, 3 from this conversation's indexed transcript, and 3 from other conversations, plus the last 10 messages. The answer is generated before anything is saved, so a failed answer leaves no unanswered question in the history.
+For each message the API assembles a small, ranked context with the same hybrid retrieval. A short follow-up that leans on the conversation ("and the budget for it?") is first rewritten into a standalone question for the search; the model still answers the question as asked. The context has up to 6 passages from notes and attachments, 3 from this conversation's indexed transcript, and 3 from other conversations, plus the last 10 messages. The answer is generated before anything is saved, so a failed answer leaves no unanswered question in the history.
 
 ## 9. Summaries
 
