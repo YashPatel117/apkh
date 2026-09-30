@@ -5,6 +5,7 @@ import { Download, FileQuestion, Maximize, ZoomIn, ZoomOut } from "lucide-react"
 import { getFile } from "@/services/noteService";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
+import { cn } from "@/lib/cn";
 import { displayFileName } from "@/lib/fileName";
 
 interface FileDisplayWithAuthProps {
@@ -72,13 +73,21 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
     };
   }, [file, fileName, noteId]);
 
+  // Measured from the layout box (inside the border, including any scrollbar
+  // area): unlike clientWidth/Height it doesn't shrink when scrollbars appear,
+  // and unlike getBoundingClientRect it ignores the modal's scale-in transform.
+  // Only zoomed-in sizes depend on it; at Fit the image is sized by CSS alone.
   useEffect(() => {
     const element = previewRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
-    const update = () => setViewportSize({ width: element.clientWidth, height: element.clientHeight });
+    const update = () => {
+      const width = element.offsetWidth - 2 * element.clientLeft;
+      const height = element.offsetHeight - 2 * element.clientTop;
+      setViewportSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+    };
     update();
     const observer = new ResizeObserver(update);
-    observer.observe(element);
+    observer.observe(element, { box: "border-box" });
     return () => observer.disconnect();
   }, [fileBlobUrl, mimeType]);
 
@@ -87,10 +96,9 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
       ? Math.min(viewportSize.width / imageSize.width, viewportSize.height / imageSize.height, 1)
       : 1;
   const currentScale = fitScale * zoom;
-  const scaledWidth = imageSize ? imageSize.width * currentScale : 0;
-  const scaledHeight = imageSize ? imageSize.height * currentScale : 0;
-  const canvasWidth = Math.max(viewportSize.width, scaledWidth);
-  const canvasHeight = Math.max(viewportSize.height, scaledHeight);
+  const scaledWidth = imageSize ? Math.round(imageSize.width * currentScale) : 0;
+  const scaledHeight = imageSize ? Math.round(imageSize.height * currentScale) : 0;
+  const zoomed = zoom > MIN_ZOOM && scaledWidth > 0;
 
   useEffect(() => {
     const element = previewRef.current;
@@ -158,20 +166,27 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
             </Button>
             <div className="ml-auto">{downloadLink}</div>
           </div>
-          <div ref={previewRef} className="h-[62dvh] overflow-auto rounded-2xl border border-line bg-surface-2">
-            <div className="relative" style={{ width: canvasWidth || "100%", height: canvasHeight || "100%", minWidth: "100%", minHeight: "100%" }}>
+          {/* Scrolls only when zoomed in: at Fit nothing can overflow, so no scrollbars. */}
+          <div
+            ref={previewRef}
+            className={cn("h-[62dvh] rounded-2xl border border-line bg-surface-2", zoomed ? "overflow-auto" : "overflow-hidden")}
+          >
+            <div
+              className="relative"
+              style={
+                zoomed
+                  ? { width: `max(100%, ${scaledWidth}px)`, height: `max(100%, ${scaledHeight}px)` }
+                  : { width: "100%", height: "100%" }
+              }
+            >
               {/* eslint-disable-next-line @next/next/no-img-element -- blob URL, not optimizable */}
               <img
                 src={fileBlobUrl}
                 alt={displayName}
-                className="absolute max-w-none rounded-lg shadow-lg"
+                // Centered; at Fit, CSS keeps it inside the box (never enlarged past its natural size)
+                className={cn("absolute inset-0 m-auto rounded-lg shadow-lg", zoomed ? "max-w-none" : "max-h-full max-w-full")}
                 onLoad={(e) => setImageSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
-                style={{
-                  left: Math.max((canvasWidth - scaledWidth) / 2, 0),
-                  top: Math.max((canvasHeight - scaledHeight) / 2, 0),
-                  width: scaledWidth || "auto",
-                  height: scaledHeight || "auto",
-                }}
+                style={zoomed ? { width: scaledWidth, height: scaledHeight } : undefined}
               />
             </div>
           </div>
