@@ -8,7 +8,13 @@ import { Model } from 'mongoose';
 import { User, UserDocument } from '../common/schema/user';
 import { EncryptionService } from '../common/utils/encryption.service';
 
-export type LlmProvider = 'gemini' | 'openai' | 'anthropic';
+export type LlmProvider = 'openrouter' | 'gemini' | 'openai' | 'anthropic';
+export const LLM_PROVIDERS: LlmProvider[] = [
+  'openrouter',
+  'gemini',
+  'openai',
+  'anthropic',
+];
 
 export interface ActiveLlmSettings {
   keyName: string;
@@ -208,6 +214,11 @@ export class UsersService {
   private detectProvider(model: string): LlmProvider {
     const normalized = model.toLowerCase();
 
+    // OpenRouter ids are "author/model"; native Gemini, OpenAI and Claude ids never contain "/"
+    if (normalized.includes('/')) {
+      return 'openrouter';
+    }
+
     if (normalized.startsWith('gemini')) {
       return 'gemini';
     }
@@ -222,7 +233,7 @@ export class UsersService {
     }
 
     throw new BadRequestException(
-      `Unsupported model "${model}". Choose a Gemini, OpenAI, or Claude model.`,
+      `Unsupported model "${model}". Choose an OpenRouter, Gemini, OpenAI or Claude model.`,
     );
   }
 }

@@ -1,3 +1,5 @@
+import type { LlmProvider } from "./user";
+
 export interface INote {
   id: string;
   title: string;
@@ -24,7 +26,7 @@ export interface NoteIndexState {
 }
 
 export interface IndexStatus {
-  provider: "gemini" | "openai" | "anthropic" | null;
+  provider: LlmProvider | null;
   /** The active provider has an embedding model (otherwise keyword search only) */
   semantic: boolean;
   counts: Record<IndexJobStatus, number>;

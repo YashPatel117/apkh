@@ -24,6 +24,11 @@ export class SearchApiError extends Error {
   get retryable(): boolean {
     return this.status === null || this.status === 429 || this.status >= 500;
   }
+
+  /** The key has no credit for a paid model (e.g. OpenRouter embeddings): use keyword search. */
+  get needsCredit(): boolean {
+    return this.status === 402;
+  }
 }
 
 export interface ExtractedFile {

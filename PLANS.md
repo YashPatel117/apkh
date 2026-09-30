@@ -4,13 +4,8 @@
 
 ## Up next
 
-### OpenRouter as a provider
-Replace the "Custom" model option with **OpenRouter**, placed first in the provider list.
-- Live model list from `GET https://openrouter.ai/api/v1/models` (public, no key needed; filterable by output modality; includes input modalities, pricing, context length).
-- Chat through the existing `langchain-openai` package pointed at `https://openrouter.ai/api/v1`; no new dependency.
-- Embeddings through OpenRouter's OpenAI-compatible `/api/v1/embeddings` with `openai/text-embedding-3-small`: 1536 dimensions natively, so it shares the existing `text-embedding-3-small@1536` space and Atlas index with OpenAI users (no reindex when switching between the two). Costs about $0.02 per million tokens; a key without credit falls back to keyword search.
-- **Store the provider with each AI config** instead of guessing it from the model name (OpenRouter ids look like `openai/gpt-4o`). Existing configs fall back to the name-based guess.
-- Later, optionally: a free embedding model (e.g. `nvidia/nemotron-3-embed-1b:free`). Needs a second vector index for its dimensions, and free models may retain requests for training, so it must be an explicit opt-in with a warning.
+### Free semantic search on OpenRouter
+OpenRouter is a provider now (free chat models; see ARCHITECTURE.md), but its embedding model is paid, so keys without credit get keyword search only. Optionally offer a free embedding model (e.g. `nvidia/nemotron-3-embed-1b:free`): it needs a second vector index for its dimensions, and free models may retain requests for training, so it must be an explicit opt-in with a warning.
 
 ### Account
 - Real forgot-password flow (email link or OTP). Resetting currently requires the current password.

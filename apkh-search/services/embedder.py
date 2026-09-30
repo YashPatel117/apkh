@@ -4,7 +4,10 @@ Embeddings with the user's own provider credentials.
 The API chooses the embedding model and dimensions (one "embedding space" per
 provider) and stores that space next to every vector, so vectors from different
 spaces are never compared. Gemini and OpenAI have embedding models; Anthropic
-does not, so Claude users get keyword search instead.
+does not, so Claude users get keyword search instead. OpenRouter keys embed with
+OpenAI's text-embedding-3-small through OpenRouter: the same model, so the same
+space as OpenAI keys. It is paid; a key without credit gets a 402, and the API
+falls back to keyword search.
 
 Vectors are L2-normalised: cosine similarity is then a plain dot product, and
 Gemini's reduced-size outputs (which the API returns unnormalised) score
@@ -20,14 +23,17 @@ import tiktoken
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-from services.llm import detect_provider, provider_error_message
+from services.llm import OPENROUTER_BASE_URL, OPENROUTER_HEADERS, detect_provider, provider_error_message
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_EMBEDDING_MODELS = {
     "gemini": "gemini-embedding-001",
     "openai": "text-embedding-3-small",
+    "openrouter": "text-embedding-3-small",
 }
+# OpenRouter's id for the same model
+_OPENROUTER_EMBEDDING_MODELS = {"text-embedding-3-small": "openai/text-embedding-3-small"}
 DEFAULT_DIMENSIONS = 1536
 EMBED_BATCH_SIZE = 100
 
@@ -135,6 +141,17 @@ async def embed_query(text: str, api_key: str, space: EmbeddingSpace) -> list[fl
 def _build_embedder(api_key: str, space: EmbeddingSpace) -> Any:
     if space.provider == "gemini":
         return GoogleGenerativeAIEmbeddings(model=space.model, google_api_key=api_key)
+    if space.provider == "openrouter":
+        return OpenAIEmbeddings(
+            model=_OPENROUTER_EMBEDDING_MODELS[space.model],
+            api_key=api_key,
+            base_url=OPENROUTER_BASE_URL,
+            default_headers=OPENROUTER_HEADERS,
+            # 1536 is the model's native size; only send the option when reducing it
+            dimensions=space.dimensions if space.dimensions != DEFAULT_DIMENSIONS else None,
+            # Send plain strings: the default pre-tokenizes for OpenAI's own endpoint
+            check_embedding_ctx_length=False,
+        )
     return OpenAIEmbeddings(model=space.model, api_key=api_key, dimensions=space.dimensions)
 
 
@@ -143,14 +160,19 @@ def _normalize(vector: list[float]) -> list[float]:
     return [value / norm for value in vector] if norm else list(vector)
 
 
+_PAYMENT_MARKERS = ("402", "payment required", "insufficient credits", "more credits")
 _RATE_LIMIT_MARKERS = ("429", "rate limit", "rate_limit", "resource_exhausted", "quota")
 _AUTH_MARKERS = ("api key not found", "api_key_invalid", "invalid api key", "incorrect api key", "401", "permission_denied")
+_LABELS = {"gemini": "Gemini", "openai": "OpenAI", "openrouter": "OpenRouter"}
 
 
 def _to_embedding_error(space: EmbeddingSpace, exc: Exception) -> EmbeddingError:
     message = provider_error_message(exc)
     lowered = f"{message} {exc}".lower()
-    label = "Gemini" if space.provider == "gemini" else "OpenAI"
+    label = _LABELS.get(space.provider, space.provider)
+    # No credit for the (paid) embedding model: the API falls back to keyword search.
+    if getattr(exc, "status_code", None) == 402 or any(marker in lowered for marker in _PAYMENT_MARKERS):
+        return EmbeddingError(f"{label} embeddings need credit on this key: {message}", 402)
     if any(marker in lowered for marker in _RATE_LIMIT_MARKERS):
         return EmbeddingError(f"{label} embedding rate limit reached: {message}", 429)
     if any(marker in lowered for marker in _AUTH_MARKERS):

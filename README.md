@@ -1,6 +1,6 @@
 # AI-Powered Personal Knowledge Hub
 
-A note-taking app with an AI layer: write rich notes with attachments, then ask questions and get answers grounded in your own notes, with numbered citations that jump to the exact passage or file page. Each user brings their own AI key (Gemini, OpenAI or Claude).
+A note-taking app with an AI layer: write rich notes with attachments, then ask questions and get answers grounded in your own notes, with numbered citations that jump to the exact passage or file page. Each user brings their own AI key (OpenRouter, Gemini, OpenAI or Claude); OpenRouter's free models work without paying anything.
 
 | Service | Stack | Port | Role |
 |---|---|---|---|
@@ -17,7 +17,7 @@ How it all fits together: [ARCHITECTURE.md](ARCHITECTURE.md). Roadmap: [PLANS.md
 - **Python 3.11+**
 - **MongoDB**: a [MongoDB Atlas](https://www.mongodb.com/atlas) cluster is recommended (the free tier works) because it adds database-side vector search. A local MongoDB also works; similarity is then computed in the API.
 - **Windows Terminal** (optional): `start-all.bat` opens one tab per service with it, or separate windows without it.
-- An **AI API key** from Google AI Studio (Gemini), OpenAI or Anthropic. It is added in the app, not in a file.
+- An **AI API key** from OpenRouter (free models available), Google AI Studio (Gemini), OpenAI or Anthropic. It is added in the app, not in a file.
 
 ## Quick start (Windows)
 
@@ -121,6 +121,6 @@ cd apkh-web && npm run dev
 
 - **"Invalid or expired token" / 401 between services**: `JWT_SECRET` differs between `apkh-api`, `apkh-storage` and `apkh-search`. Make it identical and restart them.
 - **`Atlas Vector Search failed …` in the API log**: the index is missing, not READY yet, or the database isn't Atlas. Search keeps working (similarity computed in the API) and Atlas is retried every 10 minutes. The API logs where each search ran (`Passage search: Atlas Vector Search (…ms)`).
-- **Notes stay "Indexing" or "Failed"**: check the AI key in Profile, then use Profile > Search index > **Retry failed**. Claude keys index for keyword search only (Anthropic has no embedding model).
+- **Notes stay "Indexing" or "Failed"**: check the AI key in Profile, then use Profile > Search index > **Retry failed**. Claude keys index for keyword search only (Anthropic has no embedding model), and so do OpenRouter keys without credit (its embedding model is paid; the chat models are free).
 - **Quota / rate-limit errors when testing a key**: the provider refused the request (e.g. a free tier without access to that model). Pick another model or enable billing with the provider.
 - **`start-all.bat` opens nothing**: run it from a terminal to see the message; without Windows Terminal it opens separate windows instead of tabs.

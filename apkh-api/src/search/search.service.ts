@@ -10,7 +10,10 @@ import type { NoteActions, SummaryMode } from 'src/common/schema/summary';
 import { htmlToPlainText } from 'src/common/utils/html';
 import { errorMessage } from 'src/common/utils/http-error';
 import { IndexingService } from 'src/indexing/indexing.service';
-import { embeddingSpaceFor } from 'src/search-api/embedding-space';
+import {
+  embeddingSpaceFor,
+  type EmbeddingSpace,
+} from 'src/search-api/embedding-space';
 import {
   SearchApiClient,
   SearchApiError,
@@ -66,9 +69,9 @@ export interface AiSearchResult {
 
 // Semantic matches below `min` similarity are ignored; at `high` the answer is
 // marked "high" confidence. Scores run lower for OpenAI's text-embedding-3
-// models than for Gemini's, so each provider gets its own scale.
+// models than for Gemini's, so each embedding space gets its own scale.
 const SIMILARITY_THRESHOLDS: Record<
-  'gemini' | 'openai',
+  EmbeddingSpace['provider'],
   { min: number; high: number }
 > = {
   gemini: { min: 0.5, high: 0.7 },
@@ -76,9 +79,10 @@ const SIMILARITY_THRESHOLDS: Record<
 };
 
 export function similarityThresholds(provider: LlmProvider) {
-  return provider === 'openai'
-    ? SIMILARITY_THRESHOLDS.openai
-    : SIMILARITY_THRESHOLDS.gemini;
+  // OpenRouter embeds with OpenAI's model, so it shares OpenAI's scale.
+  return SIMILARITY_THRESHOLDS[
+    embeddingSpaceFor(provider)?.provider ?? 'gemini'
+  ];
 }
 
 // Questions about pinned notes skip the similarity cutoff (a broad question
@@ -142,13 +146,22 @@ export class SearchService {
           query,
         );
       } catch (error) {
+        const needsCredit =
+          error instanceof SearchApiError && error.needsCredit;
         // A bad key or model won't work for the answer either; report it.
-        if (error instanceof SearchApiError && !error.retryable) {
+        if (
+          error instanceof SearchApiError &&
+          !error.retryable &&
+          !needsCredit
+        ) {
           return this.buildGuidanceResponse(query, error.message);
         }
-        this.logger.warn(
-          `Query embedding failed, answering from keyword matches: ${errorMessage(error)}`,
-        );
+        // No credit for embeddings (OpenRouter) is expected: answer from keywords.
+        if (!needsCredit) {
+          this.logger.warn(
+            `Query embedding failed, answering from keyword matches: ${errorMessage(error)}`,
+          );
+        }
       }
     }
 
@@ -252,15 +265,12 @@ export class SearchService {
     const space = embeddingSpaceFor(
       await this.usersService.getActiveProvider(userId),
     );
-    return {
-      semantic: Boolean(space),
-      notes: await this.retrieval.similarNotes(
-        userId,
-        noteId,
-        space,
-        SIMILAR_NOTES_LIMIT,
-      ),
-    };
+    return this.retrieval.similarNotes(
+      userId,
+      noteId,
+      space,
+      SIMILAR_NOTES_LIMIT,
+    );
   }
 
   async generateNoteSummary(

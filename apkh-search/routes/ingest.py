@@ -68,7 +68,7 @@ class ExtractResponse(BaseModel):
 async def extract_files(body: ExtractRequest, request: Request):
     """Download attachments from storage and extract their text."""
     usage = VisionUsage()
-    read_image = build_image_reader(
+    read_image = await build_image_reader(
         body.api_key,
         body.model,
         user_id=body.user_id,

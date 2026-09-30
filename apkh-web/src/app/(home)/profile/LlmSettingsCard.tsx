@@ -17,7 +17,9 @@ import { cn } from "@/lib/cn";
 // ── Provider catalogue ───────────────────────────────────────────────────────
 // Models are not listed here: they are fetched live from the provider with the
 // user's key, so new releases appear and retired models disappear on their own.
+// OpenRouter lists its free models.
 const PROVIDER_GROUPS: { id: LlmProvider; label: string; docsUrl: string }[] = [
+  { id: "openrouter", label: "OpenRouter", docsUrl: "https://openrouter.ai/keys" },
   { id: "gemini", label: "Google Gemini", docsUrl: "https://aistudio.google.com/app/apikey" },
   { id: "openai", label: "OpenAI", docsUrl: "https://platform.openai.com/api-keys" },
   { id: "anthropic", label: "Anthropic Claude", docsUrl: "https://console.anthropic.com/settings/keys" },
@@ -138,9 +140,8 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   // The saved config whose model is being changed; null when adding a new one.
   const [editing, setEditing] = useState<ILlmConfig | null>(null);
   const [keyName, setKeyName] = useState("");
-  const [providerId, setProviderId] = useState<LlmProvider | "custom">("gemini");
+  const [providerId, setProviderId] = useState<LlmProvider>(PROVIDER_GROUPS[0].id);
   const [model, setModel] = useState("");
-  const [customModel, setCustomModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [loaded, setLoaded] = useState<LoadedModels | null>(null);
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
@@ -148,17 +149,15 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const [saving, setSaving] = useState(false);
 
   const trimmedKey = apiKey.trim();
-  const isCustom = providerId === "custom";
-  const group = isCustom ? detectProvider(customModel) : (PROVIDER_GROUPS.find((g) => g.id === providerId) ?? null);
+  const group = PROVIDER_GROUPS.find((g) => g.id === providerId) ?? PROVIDER_GROUPS[0];
 
   // When changing a saved config's model, its stored key is reused unless a new
   // key is typed, as long as the provider stays the same.
   const savedProviderId = editing ? detectProvider(editing.llmModel)?.id : undefined;
   const editingKeyName = editing?.keyName;
-  const useSavedKey = Boolean(editingKeyName) && !trimmedKey && savedProviderId !== undefined && group?.id === savedProviderId;
+  const useSavedKey = Boolean(editingKeyName) && !trimmedKey && savedProviderId !== undefined && group.id === savedProviderId;
 
   const modelRequest = useMemo<ModelRequest | null>(() => {
-    if (providerId === "custom") return null;
     if (trimmedKey) return trimmedKey.length >= MIN_KEY_LENGTH ? { provider: providerId, apiKey: trimmedKey } : null;
     return useSavedKey ? { provider: providerId, keyName: editingKeyName } : null;
   }, [providerId, trimmedKey, useSavedKey, editingKeyName]);
@@ -188,7 +187,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const savedModelRetired =
     modelsStatus === "ok" && editing !== null && providerId === savedProviderId && !models.some((m) => m.id === editing.llmModel);
 
-  const activeModel = isCustom ? customModel.trim() : selectedModel;
+  const activeModel = selectedModel;
   const hasKey = Boolean(trimmedKey) || useSavedKey;
   const canTest = keyName.trim().length > 0 && activeModel.length > 0 && hasKey;
   const canSave = testStatus === "ok" && canTest && !saving;
@@ -202,9 +201,8 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   function resetForm() {
     setEditing(null);
     setKeyName("");
-    setProviderId("gemini");
+    setProviderId(PROVIDER_GROUPS[0].id);
     setModel("");
-    setCustomModel("");
     setApiKey("");
     resetTest();
     setShowForm(false);
@@ -214,9 +212,8 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     const provider = detectProvider(config.llmModel);
     setEditing(config);
     setKeyName(config.keyName);
-    setProviderId(provider?.id ?? "custom");
+    setProviderId(provider?.id ?? PROVIDER_GROUPS[0].id);
     setModel(config.llmModel);
-    setCustomModel(provider ? "" : config.llmModel);
     setApiKey("");
     resetTest();
     setShowForm(true);
@@ -321,7 +318,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-fg">Provider</span>
             <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Provider">
-              {[...PROVIDER_GROUPS, { id: "custom" as const, label: "Custom" }].map((pg) => {
+              {PROVIDER_GROUPS.map((pg) => {
                 const selected = providerId === pg.id;
                 return (
                   <button
@@ -358,68 +355,62 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
               resetTest();
             }}
             hint={
-              group ? (
-                <a href={group.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-                  Get a {group.label} API key <ExternalLink className="size-3" />
-                </a>
-              ) : undefined
+              <a href={group.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+                Get a {group.label} API key <ExternalLink className="size-3" />
+              </a>
             }
           />
 
-          {isCustom ? (
-            <Input
-              label="Model identifier"
-              placeholder="e.g. gpt-4o"
-              value={customModel}
-              onChange={(e) => {
-                setCustomModel(e.target.value);
-                resetTest();
-              }}
-              hint="Any model ID starting with gemini-, gpt-, chatgpt-, o1/o3/…, or claude-."
-            />
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="llm-model" className="text-sm font-medium text-fg">
-                Model
-              </label>
-              <div className="relative">
-                <select
-                  id="llm-model"
-                  value={selectedModel}
-                  disabled={modelsStatus !== "ok" || models.length === 0}
-                  onChange={(e) => {
-                    setModel(e.target.value);
-                    resetTest();
-                  }}
-                  className={cn(fieldClass, "h-11 cursor-pointer appearance-none pr-10 disabled:cursor-default")}
-                >
-                  <option value="" disabled>
-                    {modelPlaceholder}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="llm-model" className="text-sm font-medium text-fg">
+              Model
+            </label>
+            <div className="relative">
+              <select
+                id="llm-model"
+                value={selectedModel}
+                disabled={modelsStatus !== "ok" || models.length === 0}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  resetTest();
+                }}
+                className={cn(fieldClass, "h-11 cursor-pointer appearance-none pr-10 disabled:cursor-default")}
+              >
+                <option value="" disabled>
+                  {modelPlaceholder}
+                </option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {modelOptionLabel(m)}
                   </option>
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {modelOptionLabel(m)}
-                    </option>
-                  ))}
-                </select>
-                {modelsStatus === "loading" ? (
-                  <Spinner className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-accent" />
-                ) : (
-                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-fg-subtle" />
-                )}
-              </div>
-              {modelsStatus === "error" && current?.error ? (
-                <p className="text-xs [overflow-wrap:anywhere] text-rose-600 dark:text-rose-400" role="alert">
-                  {current.error}
-                </p>
-              ) : savedModelRetired && editing ? (
-                <p className="text-xs text-amber-700 dark:text-amber-300">
-                  “{editing.llmModel}” is no longer offered to this key. Pick a current model.
-                </p>
-              ) : modelsStatus === "ok" && models.length > 0 ? (
-                <p className="text-xs text-fg-subtle">Live list from {group?.label}, newest first.</p>
-              ) : null}
+                ))}
+              </select>
+              {modelsStatus === "loading" ? (
+                <Spinner className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-accent" />
+              ) : (
+                <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-fg-subtle" />
+              )}
             </div>
+            {modelsStatus === "error" && current?.error ? (
+              <p className="text-xs [overflow-wrap:anywhere] text-rose-600 dark:text-rose-400" role="alert">
+                {current.error}
+              </p>
+            ) : savedModelRetired && editing ? (
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                “{editing.llmModel}” is no longer offered to this key. Pick a current model.
+              </p>
+            ) : modelsStatus === "ok" && models.length > 0 ? (
+              <p className="text-xs text-fg-subtle">
+                {group.id === "openrouter" ? "Free models on OpenRouter" : `Live list from ${group.label}`}, newest first.
+              </p>
+            ) : null}
+          </div>
+
+          {group.id === "openrouter" && (
+            <p className="text-xs text-fg-subtle">
+              Answers use the free model you pick. Search by meaning embeds your notes with openai/text-embedding-3-small through
+              OpenRouter, which needs a little credit on the key; without it, search matches keywords instead.
+            </p>
           )}
 
           {testStatus === "ok" && (

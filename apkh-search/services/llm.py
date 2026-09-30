@@ -1,7 +1,8 @@
 """
 LLM service for answer generation using only per-request credentials.
 
-Supported providers (detected by model name prefix):
+Supported providers (detected by model name):
+  - OpenRouter     : "author/model" ids (e.g. "qwen/qwen3.8-27b:free"); no native id has a "/"
   - Google Gemini  : model starts with "gemini-"
   - OpenAI         : model starts with "gpt-", "chatgpt-" or "o<N>" (o1, o3, o4-mini, ...)
   - Anthropic      : model starts with "claude-"
@@ -113,10 +114,21 @@ _REWRITE_INSTRUCTION = (
 # Models the supported providers serve without image input.
 _TEXT_ONLY_MODEL_PREFIXES = ("gpt-3.5", "o1-mini", "o1-preview", "o3-mini")
 
+# OpenRouter speaks the OpenAI API, so the OpenAI client is pointed at it.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_HEADERS = {"X-Title": "AI-Powered Personal Knowledge Hub"}
+
+
+def is_openrouter_model(model: str) -> bool:
+    """OpenRouter ids are "author/model"; Gemini, OpenAI and Claude ids never contain "/"."""
+    return "/" in model.strip()
+
 
 def detect_provider(model: str) -> str:
     """Detect provider from model name."""
     normalized = model.lower()
+    if is_openrouter_model(normalized):
+        return "openrouter"
     if normalized.startswith("gemini"):
         return "gemini"
     if normalized.startswith(("gpt", "chatgpt")) or re.match(r"o\d", normalized):
@@ -125,7 +137,8 @@ def detect_provider(model: str) -> str:
         return "anthropic"
     raise ValueError(
         f"Cannot detect provider for model '{model}'. "
-        "Model name must start with 'gemini-', 'gpt-', 'chatgpt-', 'o<N>', or 'claude-'."
+        "Use an OpenRouter 'author/model' id, or a model starting with 'gemini-', 'gpt-', "
+        "'chatgpt-', 'o<N>' or 'claude-'."
     )
 
 
@@ -206,62 +219,41 @@ def supports_vision(model: str) -> bool:
     return normalized != "gpt-4" and not normalized.startswith(_TEXT_ONLY_MODEL_PREFIXES)
 
 
-async def _call_gemini(
-    api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
+def _chat_model(provider: str, api_key: str, model: str, temperature: float = 0.2) -> Any:
+    """The LangChain chat model for a provider."""
+    if provider == "gemini":
+        return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, temperature=temperature)
+    if provider == "openai":
+        return ChatOpenAI(model=model, api_key=api_key, temperature=temperature)
+    if provider == "openrouter":
+        return ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=OPENROUTER_BASE_URL,
+            default_headers=OPENROUTER_HEADERS,
+            temperature=temperature,
+        )
+    # The SDK's default output budget cuts long answers short.
+    return ChatAnthropic(model=model, api_key=api_key, max_tokens=2048, temperature=temperature)
+
+
+def _caller_for(provider: str):
+    """A one-shot (system + user prompt) call to the provider's chat model."""
+
+    async def call(
+        api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
+        config: dict[str, Any] | None = None,
+    ) -> dict:
+        return await _call(provider, api_key, model, system, user_prompt, config)
+
+    return call
+
+
+async def _call(
+    provider: str, api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
     config: dict[str, Any] | None = None,
 ) -> dict:
-    chat = ChatGoogleGenerativeAI(
-        model=model,
-        google_api_key=api_key,
-        temperature=0.2,
-    )
-    response = await chat.ainvoke(
-        [
-            SystemMessage(content=system),
-            HumanMessage(content=user_prompt),
-        ],
-        config=config or {},
-    )
-    return {
-        "answer": _extract_message_text(response.content),
-        "tokens_used": _extract_tokens_used(response),
-        "run_id": _extract_run_id(config),
-    }
-
-
-async def _call_openai(
-    api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
-    config: dict[str, Any] | None = None,
-) -> dict:
-    chat = ChatOpenAI(
-        model=model,
-        api_key=api_key,
-        temperature=0.2,
-    )
-    response = await chat.ainvoke(
-        [
-            SystemMessage(content=system),
-            HumanMessage(content=user_prompt),
-        ],
-        config=config or {},
-    )
-    return {
-        "answer": _extract_message_text(response.content),
-        "tokens_used": _extract_tokens_used(response),
-        "run_id": _extract_run_id(config),
-    }
-
-
-async def _call_anthropic(
-    api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
-    config: dict[str, Any] | None = None,
-) -> dict:
-    chat = ChatAnthropic(
-        model=model,
-        api_key=api_key,
-        max_tokens=2048,
-        temperature=0.2,
-    )
+    chat = _chat_model(provider, api_key, model)
     response = await chat.ainvoke(
         [
             SystemMessage(content=system),
@@ -331,12 +323,7 @@ async def generate_rag_answer(
         },
     )
 
-    if provider == "gemini":
-        caller = _call_gemini
-    elif provider == "openai":
-        caller = _call_openai
-    else:
-        caller = _call_anthropic
+    caller = _caller_for(provider)
 
     try:
         result = await caller(
@@ -454,12 +441,7 @@ async def generate_note_summary(
         },
     )
 
-    if provider == "gemini":
-        caller = _call_gemini
-    elif provider == "openai":
-        caller = _call_openai
-    else:
-        caller = _call_anthropic
+    caller = _caller_for(provider)
 
     try:
         result = await caller(
@@ -549,12 +531,7 @@ async def extract_image_content(
         {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}},
     ]
 
-    if provider == "gemini":
-        caller = _call_gemini
-    elif provider == "openai":
-        caller = _call_openai
-    else:
-        caller = _call_anthropic
+    caller = _caller_for(provider)
 
     result = await caller(
         resolved_key,
@@ -597,31 +574,14 @@ async def test_llm_connection(
     )
 
     try:
-        if provider == "gemini":
-            await _call_gemini(
-                resolved_key,
-                resolved_model,
-                "You are a test assistant.",
-                "Say: OK",
-                config=trace_config,
-            )
-        elif provider == "openai":
-            await _call_openai(
-                resolved_key,
-                resolved_model,
-                "You are a test assistant.",
-                "Say: OK",
-                config=trace_config,
-            )
-        else:
-            await _call_anthropic(
-                resolved_key,
-                resolved_model,
-                "You are a test assistant.",
-                "Say: OK",
-                config=trace_config,
-            )
-
+        await _call(
+            provider,
+            resolved_key,
+            resolved_model,
+            "You are a test assistant.",
+            "Say: OK",
+            config=trace_config,
+        )
         return {"ok": True, "error": None, "provider": provider}
     except Exception as exc:
         logger.info("Connection test for %s failed: %s", resolved_model, exc)
@@ -686,18 +646,7 @@ async def generate_chat_rag_answer(
         },
     )
 
-    if provider == "gemini":
-        llm = ChatGoogleGenerativeAI(model=resolved_model, api_key=resolved_key, temperature=0.3)
-    elif provider == "openai":
-        llm = ChatOpenAI(model=resolved_model, api_key=resolved_key, temperature=0.3)
-    else:
-        # Same output budget as _call_anthropic; the SDK default cuts long answers short.
-        llm = ChatAnthropic(
-            model_name=resolved_model,
-            anthropic_api_key=resolved_key,
-            max_tokens=2048,
-            temperature=0.3,
-        )
+    llm = _chat_model(provider, resolved_key, resolved_model, temperature=0.3)
 
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -780,7 +729,7 @@ async def rewrite_search_query(
             "request_id": request_id or "unknown",
         },
     )
-    caller = _call_gemini if provider == "gemini" else _call_openai if provider == "openai" else _call_anthropic
+    caller = _caller_for(provider)
     try:
         result = await caller(resolved_key, resolved_model, _REWRITE_INSTRUCTION, user_prompt, config=trace_config)
     except Exception as exc:

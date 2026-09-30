@@ -32,7 +32,7 @@ How the four services work together: what is stored, how notes are indexed and r
 - **generate**: RAG answers, chat replies, summaries and query rewrites
 - **models / test**: list the models a key can use, and test a key + model
 
-**`apkh-storage`** stores attachment files per note. **The AI provider** (Gemini, OpenAI or Anthropic) only ever receives text, images and prompts for one request; it never sees the database.
+**`apkh-storage`** stores attachment files per note. **The AI provider** (OpenRouter, Gemini, OpenAI or Anthropic) only ever receives text, images and prompts for one request; it never sees the database.
 
 **Auth between services.** Users log in to `apkh-api`, which issues a JWT. `apkh-storage` and `apkh-search` verify the same JWT with the shared `JWT_SECRET`. Background indexing jobs call the services with a short-lived token the API signs for the job's user, so no user token is stored with a job.
 
@@ -86,7 +86,9 @@ Indexes on the chunks: a MongoDB text index over `text`, `noteTitle` and `source
 
 A user saves one or more AI configs in Profile. When the API needs AI it reads the **active** config, decrypts the key and sends `api_key` + `model` with that single request; `apkh-search` never stores keys.
 
-**Model list.** The picker is not hardcoded: `apkh-search` asks the provider which models the key can use (`model_catalog.py`) and returns all of them, newest first. For Gemini only models supporting `generateContent` are listed; for OpenAI dated snapshots that duplicate an alias are hidden. Non-chat models (image, speech…) are listed too and fail when used for chat. The provider of a saved model is recognised from its name (`gemini-*`, `gpt-*` / `chatgpt-*` / `o<N>`, `claude-*`).
+**Providers.** OpenRouter (listed first), Gemini, OpenAI and Anthropic. The provider of a model is recognised from its id: OpenRouter ids are `author/model` (e.g. `qwen/qwen3.8-27b:free`) and no native id contains a `/`; the others are `gemini-*`, `gpt-*` / `chatgpt-*` / `o<N>` and `claude-*`. OpenRouter speaks the OpenAI API, so it is called with the OpenAI client pointed at `https://openrouter.ai/api/v1`.
+
+**Model list.** The picker is not hardcoded: `apkh-search` asks the provider which models the key can use (`model_catalog.py`), newest first. For OpenRouter these are its free models (`/api/v1/models?max_price=0`, a public list). For Gemini only models supporting `generateContent` are listed; for OpenAI dated snapshots that duplicate an alias are hidden. Non-chat models (image, speech…) are listed too and fail when used for chat. Whether a model can read images (for attachments) is known per model for OpenAI/Gemini/Claude, and looked up in OpenRouter's model list (input modalities, cached for an hour).
 
 **Errors.** Provider errors are reduced to the provider's own one-line message (e.g. a quota message) before reaching the user; the full error goes to the search-service log.
 
@@ -96,7 +98,10 @@ A user saves one or more AI configs in Profile. When the API needs AI it reads t
 |---|---|---|
 | Gemini | `gemini-embedding-001@1536` | meaning + keyword |
 | OpenAI | `text-embedding-3-small@1536` | meaning + keyword |
+| OpenRouter | `text-embedding-3-small@1536` (OpenAI's model via OpenRouter, same space as OpenAI) | meaning + keyword; keyword only without credit |
 | Anthropic (Claude) | none: Anthropic has no embedding model | keyword only |
+
+**OpenRouter without credit.** The chat models offered are free, but the embedding model is paid (about $0.02 per million tokens). When OpenRouter answers 402 (no credit), `apkh-search` returns 402 and the API falls back: indexing stores the new passages without vectors (keyword-searchable; only chunks that have a vector carry the space label), AI search and chat answer from keyword matches, and similar notes compare words. After adding credit, editing a note or Profile > Rebuild index embeds what is missing.
 
 Queries are embedded in the same space (for Gemini with the `RETRIEVAL_QUERY` task type, which pairs with `RETRIEVAL_DOCUMENT` for passages). Vectors are L2-normalised.
 

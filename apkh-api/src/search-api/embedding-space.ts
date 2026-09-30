@@ -29,10 +29,15 @@ const SPACES: Record<EmbeddingSpace['provider'], EmbeddingSpace> = {
   },
 };
 
-/** The space a provider's vectors live in, or null (Anthropic has no embedding model). */
+/**
+ * The space a provider's vectors live in, or null (Anthropic has no embedding
+ * model). OpenRouter embeds with OpenAI's text-embedding-3-small, so its
+ * vectors share OpenAI's space: switching between the two needs no reindex.
+ */
 export function embeddingSpaceFor(
   provider: LlmProvider | null | undefined,
 ): EmbeddingSpace | null {
+  if (provider === 'openrouter') return SPACES.openai;
   return provider === 'gemini' || provider === 'openai'
     ? SPACES[provider]
     : null;

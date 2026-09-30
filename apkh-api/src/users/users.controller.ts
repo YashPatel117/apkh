@@ -26,7 +26,7 @@ import {
   IsString,
 } from 'class-validator';
 import { UsersService } from './users.service';
-import type { LlmProvider } from './users.service';
+import { LLM_PROVIDERS, type LlmProvider } from './users.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
@@ -55,7 +55,7 @@ class TestLlmDto extends LlmKeySourceDto {
 }
 
 class ListLlmModelsDto extends LlmKeySourceDto {
-  @IsIn(['gemini', 'openai', 'anthropic'])
+  @IsIn(LLM_PROVIDERS)
   provider!: LlmProvider;
 }
 

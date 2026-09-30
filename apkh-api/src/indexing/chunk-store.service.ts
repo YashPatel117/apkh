@@ -9,7 +9,10 @@ import {
 import { sha256 } from 'src/common/utils/content-hash';
 import { toStoredVector } from 'src/common/utils/vector';
 import type { EmbeddingSpace } from 'src/search-api/embedding-space';
-import { SearchApiClient } from 'src/search-api/search-api.client';
+import {
+  SearchApiClient,
+  SearchApiError,
+} from 'src/search-api/search-api.client';
 import type { ActiveLlmSettings } from 'src/users/users.service';
 
 /** A passage to store, before hashing and embedding. */
@@ -78,6 +81,8 @@ export class ChunkStoreService {
     chunkCount: number | null;
     embedded: number;
     tokensUsed: number;
+    /** The key has no credit for embeddings: new passages are keyword-only */
+    needsCredit: boolean;
   }> {
     const { token, llm, space, owner, title, pieces, existing } = params;
     const hashes = pieces.map((piece) => sha256(piece.text));
@@ -85,6 +90,7 @@ export class ChunkStoreService {
     const vectors = new Map<string, unknown>();
     let embedded = 0;
     let tokensUsed = 0;
+    let needsCredit = false;
     if (space) {
       for (const chunk of existing) {
         if (
@@ -102,24 +108,34 @@ export class ChunkStoreService {
         }
       });
       if (missing.size) {
-        const result = await this.searchApi.embed(token, llm, space, [
-          ...missing.values(),
-        ]);
-        [...missing.keys()].forEach((hash, i) =>
-          vectors.set(hash, toStoredVector(result.vectors[i])),
-        );
-        embedded = missing.size;
-        tokensUsed = result.tokensUsed;
+        try {
+          const result = await this.searchApi.embed(token, llm, space, [
+            ...missing.values(),
+          ]);
+          [...missing.keys()].forEach((hash, i) =>
+            vectors.set(hash, toStoredVector(result.vectors[i])),
+          );
+          embedded = missing.size;
+          tokensUsed = result.tokensUsed;
+        } catch (error) {
+          // A key without credit for (paid) embeddings still gets keyword
+          // search; the next edit or a rebuild embeds what is missing.
+          if (!(error instanceof SearchApiError && error.needsCredit)) {
+            throw error;
+          }
+          needsCredit = true;
+        }
       }
     }
 
     if (!(await params.stillExists())) {
       await this.deleteFor(owner);
-      return { chunkCount: null, embedded, tokensUsed };
+      return { chunkCount: null, embedded, tokensUsed, needsCredit };
     }
 
-    const docs = pieces.map((piece, i) =>
-      withoutUndefined({
+    const docs = pieces.map((piece, i) => {
+      const vector = space ? vectors.get(hashes[i]) : undefined;
+      return withoutUndefined({
         _id: new Types.ObjectId(),
         ...owner,
         sourceType: piece.sourceType,
@@ -129,10 +145,11 @@ export class ChunkStoreService {
         textHash: hashes[i],
         sourceName: piece.sourceName,
         sourcePage: piece.sourcePage,
-        embeddingModel: space?.id,
-        vector: space ? vectors.get(hashes[i]) : undefined,
-      }),
-    );
+        // Only chunks with a vector belong to the space
+        embeddingModel: vector ? space?.id : undefined,
+        vector,
+      });
+    });
 
     if (docs.length) {
       await this.chunkModel.insertMany(docs);
@@ -144,9 +161,9 @@ export class ChunkStoreService {
 
     if (!(await params.stillExists())) {
       await this.deleteFor(owner);
-      return { chunkCount: null, embedded, tokensUsed };
+      return { chunkCount: null, embedded, tokensUsed, needsCredit };
     }
-    return { chunkCount: docs.length, embedded, tokensUsed };
+    return { chunkCount: docs.length, embedded, tokensUsed, needsCredit };
   }
 
   async deleteFor(

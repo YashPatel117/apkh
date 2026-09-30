@@ -283,25 +283,32 @@ export class RetrievalService {
     noteId: string,
     space: EmbeddingSpace | null,
     limit: number,
-  ): Promise<SimilarNote[]> {
+  ): Promise<{ notes: SimilarNote[]; semantic: boolean }> {
     const userOid = new Types.ObjectId(userId);
     const noteOid = new Types.ObjectId(noteId);
-    return space
-      ? this.similarByMeaning(userOid, noteOid, space, limit)
-      : this.similarByKeywords(userOid, noteOid, limit);
+    const byMeaning = space
+      ? await this.similarByMeaning(userOid, noteOid, space, limit)
+      : null;
+    return byMeaning
+      ? { notes: byMeaning, semantic: true }
+      : {
+          notes: await this.similarByKeywords(userOid, noteOid, limit),
+          semantic: false,
+        };
   }
 
+  /** Null when the note has no vectors in the space (not indexed yet, or no credit to embed). */
   private async similarByMeaning(
     userId: Types.ObjectId,
     noteId: Types.ObjectId,
     space: EmbeddingSpace,
     limit: number,
-  ): Promise<SimilarNote[]> {
+  ): Promise<SimilarNote[] | null> {
     const target = (await this.noteCentroids(userId, space, [noteId])).get(
       String(noteId),
     );
     if (!target) {
-      return []; // not indexed in this space (yet)
+      return null;
     }
     // Atlas shortlists the notes nearest this one; without it, every note is a
     // candidate. Either way candidates are ranked by their average vectors.

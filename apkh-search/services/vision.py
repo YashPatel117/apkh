@@ -13,7 +13,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from services.file_extractor import ImageReader
-from services.llm import extract_image_content, supports_vision
+from services.llm import extract_image_content, is_openrouter_model, supports_vision
+from services.model_catalog import openrouter_accepts_images
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class VisionUsage:
     tokens_used: int = 0
 
 
-def build_image_reader(
+async def build_image_reader(
     api_key: str,
     model: str,
     user_id: str | None = None,
@@ -38,7 +39,11 @@ def build_image_reader(
     usage: VisionUsage | None = None,
 ) -> ImageReader | None:
     """Return an ImageReader for the model, or None if it cannot take images."""
-    if not supports_vision(model):
+    # OpenRouter models vary (many free ones are text-only); their list says which take images.
+    accepts_images = (
+        await openrouter_accepts_images(model) if is_openrouter_model(model) else supports_vision(model)
+    )
+    if not accepts_images:
         return None
 
     semaphore = asyncio.Semaphore(VISION_CONCURRENCY)

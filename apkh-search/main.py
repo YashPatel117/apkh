@@ -16,6 +16,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+# httpx logs every outgoing request (provider calls, model lists) at INFO
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 app = FastAPI(title="APKH Search Module", version="1.0.0")
 

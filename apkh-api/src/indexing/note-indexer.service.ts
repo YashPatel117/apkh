@@ -185,7 +185,10 @@ export class NoteIndexerService {
 
     this.logger.log(
       `Indexed note ${noteId.toHexString()}: ${stored.chunkCount} chunks, ${stored.embedded} embedded, ` +
-        `${toExtract.length}/${files.length} attachment(s) read`,
+        `${toExtract.length}/${files.length} attachment(s) read` +
+        (stored.needsCredit
+          ? ' (no credit for embeddings: keyword search only)'
+          : ''),
     );
 
     const retryFiles = fileResults.some((f) => f.status === 'failed');
