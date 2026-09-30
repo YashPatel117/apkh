@@ -6,20 +6,20 @@
 
 ### Core Intelligence
 
-* [ ] Ask-this-note (scoped Q&A on a note + attachments)
-* [ ] Action items extraction (tasks, deadlines, people, decisions)
-* [ ] Summary modes (brief + action-items first)
-* [ ] Auto-generated titles
+* [x] Ask-this-note (scoped Q&A on a note + attachments)
+* [x] Action items extraction (tasks, deadlines, people, decisions)
+* [x] Summary modes (brief + action-items first)
+* [x] Auto-generated titles
 
 ### Retrieval Basics
 
-* [ ] Hybrid search (keyword + semantic)
-* [ ] Query rewrite for vague queries
+* [x] Hybrid search (keyword + semantic)
+* [x] Query rewrite for vague queries
 
 ### UX Clarity
 
-* [ ] Indexing status (indexing / ready / failed)
-* [ ] Source jump (deep link to exact chunk/file)
+* [x] Indexing status (indexing / ready / failed)
+* [x] Source jump (deep link to exact chunk/file)
 
 ---
 
@@ -30,12 +30,12 @@
 ### Discovery & Organization
 
 * [ ] Auto tags and categories
-* [ ] Similar notes (related + duplicates)
+* [x] Similar notes (related + duplicates)
 * [ ] Collections / folders
 
 ### Feedback Loops
 
-* [ ] Pinned insights (AI → saved note)
+* [x] Pinned insights (AI → saved note)
 * [ ] Explain why this matched (search transparency)
 
 ### Activity Awareness
@@ -50,7 +50,7 @@
 
 ### Advanced AI
 
-* [ ] Attachment-aware chat across all notes
+* [x] Attachment-aware chat across all notes
 * [ ] Vision support (charts, diagrams, screenshots)
 
 ### Knowledge Layer
@@ -76,8 +76,8 @@
 
 ### System Reliability
 
-* [ ] Background queue + retry system
-* [ ] Reindex button
+* [x] Background queue + retry system
+* [x] Reindex button
 
 ### Business / Infra
 
