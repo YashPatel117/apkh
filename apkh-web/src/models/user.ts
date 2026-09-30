@@ -1,4 +1,4 @@
-export type LlmProvider = "free" | "openrouter" | "gemini" | "openai" | "anthropic";
+export type LlmProvider = "builtin" | "openrouter" | "gemini" | "openai" | "anthropic";
 
 /** Provider serving a model ID, or null for an unrecognised one. */
 export function providerOfModel(model: string): LlmProvider | null {
@@ -20,18 +20,41 @@ export function supportsSemanticSearch(model: string) {
   return provider === "openrouter" || provider === "gemini" || provider === "openai";
 }
 
-export const FREE_AI_LABEL = "Free AI";
+export const BUILTIN_AI_LABEL = "Built-in AI";
 
 /**
- * What powers AI features: the active saved config, else the free built-in AI
- * (open-source models the app's server runs), else nothing.
+ * What powers AI features: the active saved config, else the built-in AI
+ * (open-source models the app's server runs, within the plan's allowance),
+ * else nothing.
  */
-export type ActiveAi = { kind: "key"; config: ILlmConfig; name: string; model: string } | { kind: "free"; name: string; model: string };
+export type ActiveAi = { kind: "key"; config: ILlmConfig; name: string; model: string } | { kind: "builtin"; name: string; model: string };
 
 export function activeAi(user: IUser | null | undefined): ActiveAi | null {
   const config = user?.llmConfigs?.find((c) => c.isActive);
   if (config) return { kind: "key", config, name: config.keyName, model: config.llmModel };
-  return user?.freeAi ? { kind: "free", name: FREE_AI_LABEL, model: "Open-source model" } : null;
+  return user?.builtinAi ? { kind: "builtin", name: BUILTIN_AI_LABEL, model: "Open-source model" } : null;
+}
+
+export type PlanId = "free" | "pro";
+
+/** How much of the built-in AI the user gets. Own keys are never limited. */
+export interface IPlan {
+  id: PlanId;
+  label: string;
+  /** Built-in AI tokens per session */
+  sessionTokens: number;
+  sessionHours: number;
+  /** Served first in the built-in AI's queue */
+  priority: boolean;
+}
+
+/** Built-in AI usage in the current session (a window that opens with the first question). */
+export interface IBuiltinAiUsage {
+  sessionTokens: number;
+  sessionLimit: number;
+  /** null until the first question of a session */
+  sessionResetsAt: string | null;
+  totalTokens: number;
 }
 
 export interface ILlmModel {
@@ -54,6 +77,18 @@ export interface IUser {
   type: string;
   totalTokensUsed: number;
   llmConfigs: ILlmConfig[];
-  /** The server offers the free built-in AI, used when no config is active */
-  freeAi?: boolean;
+  plan?: IPlan;
+  /** Every plan, for comparison */
+  plans?: IPlan[];
+  /** null when the server doesn't offer the built-in AI */
+  builtinAi?: IBuiltinAiUsage | null;
+}
+
+/** "2 h 15 min" until a moment. */
+export function timeUntil(moment: string | Date): string {
+  const minutes = Math.max(1, Math.ceil((new Date(moment).getTime() - Date.now()) / 60_000));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest} min`;
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }

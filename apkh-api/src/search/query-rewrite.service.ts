@@ -71,11 +71,9 @@ export class QueryRewriteService {
         query,
         history,
       );
-      if (result.tokensUsed > 0) {
-        this.usersService
-          .addTokenUsage(userId, result.tokensUsed)
-          .catch(() => undefined);
-      }
+      this.usersService
+        .addTokenUsage(userId, result.tokensUsed, llm, { interactive: true })
+        .catch(() => undefined);
       const unchanged =
         normalize(result.query) === normalize(query) && !result.keywords.length;
       if (result.error || unchanged) {

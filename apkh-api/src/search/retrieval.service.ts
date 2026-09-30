@@ -66,7 +66,7 @@ const SIMILAR_NOTE_CANDIDATES = 20;
 // higher than OpenAI's, as with search); above NEAR_DUPLICATE, near-copies.
 const SIMILAR_NOTE_MIN_SIMILARITY: Record<EmbeddingSpace['provider'], number> =
   {
-    free: 0.5,
+    builtin: 0.5,
     gemini: 0.6,
     openai: 0.35,
   };

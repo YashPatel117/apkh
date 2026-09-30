@@ -13,7 +13,9 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"src/**/*.ts\" --fix",
-    "search:vector-index": "node scripts/create-vector-index.mjs"
+    "search:vector-index": "node scripts/create-vector-index.mjs",
+    "plan:set": "node scripts/set-plan.mjs",
+    "vouchers:create": "node scripts/create-vouchers.mjs"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

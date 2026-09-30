@@ -241,6 +241,13 @@ export class ChatService {
           HttpStatus.BAD_REQUEST,
         );
       }
+      const overLimit = await this.usersService.builtinLimitMessage(
+        userId,
+        activeLlm,
+      );
+      if (overLimit) {
+        throw new HttpException(overLimit, HttpStatus.TOO_MANY_REQUESTS);
+      }
 
       const session = await this.sessionModel
         .findOne({
@@ -335,13 +342,13 @@ export class ChatService {
       session.updatedAt = new Date();
       await session.save();
 
-      if (tokensUsed > 0) {
-        this.usersService.addTokenUsage(userId, tokensUsed).catch((err) => {
+      this.usersService
+        .addTokenUsage(userId, tokensUsed, activeLlm, { interactive: true })
+        .catch((err) => {
           this.logger.error(
             `Failed to track token usage for user ${userId}: ${errorMessage(err)}`,
           );
         });
-      }
 
       // Index the transcript for "related past chats" once enough new messages
       // accumulate. Counting what is stored keeps this right after failed requests.

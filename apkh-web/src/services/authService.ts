@@ -73,9 +73,15 @@ export async function activateLlmConfig(keyName: string) {
   return res.data as IUser;
 }
 
-/** Use the free built-in AI instead of a saved config */
-export async function switchToFreeAi() {
-  const res = await webApi.post("/users/llm-configs/use-free");
+/** Redeem a one-time "XXXX-XXXX" code for the Pro plan */
+export async function redeemVoucher(code: string) {
+  const res = await webApi.post("/users/plan/redeem", { code });
+  return res.data as IUser;
+}
+
+/** Use the built-in AI instead of a saved config */
+export async function switchToBuiltinAi() {
+  const res = await webApi.post("/users/llm-configs/use-builtin");
   return res.data as IUser;
 }
 

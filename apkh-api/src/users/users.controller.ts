@@ -27,10 +27,12 @@ import {
 } from 'class-validator';
 import { UsersService } from './users.service';
 import {
-  freeAiEnabled,
+  builtinAiEnabled,
+  builtinAllowance,
   LLM_PROVIDERS,
   type LlmProvider,
 } from './users.service';
+import { planDetails, planOf } from './plans';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
@@ -40,6 +42,12 @@ import { UserDocument } from 'src/common/schema/user';
 import { IndexingService } from 'src/indexing/indexing.service';
 
 import { SEARCH_API } from 'src/common/constant/endpoint';
+
+class RedeemVoucherDto {
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+}
 
 /** Either a new apiKey, or the keyName of a saved config whose key to reuse */
 class LlmKeySourceDto {
@@ -97,6 +105,19 @@ export class UsersController {
   async getProfile(@JwtTokenUserId() userId: string) {
     const user = await this.usersService.findOneById(userId);
     return user ? this.sanitizeUser(user) : null;
+  }
+
+  /** Redeem a one-time voucher code for the Pro plan */
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @Post('/plan/redeem')
+  @HttpCode(HttpStatus.OK)
+  async redeemVoucher(
+    @JwtTokenUserId() userId: string,
+    @Body() body: RedeemVoucherDto,
+  ) {
+    const user = await this.usersService.redeemVoucher(userId, body.code);
+    return this.sanitizeUser(user);
   }
 
   /** Test if the given API key + model combo works — does NOT save anything */
@@ -193,14 +214,14 @@ export class UsersController {
     return this.sanitizeUser(user);
   }
 
-  /** Use the free built-in AI instead of a saved config */
+  /** Use the built-in AI instead of a saved config */
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
-  @Post('/llm-configs/use-free')
+  @Post('/llm-configs/use-builtin')
   @HttpCode(HttpStatus.OK)
-  async useFreeAi(@JwtTokenUserId() userId: string) {
+  async useBuiltinAi(@JwtTokenUserId() userId: string) {
     const previousProvider = await this.usersService.getActiveProvider(userId);
-    const user = await this.usersService.useFreeAi(userId);
+    const user = await this.usersService.useBuiltinAi(userId);
     await this.reindexIfProviderChanged(userId, previousProvider);
     return this.sanitizeUser(user);
   }
@@ -250,8 +271,9 @@ export class UsersController {
   }
 
   /**
-   * Strip encrypted keys before sending to frontend, and say whether the free
-   * AI is available (it is used whenever no config is active).
+   * Strip encrypted keys before sending to frontend. Adds the user's plan and
+   * their built-in AI usage this session (null when the built-in AI is off;
+   * it is used whenever no config is active).
    */
   private sanitizeUser(user: UserDocument) {
     const obj = user.toObject();
@@ -259,6 +281,20 @@ export class UsersController {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       ({ llmApiKey: _k, ...rest }) => rest,
     );
-    return { ...obj, freeAi: freeAiEnabled() };
+    const plan = planOf(user.type);
+    const allowance = builtinAllowance(user.builtinUsage, plan);
+    return {
+      ...obj,
+      plan: planDetails(plan),
+      plans: [planDetails('free'), planDetails('pro')],
+      builtinAi: builtinAiEnabled()
+        ? {
+            sessionTokens: allowance.used,
+            sessionLimit: allowance.limit,
+            sessionResetsAt: allowance.resetsAt,
+            totalTokens: user.builtinUsage?.totalTokens ?? 0,
+          }
+        : null,
+    };
   }
 }

@@ -1,7 +1,7 @@
 @echo off
 setlocal
 rem One-time setup: checks prerequisites, creates missing .env files and
-rem installs the dependencies of all four services, then downloads the free AI
+rem installs the dependencies of all four services, then downloads the built-in AI
 rem models if Ollama is installed. Safe to run again.
 
 set "ROOT=%~dp0"
@@ -51,8 +51,8 @@ popd
 echo   apkh-search ready
 
 echo.
-echo [5/5] Free AI models (open-source, run by Ollama on this machine)...
-call :free_ai
+echo [5/5] Built-in AI models (open-source, run by Ollama on this machine)...
+call :builtin_ai
 
 echo.
 echo ==========================================
@@ -63,12 +63,12 @@ echo   2. Optional, MongoDB Atlas only: cd apkh-api ^&^& npm run search:vector-i
 echo   3. Start everything: start-all.bat
 exit /b 0
 
-:free_ai
+:builtin_ai
 where ollama >nul 2>&1
 if errorlevel 1 (
-  echo   Ollama was not found, so the free AI is not set up. Users can still add their own keys.
+  echo   Ollama was not found, so the built-in AI is not set up. Users can still add their own keys.
   echo   To add it: install Ollama from https://ollama.com/download ^(or: winget install Ollama.Ollama^)
-  echo   and run setup-all.bat again. To hide the free AI instead, set FREE_AI=off in apkh-api\.env.
+  echo   and run setup-all.bat again. To hide the built-in AI instead, set BUILTIN_AI=off in apkh-api\.env.
   exit /b 0
 )
 rem Ollama's default context window is too small for note summaries.
@@ -82,7 +82,7 @@ for %%m in (qwen3.5:4b qwen3-embedding:0.6b) do (
     exit /b 0
   )
 )
-echo   Free AI ready
+echo   Built-in AI ready
 exit /b 0
 
 :npm_install

@@ -9,7 +9,7 @@ OpenAI's text-embedding-3-small through OpenRouter: the same model, so the same
 space as OpenAI keys. It is paid; a key without credit gets a 402, and the API
 falls back to keyword search.
 
-The free built-in AI embeds with Qwen3-Embedding-0.6B on the host's own server.
+The built-in AI embeds with Qwen3-Embedding-0.6B on the host's own server.
 Its 1024-dimension vectors are zero-padded to 1536 so they fit the same vector
 index as the other spaces; padding changes neither the norm nor any cosine
 similarity. Queries carry the model's retrieval instruction, documents don't.
@@ -28,13 +28,13 @@ import tiktoken
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-from services import free_ai
+from services import builtin_ai
 from services.llm import OPENROUTER_BASE_URL, OPENROUTER_HEADERS, detect_provider, provider_error_message
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_EMBEDDING_MODELS = {
-    "free": "qwen3-embedding-0.6b",
+    "builtin": "qwen3-embedding-0.6b",
     "gemini": "gemini-embedding-001",
     "openai": "text-embedding-3-small",
     "openrouter": "text-embedding-3-small",
@@ -43,6 +43,8 @@ DEFAULT_EMBEDDING_MODELS = {
 _OPENROUTER_EMBEDDING_MODELS = {"text-embedding-3-small": "openai/text-embedding-3-small"}
 DEFAULT_DIMENSIONS = 1536
 EMBED_BATCH_SIZE = 100
+# Smaller on the built-in AI's CPU, so a waiting search query gets its turn sooner.
+BUILTIN_EMBED_BATCH_SIZE = 16
 
 # Only models whose output the API knows how to label as a space.
 _SUPPORTED_DIMENSIONS = {
@@ -52,7 +54,7 @@ _SUPPORTED_DIMENSIONS = {
 }
 
 # Qwen3-Embedding ranks better when queries (not documents) state the task.
-_FREE_QUERY_INSTRUCTION = (
+_BUILTIN_QUERY_INSTRUCTION = (
     "Instruct: Given a question, retrieve passages from the user's notes that answer it\nQuery:"
 )
 
@@ -116,15 +118,19 @@ async def embed_documents(
     embedder = _build_embedder((api_key or "").strip(), space)
     normalized_texts = [text if text.strip() else " " for text in texts]
     vectors: list[list[float]] = []
+    batch_size = BUILTIN_EMBED_BATCH_SIZE if space.provider == "builtin" else EMBED_BATCH_SIZE
     try:
-        for start in range(0, len(normalized_texts), EMBED_BATCH_SIZE):
-            batch = normalized_texts[start:start + EMBED_BATCH_SIZE]
+        for start in range(0, len(normalized_texts), batch_size):
+            batch = normalized_texts[start:start + batch_size]
             if space.provider == "gemini":
                 batch_vectors = await embedder.aembed_documents(
                     batch,
                     task_type="RETRIEVAL_DOCUMENT",
                     output_dimensionality=space.dimensions,
                 )
+            elif space.provider == "builtin":
+                async with builtin_ai.embedding_gate.slot():
+                    batch_vectors = await embedder.aembed_documents(batch)
             else:
                 batch_vectors = await embedder.aembed_documents(batch)
             vectors.extend(_fit(_normalize(vector), space) for vector in batch_vectors)
@@ -144,8 +150,9 @@ async def embed_query(text: str, api_key: str, space: EmbeddingSpace) -> list[fl
                 task_type="RETRIEVAL_QUERY",
                 output_dimensionality=space.dimensions,
             )
-        elif space.provider == "free":
-            vector = await embedder.aembed_query(f"{_FREE_QUERY_INSTRUCTION}{text}")
+        elif space.provider == "builtin":
+            async with builtin_ai.embedding_gate.slot():
+                vector = await embedder.aembed_query(f"{_BUILTIN_QUERY_INSTRUCTION}{text}")
         else:
             vector = await embedder.aembed_query(text)
     except Exception as exc:  # pragma: no cover - provider-specific behavior
@@ -154,11 +161,11 @@ async def embed_query(text: str, api_key: str, space: EmbeddingSpace) -> list[fl
 
 
 def _build_embedder(api_key: str, space: EmbeddingSpace) -> Any:
-    if space.provider == "free":
+    if space.provider == "builtin":
         return OpenAIEmbeddings(
-            model=free_ai.embedding_model(),
-            api_key=free_ai.api_key(),
-            base_url=free_ai.base_url(),
+            model=builtin_ai.embedding_model(),
+            api_key=builtin_ai.api_key(),
+            base_url=builtin_ai.base_url(),
             check_embedding_ctx_length=False,
         )
     if space.provider == "gemini":
@@ -201,10 +208,10 @@ _LABELS = {"gemini": "Gemini", "openai": "OpenAI", "openrouter": "OpenRouter"}
 def _to_embedding_error(space: EmbeddingSpace, exc: Exception) -> EmbeddingError:
     if isinstance(exc, EmbeddingError):
         return exc
-    if space.provider == "free":
+    if space.provider == "builtin":
         # The host's own server is down or the model isn't pulled: worth retrying later.
-        free_ai.log_failure("embedding", exc)
-        return EmbeddingError(free_ai.UNAVAILABLE_MESSAGE, 503)
+        builtin_ai.log_failure("embedding", exc)
+        return EmbeddingError(builtin_ai.UNAVAILABLE_MESSAGE, 503)
     message = provider_error_message(exc)
     lowered = f"{message} {exc}".lower()
     label = _LABELS.get(space.provider, space.provider)

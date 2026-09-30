@@ -2,7 +2,7 @@
 LLM service for answer generation using only per-request credentials.
 
 Supported providers (detected by model name):
-  - Free built-in  : the model id "free" (open-source models the host runs; see free_ai.py)
+  - Built-in AI    : the model id "builtin" (open-source models the host runs; see builtin_ai.py)
   - OpenRouter     : "author/model" ids (e.g. "qwen/qwen3.8-27b:free"); no native id has a "/"
   - Google Gemini  : model starts with "gemini-"
   - OpenAI         : model starts with "gpt-", "chatgpt-" or "o<N>" (o1, o3, o4-mini, ...)
@@ -20,7 +20,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-from services import free_ai
+from services import builtin_ai
 from services.html_parser import parse_note_html
 from services.langsmith_config import build_langchain_config
 
@@ -127,16 +127,16 @@ def is_openrouter_model(model: str) -> bool:
 
 
 def has_credentials(api_key: str | None, model: str | None) -> bool:
-    """A model, plus the user's key unless it is the free built-in model."""
+    """A model, plus the user's key unless it is the built-in model."""
     resolved_model = (model or "").strip()
-    return bool(resolved_model) and (bool((api_key or "").strip()) or free_ai.is_free_model(resolved_model))
+    return bool(resolved_model) and (bool((api_key or "").strip()) or builtin_ai.is_builtin_model(resolved_model))
 
 
 def detect_provider(model: str) -> str:
     """Detect provider from model name."""
     normalized = model.lower()
-    if free_ai.is_free_model(normalized):
-        return "free"
+    if builtin_ai.is_builtin_model(normalized):
+        return "builtin"
     if is_openrouter_model(normalized):
         return "openrouter"
     if normalized.startswith("gemini"):
@@ -225,9 +225,9 @@ def _model_unavailable_message(model: str) -> str:
 
 def _failure_message(provider: str, model: str, exc: Exception, default: str) -> str:
     """What to tell the user when a call to their model failed."""
-    if provider == "free":
-        free_ai.log_failure("chat", exc)
-        return free_ai.UNAVAILABLE_MESSAGE
+    if provider == "builtin":
+        builtin_ai.log_failure("chat", exc)
+        return builtin_ai.UNAVAILABLE_MESSAGE
     if _is_model_unavailable(exc):
         return _model_unavailable_message(model)
     return default
@@ -236,18 +236,18 @@ def _failure_message(provider: str, model: str, exc: Exception, default: str) ->
 def supports_vision(model: str) -> bool:
     """Whether the model accepts images (used for OCR and image descriptions)."""
     normalized = model.strip().lower()
-    if free_ai.is_free_model(normalized):
-        return free_ai.reads_images()
+    if builtin_ai.is_builtin_model(normalized):
+        return builtin_ai.reads_images()
     return normalized != "gpt-4" and not normalized.startswith(_TEXT_ONLY_MODEL_PREFIXES)
 
 
 def _chat_model(provider: str, api_key: str, model: str, temperature: float = 0.2) -> Any:
     """The LangChain chat model for a provider."""
-    if provider == "free":
+    if provider == "builtin":
         return ChatOpenAI(
-            model=free_ai.chat_model(),
-            api_key=free_ai.api_key(),
-            base_url=free_ai.base_url(),
+            model=builtin_ai.chat_model(),
+            api_key=builtin_ai.api_key(),
+            base_url=builtin_ai.base_url(),
             # No thinking: a small model on a CPU can't spare the time, and the
             # prompts ask for direct answers.
             reasoning_effort="none",
@@ -281,17 +281,27 @@ def _caller_for(provider: str):
     return call
 
 
+async def _invoke(provider: str, chat: Any, messages: list, config: dict[str, Any] | None) -> Any:
+    """Call a chat model; built-in calls wait for their turn by priority."""
+    if provider != "builtin":
+        return await chat.ainvoke(messages, config=config or {})
+    async with builtin_ai.chat_gate.slot():
+        return await chat.ainvoke(messages, config=config or {})
+
+
 async def _call(
     provider: str, api_key: str, model: str, system: str, user_prompt: str | list[dict[str, Any]],
     config: dict[str, Any] | None = None,
 ) -> dict:
     chat = _chat_model(provider, api_key, model)
-    response = await chat.ainvoke(
+    response = await _invoke(
+        provider,
+        chat,
         [
             SystemMessage(content=system),
             HumanMessage(content=user_prompt),
         ],
-        config=config or {},
+        config,
     )
     return {
         "answer": _extract_message_text(response.content),
@@ -609,7 +619,7 @@ async def test_llm_connection(
         return {"ok": True, "error": None, "provider": provider}
     except Exception as exc:
         logger.info("Connection test for %s failed: %s", resolved_model, exc)
-        if provider == "free":
+        if provider == "builtin":
             return {"ok": False, "error": _failure_message(provider, resolved_model, exc, "")}
         return {"ok": False, "error": provider_error_message(exc)}
 
@@ -693,7 +703,7 @@ async def generate_chat_rag_answer(
     messages.append(HumanMessage(content=query))
 
     try:
-        response = await llm.ainvoke(messages, config=trace_config or {})
+        response = await _invoke(provider, llm, messages, trace_config)
         answer = _extract_message_text(response.content)
         return {
             "answer": answer or "The model returned an empty response. Please try again.",

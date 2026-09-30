@@ -92,7 +92,7 @@ export function SimilarNotesModal({
         )}
         {result && !result.semantic && (
           <p className="mt-4 text-xs text-fg-subtle">
-            Compared by shared words. With the free AI or a Gemini or OpenAI key, notes are compared by meaning.
+            Compared by shared words. With the built-in AI or a Gemini or OpenAI key, notes are compared by meaning.
           </p>
         )}
       </div>

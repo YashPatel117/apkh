@@ -11,6 +11,8 @@ import os
 # Load environment variables
 load_dotenv()
 
+from services.builtin_ai import PRIORITY_HEADER, parse_priority, request_priority  # noqa: E402  (reads env)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -74,6 +76,9 @@ async def attach_user_to_request(request: Request, call_next):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={"detail": "Not authenticated"}
             )
+
+    # Queue position for the built-in AI, set by the API from the user's plan.
+    request_priority.set(parse_priority(request.headers.get(PRIORITY_HEADER)))
 
     response = await call_next(request)
     return response

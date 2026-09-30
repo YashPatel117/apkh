@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import {
   ChevronsUpDown,
   CircleUserRound,
-  Cpu,
+  Coins,
   FolderOpen,
   LogOut,
   MessagesSquare,
@@ -15,7 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { INote } from "@/models/note";
-import { activeAi, IUser } from "@/models/user";
+import { activeAi, IUser, timeUntil } from "@/models/user";
 import { LogoMark, Wordmark } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
 import { Menu, MenuItem } from "@/components/ui/Menu";
@@ -66,6 +66,10 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
   const pathname = usePathname();
   const router = useRouter();
   const ai = activeAi(user);
+  // Share of this session's built-in AI allowance used, as a whole percentage
+  const usage = user.builtinAi;
+  const used =
+    usage && usage.sessionLimit > 0 ? Math.max(0, Math.min(100, Math.round((100 * usage.sessionTokens) / usage.sessionLimit))) : 0;
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -178,10 +182,50 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
               : "bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/15",
           )}
         >
-          {ai ? <Cpu className="size-4 shrink-0 text-accent" /> : <TriangleAlert className="size-4 shrink-0" />}
+          {!ai && <TriangleAlert className="size-4 shrink-0" />}
           <span className="min-w-0 flex-1">
-            <span className="block font-semibold">{ai ? "AI model active" : "AI not configured"}</span>
-            <span className="block truncate opacity-80">{ai ? (ai.kind === "free" ? ai.name : ai.model) : "Add an API key to ask AI"}</span>
+            {!ai && (
+              <>
+                <span className="block font-semibold">AI not configured</span>
+                <span className="block truncate opacity-80">Add an API key to ask AI</span>
+              </>
+            )}
+            {ai && (
+              <span className="flex justify-between gap-2">
+                <span className="truncate font-semibold">{ai.kind === "builtin" ? ai.name : ai.model}</span>
+                {ai.kind === "builtin" && usage && (
+                  <span className={cn("shrink-0 tabular-nums opacity-80", used >= 100 && "text-rose-600 opacity-100 dark:text-rose-400")}>
+                    {used}%
+                  </span>
+                )}
+              </span>
+            )}
+            {ai?.kind === "key" && (
+              <span className="mt-1 inline-flex items-center gap-1 font-medium tabular-nums" title="Tokens used with this key">
+                <Coins className="size-3" aria-hidden />
+                {ai.config.tokensUsed.toLocaleString()}
+              </span>
+            )}
+            {ai?.kind === "builtin" && usage && (
+              <span className="mt-2 block">
+                <span
+                  className="block h-1.5 overflow-hidden rounded-full bg-line"
+                  role="progressbar"
+                  aria-label="Built-in AI tokens used this session"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={used}
+                >
+                  <span
+                    className={cn("block h-full rounded-full transition-[width]", used >= 100 ? "bg-rose-500" : used > 80 ? "bg-amber-500" : "bg-accent")}
+                    style={{ width: `${used}%` }}
+                  />
+                </span>
+                <span className="mt-1 block opacity-70">
+                  {usage.sessionResetsAt ? `Resets in ${timeUntil(usage.sessionResetsAt)}` : "Starts with your first question"}
+                </span>
+              </span>
+            )}
           </span>
         </Link>
 

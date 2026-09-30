@@ -26,6 +26,21 @@ export class LlmConfig {
 
 export const LlmConfigSchema = SchemaFactory.createForClass(LlmConfig);
 
+/** Built-in AI usage: all-time, and in the current session (see users/plans.ts). */
+@Schema({ _id: false })
+export class BuiltinUsage {
+  @Prop({ default: 0 })
+  totalTokens: number;
+
+  @Prop()
+  sessionStartedAt?: Date;
+
+  @Prop({ default: 0 })
+  sessionTokens: number;
+}
+
+export const BuiltinUsageSchema = SchemaFactory.createForClass(BuiltinUsage);
+
 @Schema({ timestamps: true })
 export class User {
   @Prop({ required: true })
@@ -38,13 +53,16 @@ export class User {
   password: string;
 
   @Prop({ default: 'free' })
-  type: string;
+  type: string; // plan: "free" or "pro" (set with `npm run plan:set`)
 
   @Prop({ default: 0 })
-  totalTokensUsed: number; // grand total across all configs
+  totalTokensUsed: number; // grand total across all configs and the built-in AI
 
   @Prop({ type: [LlmConfigSchema], default: [] })
   llmConfigs: LlmConfig[];
+
+  @Prop({ type: BuiltinUsageSchema, default: () => ({}) })
+  builtinUsage: BuiltinUsage;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

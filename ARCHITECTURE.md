@@ -18,7 +18,7 @@ How the four services work together: what is stored, how notes are indexed and r
    (notes, chats, index)    ▼ generate                  │
                  ┌──────────────┐                       │
                  │ apkh-search  │───────────────────────┘
-                 │ FastAPI 8000 │───► AI provider (the user's own key), or the free AI (Ollama)
+                 │ FastAPI 8000 │───► AI provider (the user's own key), or the built-in AI (Ollama)
                  └──────────────┘
 ```
 
@@ -32,7 +32,7 @@ How the four services work together: what is stored, how notes are indexed and r
 - **generate**: RAG answers, chat replies, summaries and query rewrites
 - **models / test**: list the models a key can use, and test a key + model
 
-**`apkh-storage`** stores attachment files per note. **The AI provider** (OpenRouter, Gemini, OpenAI or Anthropic) only ever receives text, images and prompts for one request; it never sees the database. **The free AI** works the same way but runs on the host's own server (Ollama by default), so nothing leaves it.
+**`apkh-storage`** stores attachment files per note. **The AI provider** (OpenRouter, Gemini, OpenAI or Anthropic) only ever receives text, images and prompts for one request; it never sees the database. **The built-in AI** works the same way but runs on the host's own server (Ollama by default), so nothing leaves it.
 
 **Auth between services.** Users log in to `apkh-api`, which issues a JWT. `apkh-storage` and `apkh-search` verify the same JWT with the shared `JWT_SECRET`. Background indexing jobs call the services with a short-lived token the API signs for the job's user, so no user token is stored with a job.
 
@@ -51,7 +51,7 @@ apkh-api/scripts   create-vector-index.mjs (Atlas index)
 apkh-search
   main.py          app, CORS, JWT middleware
   routes/          ingest (extract/chunk/embed), ai_search, chat_rag, feedback
-  services/        llm, embedder, free_ai, chunker, file_extractor, vision, html_parser, model_catalog
+  services/        llm, embedder, builtin_ai, chunker, file_extractor, vision, html_parser, model_catalog
 
 apkh-web/src
   app/             routes only: (home)/notes, chat, profile; login, register, reset-password
@@ -67,13 +67,14 @@ scripts/init-env.mjs   creates missing env files (used by setup-all.bat)
 
 | Collection | Holds |
 |---|---|
-| `users` | account, AI configs (key name, **encrypted** API key, model, active flag), token totals |
+| `users` | account, plan (`type`), AI configs (key name, **encrypted** API key, model, active flag), token totals, built-in AI usage (all-time and this session) |
 | `notes` | `userId`, `title`, `content` (Quill HTML), `contentPlain` (one line per paragraph), `category` |
 | `notefiles` | attachment names per note (the bytes live in `apkh-storage`) |
 | `knowledgechunks` | the search index, one document per passage |
 | `index_jobs` | one job per note or chat: its indexing status, doubling as the queue |
 | `summary` | cached note summaries, one per note and mode |
 | `chatsessions`, `chatmessages` | conversations (assistant messages keep their cited sources) |
+| `vouchers` | one-time Pro plan codes: `code`, `redeemed`, `redeemedAt`, `redeemedBy` |
 | `migrations` | which startup migrations have run |
 
 **A chunk** has `userId` plus `noteId` (note and file passages) or `sessionId` (chat passages); `sourceType` (`note`, `file`, `chat`) with `sourceName` / `sourcePage` for attachments; `noteTitle`, `chunkIndex`, `text`; `textHash` (sha256 of the text, so an unchanged passage keeps its vector); `embeddingModel`, the **embedding space** of the vector (e.g. `gemini-embedding-001@1536`, unset for keyword-only chunks); and `vector`, stored as a BSON binary float32 vector (about 6 KB at 1536 dimensions instead of about 21 KB as an array). The text is kept on purpose: the index can be rebuilt for another provider without reading attachments again.
@@ -84,17 +85,26 @@ Indexes on the chunks: a MongoDB text index over `text`, `noteTitle` and `source
 
 ## 4. AI keys, models and embeddings
 
-A user saves one or more AI configs in Profile. When the API needs AI it reads the **active** config, decrypts the key and sends `api_key` + `model` with that single request; `apkh-search` never stores keys. A user with no active config uses the **free AI** (below), unless the host turned it off (`FREE_AI=off`).
+A user saves one or more AI configs in Profile. When the API needs AI it reads the **active** config, decrypts the key and sends `api_key` + `model` with that single request; `apkh-search` never stores keys. A user with no active config uses the **built-in AI** (below) within their plan, unless the host turned it off (`BUILTIN_AI=off`).
 
 **Providers.** OpenRouter (listed first), Gemini, OpenAI and Anthropic. The provider of a model is recognised from its id: OpenRouter ids are `author/model` (e.g. `qwen/qwen3.8-27b:free`) and no native id contains a `/`; the others are `gemini-*`, `gpt-*` / `chatgpt-*` / `o<N>` and `claude-*`. OpenRouter speaks the OpenAI API, so it is called with the OpenAI client pointed at `https://openrouter.ai/api/v1`.
 
-**Free AI.** Open-source models the host runs for everyone: no key, no per-user quota, only the server's capacity as a limit. When no config is active the API sends the model id `free` with an empty key, and `apkh-search` (`free_ai.py`) calls the OpenAI-compatible server at `FREE_AI_BASE_URL`. That is Ollama on the same machine by default; llama.cpp, vLLM or a hosted endpoint work too.
+**Built-in AI.** Open-source models the host runs for everyone, with no key. When no config is active the API sends the model id `builtin` with an empty key, and `apkh-search` (`builtin_ai.py`) calls the OpenAI-compatible server at `BUILTIN_AI_BASE_URL`. That is Ollama on the same machine by default; llama.cpp, vLLM or a hosted endpoint work too.
 
 - **Models:** Qwen3.5 4B for chat (about 3.4 GB of RAM, reads images, thinking turned off with `reasoning_effort: "none"`) and Qwen3-Embedding-0.6B for embeddings (about 2.9 GB loaded with the 8K context window; together about 6 GB).
-- **Changing them:** the chat model can be swapped freely (`FREE_AI_CHAT_MODEL`, e.g. `qwen3.5:2b` for about twice the speed). The embedding model can't, because stored vectors are labelled with it.
-- **Timeouts:** a CPU answers slowly and one request at a time, so the API gives free-AI calls four times its usual timeouts.
-- **Switching:** users pick it in Profile (the **Free AI** row), or fall back to it by deleting their last key. The profile tells the web app whether it's on (`freeAi`).
-- **Failures:** if the server is down or a model isn't pulled, users see a short "free AI isn't available right now" message, and the details go to the search-service log.
+- **Changing them:** the chat model can be swapped freely (`BUILTIN_AI_CHAT_MODEL`, e.g. `qwen3.5:2b` for about twice the speed). The embedding model can't, because stored vectors are labelled with it.
+- **Timeouts:** a CPU answers slowly and one call at a time, so the API gives built-in AI calls four times its usual timeouts. A call that still times out (usually after waiting in the queue) returns "The built-in AI is busy right now" with status 503, so indexing retries it later.
+- **Switching:** users pick it in Profile (the **Built-in AI** row), or fall back to it by deleting their last key.
+- **Failures:** if the server is down or a model isn't pulled, users see a short "built-in AI isn't available right now" message, and the details go to the search-service log.
+
+**Plans.** Each user is on the **Free** or **Pro** plan (`users.type`; anything else counts as Free). Users move to Pro by redeeming a one-time **voucher** code in Profile (`POST /users/plan/redeem`); an admin can also run `npm run plan:set -- <email> <plan>`. Plans only concern the built-in AI; own keys are never limited or queued (`src/users/plans.ts`).
+
+- **Session allowance.** Built-in AI tokens are counted per session: a window that opens with the first counted request and lasts `PLAN_SESSION_HOURS` (5). Free gets `PLAN_FREE_SESSION_TOKENS` (30,000), Pro `PLAN_PRO_SESSION_TOKENS` (200,000). Questions, chat replies, summaries and query rewrites count (`interactive`). Indexing (embeddings, reading images) is added to the totals only, and is never blocked.
+- **Counting.** `UsersService.addTokenUsage` records tokens after each call. On the built-in AI, one atomic pipeline update adds them to `totalTokensUsed` and `builtinUsage.totalTokens`, and for interactive calls to `builtinUsage.sessionTokens`. When the stored session has ended, the same update starts a new one (`sessionStartedAt` = now).
+- **Enforcing.** Before AI search, a summary or a chat reply, `builtinLimitMessage` checks the allowance. When it is used up, search and summaries answer with the message (how long until it resets, plus Pro or own key as the way out); chat returns 429 with it. A request that starts under the limit may end a little over it.
+- **Queue.** Every built-in AI call from the API carries `X-AI-Priority`: 0 Pro questions, 1 Free questions, 2 Pro indexing, 3 Free indexing (the `/ingest` calls are indexing). `apkh-search` puts a priority gate in front of each model (`BUILTIN_AI_CHAT_SLOTS` / `BUILTIN_AI_EMBEDDING_SLOTS`, 1 by default). Waiting calls go lowest number first, then in arrival order, and a freed slot is handed straight to the next one. The gate works per model call: one image read, one batch of 16 passages to embed, one answer. So a question waits for the current call to finish, not for a whole indexing job. The gate is per `apkh-search` process.
+- **Vouchers.** `vouchers` holds one document per code: `code` (`XXXX-XXXX`, unique), `redeemed`, `redeemedAt`, `redeemedBy`. `npm run vouchers:create -- <count>` makes codes from 31 unambiguous characters (no 0/O, 1/I/L) and prints them; `-- --list` shows their state. Redeeming normalises the input (upper case, dash optional), refuses users already on Pro before touching a code, and claims the code with one `findOneAndUpdate({ code, redeemed: false })`, so a code can't be used twice. Errors say whether the code was already used or doesn't exist.
+- **Shown to users.** The profile response includes `plan`, `plans` (for comparison) and `builtinAi` (this session's tokens, limit, reset time and the all-time total; `null` when the built-in AI is off). Profile shows them on the Built-in AI row and the Plan card, whose Pro column has an **Upgrade** button for Free users (a modal with Pro's features and an 8-box code input that accepts typing, Backspace, arrows and a pasted code).
 
 **Model list.** The picker is not hardcoded: `apkh-search` asks the provider which models the key can use (`model_catalog.py`), newest first. For OpenRouter these are its free models (`/api/v1/models?max_price=0`, a public list). For Gemini only models supporting `generateContent` are listed; for OpenAI dated snapshots that duplicate an alias are hidden. Non-chat models (image, speech…) are listed too and fail when used for chat. Whether a model can read images (for attachments) is known per model for OpenAI/Gemini/Claude, and looked up in OpenRouter's model list (input modalities, cached for an hour).
 
@@ -104,7 +114,7 @@ A user saves one or more AI configs in Profile. When the API needs AI it reads t
 
 | Active provider | Embedding space | Search |
 |---|---|---|
-| Free AI | `qwen3-embedding-0.6b@1536` (1024 dimensions, zero-padded) | meaning + keyword |
+| Built-in AI | `qwen3-embedding-0.6b@1536` (1024 dimensions, zero-padded) | meaning + keyword |
 | Gemini | `gemini-embedding-001@1536` | meaning + keyword |
 | OpenAI | `text-embedding-3-small@1536` | meaning + keyword |
 | OpenRouter | `text-embedding-3-small@1536` (OpenAI's model via OpenRouter, same space as OpenAI) | meaning + keyword; keyword only without credit |
@@ -172,7 +182,7 @@ query words  ──► keywords: MongoDB $text search (top 30)
 
 - **Keyword search** catches exact terms that embeddings blur (names, error codes) and is all Claude users get.
 - **Atlas first, API as fallback.** Vector search runs on the Atlas index named by `ATLAS_VECTOR_INDEX` (default `chunk_vectors`; `off` disables it). If Atlas fails (index missing, not READY, not an Atlas cluster), the API computes cosine similarity itself and retries Atlas after 10 minutes. The API logs the mode at startup and, per search, where it ran and how long it took.
-- Semantic matches below a per-provider similarity (free AI 0.45, Gemini 0.5, OpenAI 0.3) are ignored; confidence is "high" from free AI 0.6 / Gemini 0.7 / OpenAI 0.5, "medium" for keyword-only search.
+- Semantic matches below a per-provider similarity (built-in AI 0.45, Gemini 0.5, OpenAI 0.3) are ignored; confidence is "high" from built-in AI 0.6 / Gemini 0.7 / OpenAI 0.5, "medium" for keyword-only search.
 
 ## 7. AI search
 
@@ -192,7 +202,7 @@ query -> embed (Gemini / OpenAI; skipped for Claude)
 
 **Citations and source jump.** Passages go to the model as numbered sources (`[1] Note "Plan" | File: q3.pdf | Page 2` + text) and it must cite them inline as `[1]`, `[2][3]`; general knowledge is only allowed labelled and uncited. Each reference is marked `cited` when its number appears. In the web app every `[n]` and source card opens the **source viewer**: a note passage opens the note scrolled to the highlighted passage (CSS Custom Highlight API, `<mark>` fallback); an attachment opens the file, PDFs at the cited page.
 
-**Similar notes** (`GET /notes/:id/similar`). A note is represented by the average of its passage vectors. Atlas shortlists the 20 notes whose passages are nearest that average; those candidates are then ranked exactly by comparing averages (without Atlas, every note is a candidate). Notes below a per-provider floor (free AI 0.5, Gemini 0.6, OpenAI 0.35) aren't related; 0.95 and up are flagged as near-duplicates. With a Claude key, notes are compared by the words at their start.
+**Similar notes** (`GET /notes/:id/similar`). A note is represented by the average of its passage vectors. Atlas shortlists the 20 notes whose passages are nearest that average; those candidates are then ranked exactly by comparing averages (without Atlas, every note is a candidate). Notes below a per-provider floor (built-in AI 0.5, Gemini 0.6, OpenAI 0.35) aren't related; 0.95 and up are flagged as near-duplicates. With a Claude key, notes are compared by the words at their start.
 
 **Save as note.** An AI answer or chat reply can be saved as a note in **AI Insights**: the answer plus a numbered source list so its citations still make sense. It's indexed like any note.
 

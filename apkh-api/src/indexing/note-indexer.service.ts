@@ -175,13 +175,14 @@ export class NoteIndexerService {
       return { kind: 'deleted' };
     }
     tokensUsed += stored.tokensUsed;
-    if (tokensUsed > 0) {
-      this.usersService.addTokenUsage(userId, tokensUsed).catch((err) => {
+    // Indexing never counts toward the plan's session allowance.
+    this.usersService
+      .addTokenUsage(userId, tokensUsed, llm, { interactive: false })
+      .catch((err) => {
         this.logger.error(
           `Failed to track indexing tokens: ${errorMessage(err)}`,
         );
       });
-    }
 
     this.logger.log(
       `Indexed note ${noteId.toHexString()}: ${stored.chunkCount} chunks, ${stored.embedded} embedded, ` +

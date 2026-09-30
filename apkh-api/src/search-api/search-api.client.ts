@@ -7,6 +7,7 @@ import type { ChunkSourceType } from 'src/common/schema/chunk';
 import type { IndexedFileStatus } from 'src/common/schema/index-job';
 import type { NoteActions, SummaryMode } from 'src/common/schema/summary';
 import { decodeVector } from 'src/common/utils/vector';
+import { queuePriority } from 'src/users/plans';
 import type { ActiveLlmSettings } from 'src/users/users.service';
 import type { EmbeddingSpace } from './embedding-space';
 
@@ -60,13 +61,15 @@ export interface GeneratedText {
 const EXTRACT_TIMEOUT_MS = 10 * 60_000;
 const EMBED_TIMEOUT_MS = 2 * 60_000;
 const ANSWER_TIMEOUT_MS = 90_000;
-// The free AI runs on the host's CPU and serves one request at a time, so
+// The built-in AI runs on the host's CPU and serves one call at a time, so
 // calls can wait behind other users' as well as run slower.
-const FREE_AI_TIMEOUT_FACTOR = 4;
+const BUILTIN_AI_TIMEOUT_FACTOR = 4;
+const BUILTIN_AI_BUSY =
+  'The built-in AI is busy right now. Try again in a few minutes, or add your own AI key in Profile.';
 
 function timeoutFor(llm: ActiveLlmSettings, timeoutMs: number) {
-  return llm.provider === 'free'
-    ? timeoutMs * FREE_AI_TIMEOUT_FACTOR
+  return llm.provider === 'builtin'
+    ? timeoutMs * BUILTIN_AI_TIMEOUT_FACTOR
     : timeoutMs;
 }
 
@@ -94,6 +97,7 @@ export class SearchApiClient {
       },
       token,
       timeoutFor(llm, EXTRACT_TIMEOUT_MS),
+      llm,
     );
     return { files: data.files, tokensUsed: data.tokens_used ?? 0 };
   }
@@ -144,6 +148,7 @@ export class SearchApiClient {
       },
       token,
       timeoutFor(llm, EMBED_TIMEOUT_MS),
+      llm,
     );
     return {
       vectors: data.vectors.map(decodeVector),
@@ -168,6 +173,7 @@ export class SearchApiClient {
       },
       token,
       timeoutFor(llm, EMBED_TIMEOUT_MS),
+      llm,
     );
     return Float32Array.from(data.embedding);
   }
@@ -187,6 +193,7 @@ export class SearchApiClient {
       { query, contexts, api_key: llm.apiKey, model: llm.model },
       token,
       timeoutFor(llm, ANSWER_TIMEOUT_MS),
+      llm,
     );
     return {
       text: data.answer ?? '',
@@ -223,6 +230,7 @@ export class SearchApiClient {
       },
       token,
       timeoutFor(llm, ANSWER_TIMEOUT_MS),
+      llm,
     );
     return {
       text: data.answer ?? '',
@@ -256,6 +264,7 @@ export class SearchApiClient {
       { query, history, api_key: llm.apiKey, model: llm.model },
       token,
       timeoutFor(llm, ANSWER_TIMEOUT_MS),
+      llm,
     );
     return {
       query: data.query || query,
@@ -296,6 +305,7 @@ export class SearchApiClient {
       },
       token,
       timeoutFor(llm, ANSWER_TIMEOUT_MS),
+      llm,
     );
     return {
       text: data.summary ?? '',
@@ -305,21 +315,35 @@ export class SearchApiClient {
     };
   }
 
+  /**
+   * `llm` is given for calls that use the user's model. On the built-in AI
+   * they carry a queue priority from the user's plan; the /ingest calls are
+   * indexing, which waits behind questions.
+   */
   private async post<T>(
     path: string,
     body: unknown,
     token: string,
     timeout: number,
+    llm?: ActiveLlmSettings,
   ): Promise<T> {
+    const builtin = llm?.provider === 'builtin';
+    const headers: Record<string, string> = { Authorization: token };
+    if (builtin) {
+      headers['X-AI-Priority'] = String(
+        queuePriority(llm.plan, path.startsWith('/ingest/')),
+      );
+    }
     try {
       const response = await firstValueFrom(
-        this.http.post<T>(`${SEARCH_API}${path}`, body, {
-          headers: { Authorization: token },
-          timeout,
-        }),
+        this.http.post<T>(`${SEARCH_API}${path}`, body, { headers, timeout }),
       );
       return response.data;
     } catch (error) {
+      // Timed out waiting in the built-in AI's queue (or on a slow answer)
+      if (builtin && isAxiosError(error) && error.code === 'ECONNABORTED') {
+        throw new SearchApiError(BUILTIN_AI_BUSY, 503);
+      }
       throw toSearchApiError(error);
     }
   }

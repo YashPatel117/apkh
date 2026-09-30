@@ -103,15 +103,13 @@ export class ChatIndexerService {
     if (stored.chunkCount === null) {
       return { kind: 'deleted' };
     }
-    if (stored.tokensUsed > 0) {
-      this.usersService
-        .addTokenUsage(userId, stored.tokensUsed)
-        .catch((err) => {
-          this.logger.error(
-            `Failed to track indexing tokens: ${errorMessage(err)}`,
-          );
-        });
-    }
+    this.usersService
+      .addTokenUsage(userId, stored.tokensUsed, llm, { interactive: false })
+      .catch((err) => {
+        this.logger.error(
+          `Failed to track indexing tokens: ${errorMessage(err)}`,
+        );
+      });
 
     await this.sessionModel.updateOne(
       { _id: sessionId },

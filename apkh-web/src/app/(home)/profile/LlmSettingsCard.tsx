@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, Gift, KeyRound, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
-import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels, switchToFreeAi } from "@/services/authService";
+import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
+import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels, switchToBuiltinAi } from "@/services/authService";
 import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
-import { FREE_AI_LABEL, ILlmConfig, ILlmModel, IUser, LlmProvider, providerOfModel } from "@/models/user";
+import {
+  BUILTIN_AI_LABEL,
+  IBuiltinAiUsage,
+  ILlmConfig,
+  ILlmModel,
+  IPlan,
+  IUser,
+  LlmProvider,
+  providerOfModel,
+  timeUntil,
+} from "@/models/user";
 import { Button } from "@/components/ui/Button";
 import { Input, fieldClass } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -17,9 +27,9 @@ import { cn } from "@/lib/cn";
 // ── Provider catalogue ───────────────────────────────────────────────────────
 // Models are not listed here: they are fetched live from the provider with the
 // user's key, so new releases appear and retired models disappear on their own.
-// OpenRouter lists its free models. The free built-in AI needs no key, so it
-// has a row of its own instead of a place in this form.
-const PROVIDER_GROUPS: { id: Exclude<LlmProvider, "free">; label: string; docsUrl: string }[] = [
+// OpenRouter lists its free models. The built-in AI needs no key, so it has a
+// row of its own instead of a place in this form.
+const PROVIDER_GROUPS: { id: Exclude<LlmProvider, "builtin">; label: string; docsUrl: string }[] = [
   { id: "openrouter", label: "OpenRouter", docsUrl: "https://openrouter.ai/keys" },
   { id: "gemini", label: "Google Gemini", docsUrl: "https://aistudio.google.com/app/apikey" },
   { id: "openai", label: "OpenAI", docsUrl: "https://platform.openai.com/api-keys" },
@@ -57,9 +67,21 @@ function ActiveBadge() {
   );
 }
 
-// ── Free built-in AI row ─────────────────────────────────────────────────────
-function FreeAiRow({ active, onActivate }: { active: boolean; onActivate: () => Promise<void> }) {
+// ── Built-in AI row ──────────────────────────────────────────────────────────
+function BuiltinAiRow({
+  active,
+  usage,
+  plan,
+  onActivate,
+}: {
+  active: boolean;
+  usage: IBuiltinAiUsage;
+  plan: IPlan | undefined;
+  onActivate: () => Promise<void>;
+}) {
   const [activating, setActivating] = useState(false);
+  const share = usage.sessionLimit > 0 ? Math.min(1, usage.sessionTokens / usage.sessionLimit) : 0;
+  const exhausted = usage.sessionTokens >= usage.sessionLimit;
 
   async function handleActivate() {
     if (active || activating) return;
@@ -84,7 +106,7 @@ function FreeAiRow({ active, onActivate }: { active: boolean; onActivate: () => 
         aria-checked={active}
         onClick={handleActivate}
         disabled={active || activating}
-        aria-label={active ? `${FREE_AI_LABEL} is active` : `Use ${FREE_AI_LABEL}`}
+        aria-label={active ? `${BUILTIN_AI_LABEL} is active` : `Use ${BUILTIN_AI_LABEL}`}
         className={cn(
           "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-default",
           !active && "hover:bg-surface-2",
@@ -94,16 +116,49 @@ function FreeAiRow({ active, onActivate }: { active: boolean; onActivate: () => 
       </button>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-semibold text-fg">{FREE_AI_LABEL}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-sm font-semibold text-fg">{BUILTIN_AI_LABEL}</p>
+          {plan && (
+            <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[0.62rem] font-bold tracking-wider text-fg-muted uppercase">
+              {plan.label} plan
+            </span>
+          )}
           {active && <ActiveBadge />}
         </div>
         <p className="mt-0.5 text-xs text-fg-subtle">Open-source models on this app&apos;s server · no key needed · slower than a paid model</p>
+
+        {/* This session's allowance */}
+        <div className="mt-2.5">
+          <div
+            className="h-1.5 overflow-hidden rounded-full bg-surface-2"
+            role="progressbar"
+            aria-label="Built-in AI tokens used this session"
+            aria-valuemin={0}
+            aria-valuemax={usage.sessionLimit}
+            aria-valuenow={usage.sessionTokens}
+          >
+            <div
+              className={cn("h-full rounded-full transition-[width]", exhausted ? "bg-rose-500" : share > 0.8 ? "bg-amber-500" : "bg-accent")}
+              style={{ width: `${share * 100}%` }}
+            />
+          </div>
+          <p className={cn("mt-1 text-xs tabular-nums", exhausted ? "text-rose-600 dark:text-rose-400" : "text-fg-subtle")}>
+            {usage.sessionTokens.toLocaleString()} of {usage.sessionLimit.toLocaleString()} tokens this session
+            {usage.sessionResetsAt
+              ? ` · resets in ${timeUntil(usage.sessionResetsAt)}`
+              : plan
+                ? ` · a session lasts ${plan.sessionHours} h from your first question`
+                : ""}
+          </p>
+        </div>
       </div>
 
-      <span className="hidden items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 sm:inline-flex dark:bg-emerald-500/10 dark:text-emerald-300">
-        <Gift className="size-3" />
-        Free
+      <span
+        className="hidden items-center gap-1 self-start rounded-lg bg-surface-2 px-2 py-1 text-xs font-medium text-fg-muted tabular-nums sm:inline-flex"
+        title="Built-in AI tokens used in total"
+      >
+        <Coins className="size-3" />
+        {usage.totalTokens.toLocaleString()}
       </span>
     </div>
   );
@@ -189,9 +244,9 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const dispatch = useAppDispatch();
   const toast = useToast();
   const configs: ILlmConfig[] = user.llmConfigs ?? [];
-  const freeAi = Boolean(user.freeAi);
-  const freeAiActive = freeAi && !configs.some((c) => c.isActive);
-  const [showForm, setShowForm] = useState(configs.length === 0 && !freeAi);
+  const builtinAi = user.builtinAi ?? null;
+  const builtinAiActive = Boolean(builtinAi) && !configs.some((c) => c.isActive);
+  const [showForm, setShowForm] = useState(configs.length === 0 && !builtinAi);
   const [pendingDelete, setPendingDelete] = useState<ILlmConfig | null>(null);
 
   // The saved config whose model is being changed; null when adding a new one.
@@ -315,13 +370,13 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     }
   }
 
-  async function handleUseFreeAi() {
+  async function handleUseBuiltinAi() {
     try {
-      const updatedUser = await switchToFreeAi();
+      const updatedUser = await switchToBuiltinAi();
       dispatch(setUser({ ...user, ...updatedUser }));
-      toast(`Now using ${FREE_AI_LABEL}.`, "success");
+      toast(`Now using the ${BUILTIN_AI_LABEL}.`, "success");
     } catch (err) {
-      toast(getErrorMessage(err, "Couldn't switch to the free AI."), "error");
+      toast(getErrorMessage(err, "Couldn't switch to the built-in AI."), "error");
     }
   }
 
@@ -350,8 +405,8 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
         <div>
           <h2 className="font-semibold text-fg">AI models</h2>
           <p className="mt-1 text-sm text-fg-muted">
-            {freeAi
-              ? "The free AI works without a key. Add your own key for faster, stronger models."
+            {builtinAi
+              ? "The built-in AI works without a key, within your plan. Add your own key for faster, stronger models with no limit."
               : "Bring your own key. The active config powers search, summaries and chat."}
           </p>
         </div>
@@ -362,9 +417,9 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
         )}
       </div>
 
-      {(configs.length > 0 || freeAi) && (
+      {(configs.length > 0 || builtinAi) && (
         <div role="radiogroup" aria-label="AI configs" className="mt-5 space-y-2">
-          {freeAi && <FreeAiRow active={freeAiActive} onActivate={handleUseFreeAi} />}
+          {builtinAi && <BuiltinAiRow active={builtinAiActive} usage={builtinAi} plan={user.plan} onActivate={handleUseBuiltinAi} />}
           {configs.map((cfg) => (
             <ConfigRow key={cfg.keyName} config={cfg} onActivate={handleActivate} onEdit={startEdit} onDelete={setPendingDelete} />
           ))}
@@ -372,7 +427,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
       )}
 
       {showForm && (
-        <div className={cn("space-y-4", configs.length > 0 || freeAi ? "mt-5 border-t border-line pt-5" : "mt-5")}>
+        <div className={cn("space-y-4", configs.length > 0 || builtinAi ? "mt-5 border-t border-line pt-5" : "mt-5")}>
           <h3 className="text-sm font-semibold text-fg">{editing ? `Change model for “${editing.keyName}”` : "New config"}</h3>
 
           <Input
@@ -507,7 +562,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
                 {testStatus === "testing" ? "Testing…" : "Test connection"}
               </Button>
             )}
-            {(configs.length > 0 || freeAi || editing) && (
+            {(configs.length > 0 || builtinAi || editing) && (
               <Button variant="ghost" onClick={resetForm} disabled={saving}>
                 Cancel
               </Button>
@@ -525,8 +580,8 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
             {pendingDelete?.isActive &&
               (configs.length > 1
                 ? ` “${configs.find((c) => c !== pendingDelete)?.keyName}” becomes active.`
-                : freeAi
-                  ? ` ${FREE_AI_LABEL} takes over.`
+                : builtinAi
+                  ? ` The ${BUILTIN_AI_LABEL} takes over.`
                   : " AI features will be off until you add another key.")}
           </>
         }

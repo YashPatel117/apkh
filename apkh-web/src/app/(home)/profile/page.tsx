@@ -1,11 +1,15 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { Coins, Cpu, FolderOpen, Mail, MessagesSquare, NotebookText, Paperclip, ShieldCheck, TriangleAlert } from "lucide-react";
-import { useAppSelector } from "@/store/hook";
+import { useAppDispatch, useAppSelector } from "@/store/hook";
+import { setUser } from "@/store/slices/authSlice";
+import { profile } from "@/services/authService";
 import { Avatar } from "@/components/sidebar";
 import { activeAi, supportsSemanticSearch } from "@/models/user";
 import LlmSettingsCard from "./LlmSettingsCard";
+import PlanCard from "./PlanCard";
 import SearchIndexCard from "./SearchIndexCard";
 
 function Stat({ Icon, label, value, href }: { Icon: typeof Coins; label: string; value: string | number; href?: string }) {
@@ -32,6 +36,14 @@ export default function ProfilePage() {
   const { user } = useAppSelector((state) => state.auth);
   const { notes } = useAppSelector((state) => state.note);
   const sessionsCount = useAppSelector((state) => state.chat.sessions.length);
+  const dispatch = useAppDispatch();
+
+  // Token counts and the session allowance change with every question; show current ones.
+  useEffect(() => {
+    profile()
+      .then((updatedUser) => dispatch(setUser(updatedUser)))
+      .catch(() => {});
+  }, [dispatch]);
 
   if (!user) return null; // the (home) layout renders the loading state
 
@@ -53,7 +65,7 @@ export default function ProfilePage() {
             </p>
           </div>
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-xs font-bold tracking-wider text-accent-fg uppercase">
-            <ShieldCheck className="size-3.5" /> {user.type} plan
+            <ShieldCheck className="size-3.5" /> {user.plan?.label ?? user.type} plan
           </span>
         </div>
       </section>
@@ -72,7 +84,7 @@ export default function ProfilePage() {
         <div className="space-y-6">
           <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
             <h2 className="font-semibold text-fg">AI search status</h2>
-            {ai && (ai.kind === "free" || supportsSemanticSearch(ai.model)) ? (
+            {ai && (ai.kind === "builtin" || supportsSemanticSearch(ai.model)) ? (
               <div className="mt-4 flex items-start gap-3 rounded-2xl bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
                 <Cpu className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 text-sm">
@@ -89,7 +101,7 @@ export default function ProfilePage() {
                   <p className="font-semibold">Keyword matching only</p>
                   <p className="mt-0.5 opacity-90">
                     {ai.model} can answer and summarize, but Claude has no embedding model, so notes and attachments are
-                    found by keywords rather than meaning. Use the free AI or a Gemini or OpenAI key for semantic search.
+                    found by keywords rather than meaning. Use the built-in AI or a Gemini or OpenAI key for semantic search.
                   </p>
                 </div>
               </div>
@@ -106,6 +118,7 @@ export default function ProfilePage() {
               <FolderOpen className="size-3.5" /> {notes.length} notes available as source material
             </div>
           </section>
+          <PlanCard user={user} />
           <SearchIndexCard />
         </div>
       </div>

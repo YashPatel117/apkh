@@ -4,14 +4,21 @@
 
 ## Up next
 
-### Free AI follow-ups
-- Tune the free AI's similarity thresholds (search 0.45 / 0.6, similar notes 0.5) on real notes. A first test (5 notes, 7 queries) scored relevant passages 0.54–0.69 and unrelated ones at most 0.44.
+### Plans follow-ups
+- Self-serve upgrades: a payment provider (Stripe, Razorpay) that sets the plan. Today Pro comes from one-time voucher codes.
+- Vouchers: an expiry date, a Pro duration (e.g. 30 days) instead of permanent Pro, and an admin page to create and list codes.
+- A weekly cap next to the per-session allowance, so one user can't run session after session back to back.
+- An indexing allowance per plan: indexing is unlimited today, so a user could upload many images for the built-in AI to read.
+- Share the queue across several `apkh-search` instances (e.g. through Redis); the priority gate is per process today.
+- Show waiting users their place in the queue when the built-in AI is busy.
+
+### Built-in AI follow-ups
+- Tune the built-in AI's similarity thresholds (search 0.45 / 0.6, similar notes 0.5) on real notes. A first test (5 notes, 7 queries) scored relevant passages 0.54–0.69 and unrelated ones at most 0.44.
 - Lower the embedding model's memory: with the 8K context window Ollama loads it at about 2.9 GB, though embeddings need far less context.
-- Streaming answers (below) matter most here: a CPU model takes 10–30 seconds per answer.
-- Show waiting users their place in the queue when the free AI is busy.
+- Streaming answers (below) matter most here: a CPU model takes 15–60 seconds per answer.
 
 ### Free semantic search on OpenRouter
-OpenRouter keys without credit get keyword search only (its embedding model is paid). Now that the free AI exists, an OpenRouter user could embed with the free AI's Qwen3-Embedding instead, while answering with their OpenRouter model.
+OpenRouter keys without credit get keyword search only (its embedding model is paid). An OpenRouter user could embed with the built-in AI's Qwen3-Embedding instead, while answering with their OpenRouter model.
 
 ### Account
 - Real forgot-password flow (email link or OTP). Resetting currently requires the current password.
@@ -58,5 +65,6 @@ OpenRouter keys without credit get keyword search only (its embedding model is p
 - [x] Background queue + retry system
 - [x] Reindex button
 - [x] Database-side vector search (Atlas `$vectorSearch`, in-API fallback)
-- [x] Free built-in AI, no key needed (self-hosted Qwen3.5 4B + Qwen3-Embedding-0.6B via Ollama)
+- [x] Built-in AI, no key needed (self-hosted Qwen3.5 4B + Qwen3-Embedding-0.6B via Ollama)
+- [x] Free and Pro plans: built-in AI allowance per session, priority queue
 - [ ] Usage dashboard (tokens, model usage)

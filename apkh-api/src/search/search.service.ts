@@ -18,7 +18,11 @@ import {
   SearchApiClient,
   SearchApiError,
 } from 'src/search-api/search-api.client';
-import { LlmProvider, UsersService } from 'src/users/users.service';
+import {
+  ActiveLlmSettings,
+  LlmProvider,
+  UsersService,
+} from 'src/users/users.service';
 import {
   mergeRankings,
   RetrievedChunk,
@@ -74,7 +78,7 @@ const SIMILARITY_THRESHOLDS: Record<
   EmbeddingSpace['provider'],
   { min: number; high: number }
 > = {
-  free: { min: 0.45, high: 0.6 },
+  builtin: { min: 0.45, high: 0.6 },
   gemini: { min: 0.5, high: 0.7 },
   openai: { min: 0.3, high: 0.5 },
 };
@@ -128,6 +132,13 @@ export class SearchService {
         query,
         'Add an active API key in Profile settings to enable AI search.',
       );
+    }
+    const overLimit = await this.usersService.builtinLimitMessage(
+      userId,
+      activeLlm,
+    );
+    if (overLimit) {
+      return this.buildGuidanceResponse(query, overLimit);
     }
 
     // Notes indexed by older versions (or before a provider switch) are
@@ -232,7 +243,7 @@ export class SearchService {
         return this.buildGuidanceResponse(query, result.text);
       }
       answer = result.text;
-      this.trackTokens(userId, result.tokensUsed);
+      this.trackTokens(userId, result.tokensUsed, activeLlm);
     } catch (error) {
       if (error instanceof SearchApiError) {
         return this.buildGuidanceResponse(query, error.message);
@@ -292,6 +303,18 @@ export class SearchService {
         cacheable: false,
       };
     }
+    const overLimit = await this.usersService.builtinLimitMessage(
+      userId,
+      activeLlm,
+    );
+    if (overLimit) {
+      return {
+        summary: overLimit,
+        actions: null,
+        model: null,
+        cacheable: false,
+      };
+    }
 
     const [storedChunks, job] = await Promise.all([
       this.chunkModel
@@ -343,7 +366,7 @@ export class SearchService {
         contexts: summaryContexts,
         mode,
       });
-      this.trackTokens(userId, result.tokensUsed);
+      this.trackTokens(userId, result.tokensUsed, activeLlm);
       const summary = result.text.trim();
       const complete =
         mode === 'actions' ? Boolean(result.actions) : Boolean(summary);
@@ -417,14 +440,14 @@ export class SearchService {
     return contexts;
   }
 
-  private trackTokens(userId: string, tokens: number) {
-    if (tokens > 0) {
-      this.usersService.addTokenUsage(userId, tokens).catch((err) => {
+  private trackTokens(userId: string, tokens: number, llm: ActiveLlmSettings) {
+    this.usersService
+      .addTokenUsage(userId, tokens, llm, { interactive: true })
+      .catch((err) => {
         this.logger.error(
           `Failed to track token usage for user ${userId}: ${errorMessage(err)}`,
         );
       });
-    }
   }
 
   private buildGuidanceResponse(query: string, answer: string): AiSearchResult {

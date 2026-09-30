@@ -4,12 +4,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { User, UserDocument } from '../common/schema/user';
+import { Model, Types } from 'mongoose';
+import { BuiltinUsage, User, UserDocument } from '../common/schema/user';
+import { Voucher, VoucherDocument } from '../common/schema/voucher';
 import { EncryptionService } from '../common/utils/encryption.service';
+import { planDetails, planOf, sessionHours, type PlanId } from './plans';
 
 export type LlmProvider =
-  | 'free'
+  | 'builtin'
   | 'openrouter'
   | 'gemini'
   | 'openai'
@@ -23,26 +25,53 @@ export const LLM_PROVIDERS: LlmProvider[] = [
 ];
 
 /**
- * The free built-in AI: open-source models the host runs (apkh-search picks
- * them), used whenever a user has no active key of their own. On unless
- * FREE_AI=off.
+ * The built-in AI: open-source models the host runs (apkh-search picks them),
+ * used whenever a user has no active key of their own, within their plan's
+ * allowance (see plans.ts). On unless BUILTIN_AI=off.
  */
-export const FREE_MODEL_ID = 'free';
-export function freeAiEnabled(): boolean {
-  return process.env.FREE_AI?.trim().toLowerCase() !== 'off';
+export const BUILTIN_MODEL_ID = 'builtin';
+export function builtinAiEnabled(): boolean {
+  return process.env.BUILTIN_AI?.trim().toLowerCase() !== 'off';
 }
-const FREE_AI_SETTINGS: ActiveLlmSettings = {
-  keyName: 'Free AI',
-  apiKey: '',
-  model: FREE_MODEL_ID,
-  provider: 'free',
-};
 
 export interface ActiveLlmSettings {
   keyName: string;
   apiKey: string;
   model: string;
   provider: LlmProvider;
+  /** The user's plan; decides queue priority on the built-in AI */
+  plan: PlanId;
+}
+
+/** A user's built-in AI allowance in the current session. */
+export interface BuiltinAllowance {
+  used: number;
+  limit: number;
+  /** When the session ends; null before the first counted request */
+  resetsAt: Date | null;
+  exhausted: boolean;
+}
+
+export function builtinAllowance(
+  usage: Partial<BuiltinUsage> | undefined,
+  plan: PlanId,
+  now = new Date(),
+): BuiltinAllowance {
+  const limit = planDetails(plan).sessionTokens;
+  const started = usage?.sessionStartedAt
+    ? new Date(usage.sessionStartedAt)
+    : null;
+  const resetsAt = started
+    ? new Date(started.getTime() + sessionHours() * 3_600_000)
+    : null;
+  const active = resetsAt !== null && resetsAt > now;
+  const used = active ? (usage?.sessionTokens ?? 0) : 0;
+  return {
+    used,
+    limit,
+    resetsAt: active ? resetsAt : null,
+    exhausted: used >= limit,
+  };
 }
 
 @Injectable()
@@ -50,7 +79,52 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly encryption: EncryptionService,
+    @InjectModel(Voucher.name)
+    private readonly voucherModel: Model<VoucherDocument>,
   ) {}
+
+  /**
+   * Move a user to Pro with a one-time voucher code. The code is claimed
+   * atomically, so it can't be used twice even by simultaneous requests;
+   * users already on Pro don't use one up.
+   */
+  async redeemVoucher(userId: string, input: string): Promise<UserDocument> {
+    const code = normalizeVoucherCode(input);
+    if (!code) {
+      throw new BadRequestException(
+        'Enter the 8-character code, for example ABCD-2345.',
+      );
+    }
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) throw new NotFoundException('User not found');
+    if (planOf(user.type) === 'pro') {
+      throw new BadRequestException("You're already on the Pro plan.");
+    }
+
+    const voucher = await this.voucherModel
+      .findOneAndUpdate(
+        { code, redeemed: false },
+        {
+          $set: {
+            redeemed: true,
+            redeemedAt: new Date(),
+            redeemedBy: user._id,
+          },
+        },
+      )
+      .exec();
+    if (!voucher) {
+      const used = await this.voucherModel.exists({ code });
+      throw new BadRequestException(
+        used
+          ? 'This code has already been used.'
+          : "This code isn't valid. Check it and try again.",
+      );
+    }
+
+    user.type = 'pro';
+    return user.save();
+  }
 
   async create(name: string, email: string, password: string): Promise<User> {
     const newUser = new this.userModel({ name, email, password });
@@ -74,20 +148,107 @@ export class UsersService {
       .exec();
   }
 
-  /** Increment grand total + per-config tokens for the active config */
-  async addTokenUsage(userId: string, tokens: number): Promise<void> {
-    // Increment grand total
+  /**
+   * Record tokens a request used: in the grand total, and in the active
+   * config's count or, on the built-in AI, its usage. `interactive` requests
+   * (questions, chat, summaries) also count toward the plan's session
+   * allowance; indexing doesn't.
+   */
+  async addTokenUsage(
+    userId: string,
+    tokens: number,
+    llm: ActiveLlmSettings,
+    options: { interactive: boolean },
+  ): Promise<void> {
+    if (tokens <= 0) return;
+    if (llm.provider === 'builtin') {
+      await this.addBuiltinUsage(userId, tokens, options.interactive);
+      return;
+    }
+
     await this.userModel
       .findByIdAndUpdate(userId, { $inc: { totalTokensUsed: tokens } })
       .exec();
-
-    // Increment the active config's tokensUsed
     await this.userModel
       .updateOne(
         { _id: userId, 'llmConfigs.isActive': true },
         { $inc: { 'llmConfigs.$.tokensUsed': tokens } },
       )
       .exec();
+  }
+
+  /**
+   * One atomic update: a counted request after the session ended starts a
+   * new session with its own tokens.
+   */
+  private async addBuiltinUsage(
+    userId: string,
+    tokens: number,
+    interactive: boolean,
+  ) {
+    const now = new Date();
+    const sessionStartCutoff = new Date(
+      now.getTime() - sessionHours() * 3_600_000,
+    );
+    const sessionOver = {
+      $or: [
+        { $not: ['$builtinUsage.sessionStartedAt'] },
+        { $lte: ['$builtinUsage.sessionStartedAt', sessionStartCutoff] },
+      ],
+    };
+    const add = (field: string) => ({
+      $add: [{ $ifNull: [field, 0] }, tokens],
+    });
+    await this.userModel
+      .updateOne({ _id: new Types.ObjectId(userId) }, [
+        {
+          $set: {
+            totalTokensUsed: add('$totalTokensUsed'),
+            'builtinUsage.totalTokens': add('$builtinUsage.totalTokens'),
+            ...(interactive && {
+              'builtinUsage.sessionStartedAt': {
+                $cond: [sessionOver, now, '$builtinUsage.sessionStartedAt'],
+              },
+              'builtinUsage.sessionTokens': {
+                $cond: [
+                  sessionOver,
+                  tokens,
+                  add('$builtinUsage.sessionTokens'),
+                ],
+              },
+            }),
+          },
+        },
+      ])
+      .exec();
+  }
+
+  /**
+   * Why an interactive request can't use the built-in AI right now (the plan's
+   * session allowance is used up), or null if it can. Own keys always can.
+   */
+  async builtinLimitMessage(
+    userId: string,
+    llm: ActiveLlmSettings,
+  ): Promise<string | null> {
+    if (llm.provider !== 'builtin') return null;
+    const user = await this.userModel
+      .findById(userId)
+      .select('builtinUsage')
+      .lean()
+      .exec();
+    const allowance = builtinAllowance(user?.builtinUsage, llm.plan);
+    if (!allowance.exhausted) return null;
+
+    const plan = planDetails(llm.plan);
+    const resets = allowance.resetsAt
+      ? ` It resets in ${timeUntil(allowance.resetsAt)}.`
+      : '';
+    const next =
+      plan.id === 'pro'
+        ? 'Add your own AI key in Profile to keep going now.'
+        : 'Upgrade to Pro for a larger allowance, or add your own AI key in Profile to keep going now.';
+    return `You've used this session's built-in AI allowance on the ${plan.label} plan (${plan.sessionTokens.toLocaleString('en-US')} tokens).${resets} ${next}`;
   }
 
   /**
@@ -150,10 +311,12 @@ export class UsersService {
     return user.save();
   }
 
-  /** Switch to the free built-in AI: no saved config stays active. */
-  async useFreeAi(userId: string): Promise<UserDocument> {
-    if (!freeAiEnabled()) {
-      throw new BadRequestException('The free AI is turned off on this server');
+  /** Switch to the built-in AI: no saved config stays active. */
+  async useBuiltinAi(userId: string): Promise<UserDocument> {
+    if (!builtinAiEnabled()) {
+      throw new BadRequestException(
+        'The built-in AI is turned off on this server',
+      );
     }
     const user = await this.userModel.findById(userId).exec();
     if (!user) throw new NotFoundException('User not found');
@@ -203,8 +366,8 @@ export class UsersService {
   }
 
   /**
-   * Provider of the active config (no key decryption); the free AI when no
-   * config is active; null if neither is available or the model is unknown.
+   * Provider of the active config (no key decryption); the built-in AI when
+   * no config is active; null if neither is available or the model is unknown.
    */
   async getActiveProvider(userId: string): Promise<LlmProvider | null> {
     const user = await this.userModel
@@ -214,7 +377,7 @@ export class UsersService {
       .exec();
     const active = user?.llmConfigs?.find((config) => config.isActive);
     if (!active) {
-      return user && freeAiEnabled() ? 'free' : null;
+      return user && builtinAiEnabled() ? 'builtin' : null;
     }
     try {
       return this.detectProvider(active.llmModel);
@@ -225,20 +388,32 @@ export class UsersService {
 
   /**
    * The active config's decrypted key + model (used internally for RAG), or
-   * the free AI when no config is active.
+   * the built-in AI when no config is active.
    */
   async getActiveLlmSettings(
     userId: string,
   ): Promise<ActiveLlmSettings | null> {
     const user = await this.userModel
       .findById(userId)
-      .select('llmConfigs')
+      .select('llmConfigs type')
       .lean()
       .exec();
+    if (!user) {
+      return null;
+    }
 
-    const active = user?.llmConfigs?.find((config) => config.isActive);
+    const plan = planOf(user.type);
+    const active = user.llmConfigs?.find((config) => config.isActive);
     if (!active) {
-      return user && freeAiEnabled() ? FREE_AI_SETTINGS : null;
+      return builtinAiEnabled()
+        ? {
+            keyName: 'Built-in AI',
+            apiKey: '',
+            model: BUILTIN_MODEL_ID,
+            provider: 'builtin',
+            plan,
+          }
+        : null;
     }
 
     return {
@@ -246,6 +421,7 @@ export class UsersService {
       apiKey: this.encryption.decrypt(active.llmApiKey),
       model: active.llmModel,
       provider: this.detectProvider(active.llmModel),
+      plan,
     };
   }
 
@@ -274,4 +450,22 @@ export class UsersService {
       `Unsupported model "${model}". Choose an OpenRouter, Gemini, OpenAI or Claude model.`,
     );
   }
+}
+
+/** "abcd 2345" / "ABCD2345" -> "ABCD-2345"; null unless it is 8 letters and digits. */
+function normalizeVoucherCode(input: string): string | null {
+  const chars = (input ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return chars.length === 8 ? `${chars.slice(0, 4)}-${chars.slice(4)}` : null;
+}
+
+/** "2 h 15 min" / "40 min" until a moment (the server doesn't know the user's time zone). */
+function timeUntil(moment: Date): string {
+  const minutes = Math.max(
+    1,
+    Math.ceil((moment.getTime() - Date.now()) / 60_000),
+  );
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest} min`;
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }
