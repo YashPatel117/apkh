@@ -25,7 +25,7 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Web (Vite/React)",
+            "name": "Web (Next.js)",
             "type": "node",
             "request": "launch",
             "cwd": "${workspaceFolder}/apkh-web",
@@ -58,7 +58,7 @@
             "configurations": [
                 "API (Node)",
                 "Storage (Node)",
-                "Web (Vite/React)",
+                "Web (Next.js)",
                 "Search (FastAPI)"
             ]
         }

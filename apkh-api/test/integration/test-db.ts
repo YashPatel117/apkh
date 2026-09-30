@@ -11,6 +11,10 @@ export const TEST_MONGODB_URI = process.env.MONGODB_TEST_URI;
 
 export const describeWithDb = TEST_MONGODB_URI ? describe : describe.skip;
 
+// A test database has no Atlas Vector Search: similarity is computed in the
+// API unless a test opts in.
+process.env.ATLAS_VECTOR_INDEX ??= 'off';
+
 /** A URI for a fresh, uniquely named test database. */
 export function freshDatabaseUri(label: string): string {
   if (!TEST_MONGODB_URI) {

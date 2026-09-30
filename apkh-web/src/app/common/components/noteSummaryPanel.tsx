@@ -29,9 +29,15 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
   const inFlight = useRef<Record<SummaryMode, boolean>>({ brief: false, actions: false });
   // Bumped when the note changes, so answers about the old version are dropped.
   const generation = useRef(0);
+  const summarizedVersion = useRef(`${noteId}:${updatedAt}`);
 
   // An edited note has new summaries (the server cleared its cache).
   useEffect(() => {
+    // Only on a real change: Strict Mode re-runs effects on mount, and clearing
+    // inFlight then would request the same summary twice.
+    const version = `${noteId}:${updatedAt}`;
+    if (summarizedVersion.current === version) return;
+    summarizedVersion.current = version;
     generation.current += 1;
     inFlight.current = { brief: false, actions: false };
     setStates({ brief: idle, actions: idle });

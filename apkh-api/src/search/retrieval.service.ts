@@ -60,6 +60,8 @@ const RRF_K = 60;
 const ATLAS_NUM_CANDIDATES = CANDIDATES_PER_LEG * 15;
 // After an Atlas Vector Search error, scan in the API for a while before trying again.
 const ATLAS_RETRY_MS = 10 * 60_000;
+// Similar notes on Atlas: notes shortlisted by vector search, then compared exactly.
+const SIMILAR_NOTE_CANDIDATES = 20;
 // Similar notes: below the floor they're not really related (Gemini's scores run
 // higher than OpenAI's, as with search); above NEAR_DUPLICATE, near-copies.
 const SIMILAR_NOTE_MIN_SIMILARITY: Record<EmbeddingSpace['provider'], number> =
@@ -90,17 +92,24 @@ export interface SimilarNote {
 export class RetrievalService {
   private readonly logger = new Logger(RetrievalService.name);
   /**
-   * Name of an Atlas Vector Search index on knowledgechunks.vector
-   * (ATLAS_VECTOR_INDEX; create it with `npm run search:vector-index`). Without
-   * one, similarity is computed in the API over the user's vectors.
+   * Atlas Vector Search index on knowledgechunks.vector (ATLAS_VECTOR_INDEX,
+   * default "chunk_vectors"; create it with `npm run search:vector-index`).
+   * Vector search runs there first; with "off", or while Atlas is failing,
+   * similarity is computed in the API over the user's vectors.
    */
-  private readonly atlasIndex = process.env.ATLAS_VECTOR_INDEX?.trim() || null;
+  private readonly atlasIndex = atlasIndexName(process.env.ATLAS_VECTOR_INDEX);
   private atlasPausedUntil = 0;
 
   constructor(
     @InjectModel(KnowledgeChunk.name)
     private readonly chunkModel: Model<KnowledgeChunkDocument>,
-  ) {}
+  ) {
+    this.logger.log(
+      this.atlasIndex
+        ? `Vector search: Atlas index "${this.atlasIndex}", in the API if it fails`
+        : 'Vector search: in the API (ATLAS_VECTOR_INDEX=off)',
+    );
+  }
 
   async retrieve(
     userId: string,
@@ -154,29 +163,60 @@ export class RetrievalService {
       .slice(0, options.limit);
   }
 
-  private async semanticLeg(
-    filter: FilterQuery<KnowledgeChunkDocument>,
-    vector: Float32Array,
-    space: EmbeddingSpace,
-    minSimilarity: number | null,
-  ): Promise<{ doc: CandidateDoc; similarity: number }[]> {
+  /**
+   * Runs `atlas` against the vector index, falling back to `inApp` when there
+   * is no index or Atlas fails (after a failure, for ATLAS_RETRY_MS). Logs,
+   * at debug level, where each search ran and how long it took.
+   */
+  private async withAtlas<T>(
+    label: string,
+    atlas: (index: string) => Promise<T>,
+    inApp: () => Promise<T>,
+  ): Promise<T> {
+    let started = Date.now();
     if (this.atlasIndex && Date.now() >= this.atlasPausedUntil) {
       try {
-        return await this.atlasSemanticLeg(
-          this.atlasIndex,
-          filter,
-          vector,
-          space,
-          minSimilarity,
+        const result = await atlas(this.atlasIndex);
+        this.logger.debug(
+          `${label}: Atlas Vector Search (${Date.now() - started} ms)`,
         );
+        return result;
       } catch (error) {
         this.atlasPausedUntil = Date.now() + ATLAS_RETRY_MS;
         this.logger.warn(
           `Atlas Vector Search failed (${errorMessage(error)}); computing similarity in the API for the next ${ATLAS_RETRY_MS / 60_000} minutes`,
         );
+        started = Date.now();
       }
     }
+    const result = await inApp();
+    this.logger.debug(
+      `${label}: in the API${this.atlasIndex ? ' (Atlas fallback)' : ''} (${Date.now() - started} ms)`,
+    );
+    return result;
+  }
 
+  private semanticLeg(
+    filter: FilterQuery<KnowledgeChunkDocument>,
+    vector: Float32Array,
+    space: EmbeddingSpace,
+    minSimilarity: number | null,
+  ): Promise<{ doc: CandidateDoc; similarity: number }[]> {
+    return this.withAtlas(
+      'Passage search',
+      (index) =>
+        this.atlasSemanticLeg(index, filter, vector, space, minSimilarity),
+      () => this.inAppSemanticLeg(filter, vector, space, minSimilarity),
+    );
+  }
+
+  /** The semantic leg without Atlas: cosine similarity over the user's vectors. */
+  private async inAppSemanticLeg(
+    filter: FilterQuery<KnowledgeChunkDocument>,
+    vector: Float32Array,
+    space: EmbeddingSpace,
+    minSimilarity: number | null,
+  ): Promise<{ doc: CandidateDoc; similarity: number }[]> {
     const docs = await this.chunkModel
       .find({ ...filter, embeddingModel: space.id })
       .select(`${CANDIDATE_FIELDS} vector`)
@@ -257,35 +297,31 @@ export class RetrievalService {
     space: EmbeddingSpace,
     limit: number,
   ): Promise<SimilarNote[]> {
-    const docs = await this.chunkModel
-      .find({
-        userId,
-        embeddingModel: space.id,
-        sourceType: { $in: ['note', 'file'] },
-      })
-      .select('noteId noteTitle vector')
-      .lean<{ noteId: Types.ObjectId; noteTitle: string; vector: unknown }[]>()
-      .exec();
-
-    const centroids = new Map<string, { title: string; sum: Float32Array }>();
-    for (const doc of docs) {
-      const vector = fromStoredVector(doc.vector);
-      if (!vector) continue;
-      const key = String(doc.noteId);
-      const entry = centroids.get(key) ?? {
-        title: doc.noteTitle,
-        sum: new Float32Array(vector.length),
-      };
-      if (entry.sum.length !== vector.length) continue;
-      vector.forEach((value, i) => (entry.sum[i] += value));
-      centroids.set(key, entry);
-    }
-
-    const target = centroids.get(String(noteId));
+    const target = (await this.noteCentroids(userId, space, [noteId])).get(
+      String(noteId),
+    );
     if (!target) {
       return []; // not indexed in this space (yet)
     }
-    return [...centroids.entries()]
+    // Atlas shortlists the notes nearest this one; without it, every note is a
+    // candidate. Either way candidates are ranked by their average vectors.
+    const candidates = await this.withAtlas(
+      'Similar notes',
+      async (index) =>
+        this.noteCentroids(
+          userId,
+          space,
+          await this.atlasNearestNotes(
+            index,
+            userId,
+            noteId,
+            target.sum,
+            space,
+          ),
+        ),
+      () => this.noteCentroids(userId, space),
+    );
+    return [...candidates.entries()]
       .filter(([id]) => id !== String(noteId))
       .map(([id, entry]) => {
         // cosineSimilarity normalises, so summed vectors compare like averages
@@ -303,6 +339,79 @@ export class RetrievalService {
       )
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, limit);
+  }
+
+  /**
+   * Sum of each note's passage vectors in a space (text and attachments),
+   * keyed by note id: of the given notes, or of all the user's notes.
+   */
+  private async noteCentroids(
+    userId: Types.ObjectId,
+    space: EmbeddingSpace,
+    noteIds?: Types.ObjectId[],
+  ): Promise<Map<string, { title: string; sum: Float32Array }>> {
+    const centroids = new Map<string, { title: string; sum: Float32Array }>();
+    if (noteIds && !noteIds.length) {
+      return centroids;
+    }
+    const docs = await this.chunkModel
+      .find({
+        userId,
+        embeddingModel: space.id,
+        sourceType: { $in: ['note', 'file'] },
+        ...(noteIds && { noteId: { $in: noteIds } }),
+      })
+      .select('noteId noteTitle vector')
+      .lean<{ noteId: Types.ObjectId; noteTitle: string; vector: unknown }[]>()
+      .exec();
+
+    for (const doc of docs) {
+      const vector = fromStoredVector(doc.vector);
+      if (!vector) continue;
+      const key = String(doc.noteId);
+      const entry = centroids.get(key) ?? {
+        title: doc.noteTitle,
+        sum: new Float32Array(vector.length),
+      };
+      if (entry.sum.length !== vector.length) continue;
+      vector.forEach((value, i) => (entry.sum[i] += value));
+      centroids.set(key, entry);
+    }
+    return centroids;
+  }
+
+  /** Other notes with passages nearest a note's vector, by Atlas Vector Search. */
+  private async atlasNearestNotes(
+    index: string,
+    userId: Types.ObjectId,
+    noteId: Types.ObjectId,
+    vector: Float32Array,
+    space: EmbeddingSpace,
+  ): Promise<Types.ObjectId[]> {
+    const notes = await this.chunkModel
+      .aggregate<{ _id: Types.ObjectId }>([
+        {
+          $vectorSearch: {
+            index,
+            path: 'vector',
+            queryVector: Array.from(vector),
+            numCandidates: ATLAS_NUM_CANDIDATES,
+            limit: CANDIDATES_PER_LEG,
+            filter: {
+              userId,
+              embeddingModel: space.id,
+              sourceType: { $in: ['note', 'file'] },
+              noteId: { $ne: noteId },
+            },
+          },
+        },
+        { $project: { noteId: 1, score: { $meta: 'vectorSearchScore' } } },
+        { $group: { _id: '$noteId', score: { $max: '$score' } } },
+        { $sort: { score: -1 } },
+        { $limit: SIMILAR_NOTE_CANDIDATES },
+      ])
+      .exec();
+    return notes.map((note) => note._id);
   }
 
   private async similarByKeywords(
@@ -415,6 +524,12 @@ export function mergeRankings(
     });
   }
   return [...merged.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** The vector index name: "chunk_vectors" unless set, null when "off". */
+function atlasIndexName(setting: string | undefined): string | null {
+  const name = setting?.trim() || 'chunk_vectors';
+  return name.toLowerCase() === 'off' ? null : name;
 }
 
 function scopeFilter(

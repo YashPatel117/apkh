@@ -743,9 +743,10 @@ describeWithDb('indexing pipeline', () => {
     await indexing.reindexAll(userId.toHexString());
     await drain();
 
+    const setting = process.env.ATLAS_VECTOR_INDEX;
     process.env.ATLAS_VECTOR_INDEX = 'chunk_vectors';
     const atlasRetrieval = new RetrievalService(chunkModel);
-    delete process.env.ATLAS_VECTOR_INDEX;
+    process.env.ATLAS_VECTOR_INDEX = setting;
     const aggregate = jest.spyOn(chunkModel, 'aggregate');
     const search = () =>
       atlasRetrieval.retrieve(userId.toHexString(), 'rollout', {
@@ -777,6 +778,45 @@ describeWithDb('indexing pipeline', () => {
     // After a failure it stops trying for a while
     await search();
     expect(aggregate).toHaveBeenCalledTimes(1);
+    aggregate.mockRestore();
+  });
+
+  it('similar notes shortlist on Atlas and fall back to comparing every note', async () => {
+    const note = await createNote('Deploy runbook', '<p>Rollout steps</p>');
+    await createNote('Deploy runbook copy', '<p>Rollout steps</p>');
+    await indexing.reindexAll(userId.toHexString());
+    await drain();
+
+    const setting = process.env.ATLAS_VECTOR_INDEX;
+    process.env.ATLAS_VECTOR_INDEX = 'chunk_vectors';
+    const atlasRetrieval = new RetrievalService(chunkModel);
+    process.env.ATLAS_VECTOR_INDEX = setting;
+    const aggregate = jest.spyOn(chunkModel, 'aggregate');
+
+    const similar = await atlasRetrieval.similarNotes(
+      userId.toHexString(),
+      note._id.toHexString(),
+      {
+        id: 'text-embedding-3-small@1536',
+        provider: 'openai',
+        model: 'text-embedding-3-small',
+        dimensions: 1536,
+      },
+      5,
+    );
+
+    const pipeline = aggregate.mock.calls[0][0] as any[];
+    expect(pipeline[0].$vectorSearch).toMatchObject({
+      index: 'chunk_vectors',
+      filter: {
+        embeddingModel: 'text-embedding-3-small@1536',
+        noteId: { $ne: note._id },
+      },
+    });
+    expect(similar[0]).toMatchObject({
+      noteTitle: 'Deploy runbook copy',
+      nearDuplicate: true,
+    });
     aggregate.mockRestore();
   });
 
