@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { SEARCH_API } from 'src/common/constant/endpoint';
 import type { ChunkSourceType } from 'src/common/schema/chunk';
 import type { IndexedFileStatus } from 'src/common/schema/index-job';
+import type { NoteActions, SummaryMode } from 'src/common/schema/summary';
 import { decodeVector } from 'src/common/utils/vector';
 import type { ActiveLlmSettings } from 'src/users/users.service';
 import type { EmbeddingSpace } from './embedding-space';
@@ -259,15 +260,18 @@ export class SearchApiClient {
       content: string;
       category: string;
       contexts: string[];
+      mode: SummaryMode;
     },
-  ): Promise<GeneratedText> {
+  ): Promise<GeneratedText & { actions: NoteActions | null }> {
     const data = await this.post<{
       summary: string;
+      actions?: NoteActions | null;
       error?: boolean;
       tokens_used: number;
     }>(
       '/ai-search/summarize',
       {
+        mode: params.mode,
         note_id: params.noteId,
         title: params.title,
         content: params.content,
@@ -281,6 +285,7 @@ export class SearchApiClient {
     );
     return {
       text: data.summary ?? '',
+      actions: data.actions ?? null,
       error: Boolean(data.error),
       tokensUsed: data.tokens_used ?? 0,
     };

@@ -6,6 +6,7 @@ import {
   KnowledgeChunkDocument,
 } from 'src/common/schema/chunk';
 import { NoteDocument } from 'src/common/schema/note';
+import type { NoteActions, SummaryMode } from 'src/common/schema/summary';
 import { htmlToPlainText } from 'src/common/utils/html';
 import { errorMessage } from 'src/common/utils/http-error';
 import { IndexingService } from 'src/indexing/indexing.service';
@@ -24,6 +25,7 @@ import { isWeakResult, QueryRewriteService } from './query-rewrite.service';
 
 interface NoteSummaryGenerationResult {
   summary: string;
+  actions: NoteActions | null;
   model: string | null;
   cacheable: boolean;
 }
@@ -252,15 +254,17 @@ export class SearchService {
     userId: string,
     note: Pick<NoteDocument, '_id' | 'title' | 'content' | 'category'>,
     attachedFiles: string[] = [],
+    mode: SummaryMode = 'brief',
   ): Promise<NoteSummaryGenerationResult> {
     const noteId = String(note._id);
-    this.logger.log(`Generating summary for note ${noteId}`);
+    this.logger.log(`Generating ${mode} summary for note ${noteId}`);
 
     const activeLlm = await this.usersService.getActiveLlmSettings(userId);
     if (!activeLlm) {
       return {
         summary:
           'Add an active API key in Profile settings to generate AI summaries.',
+        actions: null,
         model: null,
         cacheable: false,
       };
@@ -286,6 +290,7 @@ export class SearchService {
       return {
         summary:
           'Attachment text is still being indexed for this note. Please try the summary again in a moment.',
+        actions: null,
         model: null,
         cacheable: false,
       };
@@ -313,21 +318,26 @@ export class SearchService {
         content: note.content,
         category: note.category,
         contexts: summaryContexts,
+        mode,
       });
       this.trackTokens(userId, result.tokensUsed);
       const summary = result.text.trim();
+      const complete =
+        mode === 'actions' ? Boolean(result.actions) : Boolean(summary);
 
       // A failure message ("model no longer available", ...) must not be
       // cached as the note's summary.
       return {
         summary,
+        actions: result.error ? null : result.actions,
         model: result.error ? null : activeLlm.model,
-        cacheable: Boolean(summary) && !result.error && !reindexing,
+        cacheable: complete && !result.error && !reindexing,
       };
     } catch (error) {
       if (error instanceof SearchApiError) {
         return {
           summary: this.normalizeSearchServiceMessage(error.message),
+          actions: null,
           model: null,
           cacheable: false,
         };

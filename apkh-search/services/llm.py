@@ -49,6 +49,22 @@ _SUMMARY_SYSTEM_INSTRUCTION = (
     "- If the note is mostly empty, say that clearly in one short sentence."
 )
 
+_ACTIONS_SYSTEM_INSTRUCTION = (
+    "You extract action items from one personal note.\n"
+    "Rules:\n"
+    "- Only include what the note actually says; never invent tasks, owners or dates.\n"
+    "- tasks: things someone has to do. Give owner and due only when the note names them; "
+    "done is true only if the note marks the task as done.\n"
+    "- decisions: things that were decided or agreed.\n"
+    "- deadlines: dates or times when something is due or happens, written as in the note.\n"
+    "- people: people mentioned, with their role in the note when it is clear.\n"
+    "- summary: one or two plain sentences on what the note is about.\n"
+    "Respond with JSON only, with exactly these keys (empty lists when there is nothing):\n"
+    '{"summary": "...", "tasks": [{"task": "...", "owner": null, "due": null, "done": false}], '
+    '"decisions": ["..."], "deadlines": [{"what": "...", "when": "..."}], '
+    '"people": [{"name": "...", "role": null}]}'
+)
+
 _CHAT_SYSTEM_INSTRUCTION = (
     "You are a helpful assistant with access to the user's personal knowledge base.\n\n"
     "Context, in order of priority:\n\n"
@@ -310,9 +326,12 @@ async def generate_note_summary(
     model: str,
     user_id: str | None = None,
     request_id: str | None = None,
+    mode: str = "brief",
 ) -> dict:
     """
-    Generate a concise summary for a single note.
+    Summarize a single note. mode "brief": a compact summary. mode "actions":
+    also returns `actions` (tasks, decisions, deadlines, people) extracted as
+    structured data, with a one or two sentence summary.
     """
     resolved_key = api_key.strip()
     resolved_model = model.strip()
@@ -344,6 +363,7 @@ async def generate_note_summary(
         if not any([resolved_title, resolved_category, note_text, parsed.links]):
             return {
                 "summary": "This note is empty, so there is nothing to summarize yet.",
+                **({"actions": _normalize_actions({})} if mode == "actions" else {}),
                 "tokens_used": 0,
                 "run_id": None,
             }
@@ -359,7 +379,8 @@ async def generate_note_summary(
             if link_lines:
                 sections.append("Links:\n" + "\n".join(link_lines))
 
-    user_prompt = "Summarize this saved note.\n\n" + "\n\n".join(sections)
+    task = "Extract the action items from" if mode == "actions" else "Summarize"
+    user_prompt = f"{task} this saved note.\n\n" + "\n\n".join(sections)
 
     try:
         provider = detect_provider(resolved_model)
@@ -394,10 +415,26 @@ async def generate_note_summary(
         result = await caller(
             resolved_key,
             resolved_model,
-            _SUMMARY_SYSTEM_INSTRUCTION,
+            _ACTIONS_SYSTEM_INSTRUCTION if mode == "actions" else _SUMMARY_SYSTEM_INSTRUCTION,
             user_prompt,
             config=trace_config,
         )
+        if mode == "actions":
+            parsed_actions = _parse_json_object(result.get("answer") or "")
+            if not parsed_actions:
+                return {
+                    "summary": "The action items could not be extracted right now.",
+                    "error": True,
+                    "tokens_used": result["tokens_used"],
+                    "run_id": result.get("run_id"),
+                }
+            summary = parsed_actions.get("summary")
+            return {
+                "summary": summary.strip() if isinstance(summary, str) else "",
+                "actions": _normalize_actions(parsed_actions),
+                "tokens_used": result["tokens_used"],
+                "run_id": result.get("run_id"),
+            }
         summary_text = (result.get("answer") or "").strip()
         if not summary_text:
             return {
@@ -723,6 +760,46 @@ async def rewrite_search_query(
         else [],
         "tokens_used": result["tokens_used"],
         "error": False,
+    }
+
+
+def _normalize_actions(raw: dict) -> dict:
+    """Keep only well-formed items of a model's action-item JSON (models vary in what they return)."""
+
+    def text(value: Any) -> str | None:
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    def items(key: str) -> list:
+        value = raw.get(key)
+        return value if isinstance(value, list) else []
+
+    tasks = []
+    for item in items("tasks"):
+        item = {"task": item} if isinstance(item, str) else item
+        if isinstance(item, dict) and text(item.get("task")):
+            tasks.append(
+                {
+                    "task": text(item.get("task")),
+                    "owner": text(item.get("owner")),
+                    "due": text(item.get("due")),
+                    "done": item.get("done") is True,
+                }
+            )
+    deadlines = [
+        {"what": text(item.get("what")), "when": text(item.get("when"))}
+        for item in items("deadlines")
+        if isinstance(item, dict) and text(item.get("what")) and text(item.get("when"))
+    ]
+    people = []
+    for item in items("people"):
+        item = {"name": item} if isinstance(item, str) else item
+        if isinstance(item, dict) and text(item.get("name")):
+            people.append({"name": text(item.get("name")), "role": text(item.get("role"))})
+    return {
+        "tasks": tasks[:50],
+        "decisions": [d for d in (text(x) for x in items("decisions")) if d][:30],
+        "deadlines": deadlines[:30],
+        "people": people[:30],
     }
 
 

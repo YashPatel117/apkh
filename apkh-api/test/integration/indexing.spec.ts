@@ -102,6 +102,15 @@ describeWithDb('migrations on legacy data', () => {
         embedding: openaiVector,
       },
     ]);
+    await db
+      .collection('summary')
+      .createIndex({ noteId: 1, userId: 1 }, { unique: true });
+    await db.collection('summary').insertOne({
+      noteId,
+      userId,
+      summary: 'Old summary',
+      summaryModel: 'gpt-4o-mini',
+    });
     await db.collection('chatsessions').insertOne({
       _id: sessionId,
       userId,
@@ -141,7 +150,16 @@ describeWithDb('migrations on legacy data', () => {
       .collection('chatsessions')
       .findOne({ _id: sessionId });
     expect(session).toMatchObject({ isChunked: false, chunkedMessageCount: 0 });
-    expect(await db.collection('migrations').countDocuments()).toBe(3);
+    expect(await db.collection('migrations').countDocuments()).toBe(4);
+
+    // Summaries: the old one is "brief", and a second mode can now be cached
+    expect(await db.collection('summary').findOne({ noteId })).toMatchObject({
+      mode: 'brief',
+    });
+    await db
+      .collection('summary')
+      .insertOne({ noteId, userId, mode: 'actions', summary: '' });
+    expect(await db.collection('summary').countDocuments({ noteId })).toBe(2);
 
     // Mongoose now finds the note by the string id in the JWT
     const noteModel = app.get<Model<NoteDocument>>(getModelToken(Note.name));

@@ -184,6 +184,13 @@ Chat answers cite the note passages the same way. The passages are saved with th
 
 ## 9. Summaries
 
+A note has two summary modes (`POST /notes/:id/summary?mode=`):
+
+- `brief` (default): a compact summary, under 120 words.
+- `actions`: action items first, extracted as structured data: `tasks` (with `owner`, `due` and `done` only when the note says so), `decisions`, `deadlines` and `people`, plus a one or two sentence summary. The model is asked for JSON; malformed items are dropped, and a reply that isn't JSON counts as a failure.
+
+Both modes are cached separately (one `summary` document per note and mode):
+
 - A cached summary is returned as-is (no tokens spent).
 - Otherwise the note's chunks (note text + attachments, in order) are sent to `/ai-search/summarize`.
 - While the note is being re-indexed, its current text is used instead of possibly stale chunks, and the result isn't cached.

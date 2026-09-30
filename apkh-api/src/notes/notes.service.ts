@@ -3,7 +3,11 @@ import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Note, NoteDocument } from 'src/common/schema/note';
-import { Summary, SummaryDocument } from 'src/common/schema/summary';
+import {
+  Summary,
+  SummaryDocument,
+  SummaryMode,
+} from 'src/common/schema/summary';
 import { Model, Types } from 'mongoose';
 import { ApiResponseDto } from 'src/common/dto/api/response';
 import { FileService } from 'src/file/file.service';
@@ -237,7 +241,12 @@ export class NotesService {
     return notes;
   }
 
-  async summarize(token: string, userId: string, _id: string) {
+  async summarize(
+    token: string,
+    userId: string,
+    _id: string,
+    mode: SummaryMode = 'brief',
+  ) {
     try {
       const note = await this.noteModel.findOne({ userId, _id }).exec();
       if (!note) {
@@ -246,17 +255,24 @@ export class NotesService {
 
       const noteFiles = await this.fileService.getNoteFiles(note._id as string);
       const attachedFiles = noteFiles?.files || [];
-      const cachedSummary = await this.summaryModel
-        .findOne({
-          noteId: new Types.ObjectId(_id),
-          userId: new Types.ObjectId(userId),
-        })
-        .exec();
+      // One cached summary per mode; editing the note clears them all.
+      const cacheKey = {
+        noteId: new Types.ObjectId(_id),
+        userId: new Types.ObjectId(userId),
+        mode,
+      };
+      const cachedSummary = await this.summaryModel.findOne(cacheKey).exec();
+      const cacheHit =
+        mode === 'actions'
+          ? Boolean(cachedSummary?.actions)
+          : Boolean(cachedSummary?.summary?.trim());
 
-      if (cachedSummary?.summary?.trim()) {
+      if (cachedSummary && cacheHit) {
         return new ApiResponseDto<NoteSummaryResponse>().ok({
           noteId: _id,
+          mode,
           summary: cachedSummary.summary,
+          actions: cachedSummary.actions ?? null,
           cached: true,
           model: cachedSummary.summaryModel ?? null,
           generatedAt:
@@ -264,32 +280,37 @@ export class NotesService {
         });
       }
 
-      const generatedSummary = await this.searchService.generateNoteSummary(
+      const generated = await this.searchService.generateNoteSummary(
         token,
         userId,
         note,
         attachedFiles,
+        mode,
       );
 
       let generatedAt: Date | null = null;
-      let model = generatedSummary.model;
-
-      if (generatedSummary.cacheable && generatedSummary.summary) {
-        const summaryDoc = cachedSummary ?? new this.summaryModel();
-        summaryDoc.noteId = new Types.ObjectId(_id);
-        summaryDoc.userId = new Types.ObjectId(userId);
-        summaryDoc.summary = generatedSummary.summary;
-        summaryDoc.summaryModel = generatedSummary.model ?? undefined;
-        await summaryDoc.save();
-        generatedAt = summaryDoc.updatedAt ?? summaryDoc.createdAt ?? null;
-        model = summaryDoc.summaryModel ?? null;
+      if (generated.cacheable) {
+        const saved = await this.summaryModel.findOneAndUpdate(
+          cacheKey,
+          {
+            $set: {
+              summary: generated.summary,
+              actions: generated.actions ?? undefined,
+              summaryModel: generated.model ?? undefined,
+            },
+          },
+          { upsert: true, new: true },
+        );
+        generatedAt = saved?.updatedAt ?? null;
       }
 
       return new ApiResponseDto<NoteSummaryResponse>().ok({
         noteId: _id,
-        summary: generatedSummary.summary,
+        mode,
+        summary: generated.summary,
+        actions: generated.actions,
         cached: false,
-        model,
+        model: generated.model,
         generatedAt,
       });
     } catch (error) {

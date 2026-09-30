@@ -111,16 +111,29 @@ export async function aiSearchNotes(searchQuery: string, referencedNoteIds?: str
   return res.data as AiSearchResponse;
 }
 
+/** brief: a compact summary · actions: action items first */
+export type SummaryMode = "brief" | "actions";
+
+/** Action items extracted from a note (only what the note says). */
+export type NoteActions = {
+  tasks: { task: string; owner: string | null; due: string | null; done: boolean }[];
+  decisions: string[];
+  deadlines: { what: string; when: string }[];
+  people: { name: string; role: string | null }[];
+};
+
 export type NoteSummaryResponse = {
   noteId: string;
+  mode: SummaryMode;
   summary: string;
+  actions: NoteActions | null;
   cached: boolean;
   model: string | null;
   generatedAt: string | null;
 };
 
-export async function summarizeNote(noteId: string) {
-  const res = await webApi.post(`/notes/${noteId}/summary`);
+export async function summarizeNote(noteId: string, mode: SummaryMode = "brief") {
+  const res = await webApi.post(`/notes/${noteId}/summary`, undefined, { params: { mode } });
   return res.data.data as NoteSummaryResponse;
 }
 

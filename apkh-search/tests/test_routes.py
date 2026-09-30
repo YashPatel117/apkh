@@ -155,6 +155,68 @@ class CitationPromptTests(unittest.TestCase):
         self.assertNotIn("{context}", system)
 
 
+class ActionItemsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(main.app)
+
+    def summarize(self, reply: str):
+        async def fake_call(api_key, model, system, user_prompt, config=None):
+            self.prompt = (system, user_prompt)
+            return {"answer": reply, "tokens_used": 9, "run_id": None}
+
+        original = llm._call_openai
+        llm._call_openai = fake_call
+        try:
+            res = self.client.post(
+                "/ai-search/summarize",
+                json={
+                    "mode": "actions",
+                    "title": "Sprint sync",
+                    "content": "<p>Ana ships the API by Friday.</p>",
+                    "api_key": "k",
+                    "model": "gpt-4o-mini",
+                },
+                headers=AUTH,
+            )
+        finally:
+            llm._call_openai = original
+        self.assertEqual(res.status_code, 200, res.text)
+        return res.json()
+
+    def test_extracts_structured_items_and_drops_malformed_ones(self):
+        result = self.summarize(
+            "```json\n"
+            '{"summary": "Sprint planning.",'
+            ' "tasks": [{"task": "Ship the API", "owner": "Ana", "due": "Friday", "done": false},'
+            ' "Update docs", {"owner": "Bo"}, 42],'
+            ' "decisions": ["Use Postgres", ""],'
+            ' "deadlines": [{"what": "API", "when": "Friday"}, {"what": "no date"}],'
+            ' "people": ["Ana", {"name": "Bo", "role": "reviewer"}, {}]}'
+            "\n```"
+        )
+        self.assertFalse(result["error"])
+        self.assertEqual(result["summary"], "Sprint planning.")
+        self.assertEqual(
+            result["actions"],
+            {
+                "tasks": [
+                    {"task": "Ship the API", "owner": "Ana", "due": "Friday", "done": False},
+                    {"task": "Update docs", "owner": None, "due": None, "done": False},
+                ],
+                "decisions": ["Use Postgres"],
+                "deadlines": [{"what": "API", "when": "Friday"}],
+                "people": [{"name": "Ana", "role": None}, {"name": "Bo", "role": "reviewer"}],
+            },
+        )
+        self.assertTrue(self.prompt[1].startswith("Extract the action items from this saved note."))
+
+    def test_a_reply_that_is_not_json_is_an_error(self):
+        result = self.summarize("Here are the tasks: ship it.")
+        self.assertTrue(result["error"])
+        self.assertIsNone(result["actions"])
+
+
 class EmbeddingSpaceTests(unittest.TestCase):
     def test_each_provider_has_one_embedding_space(self):
         gemini = resolve_space("gemini-2.5-flash")

@@ -18,6 +18,7 @@ import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 import { AiSearchDto } from './dto/ai-search.dto';
 import { ReindexDto } from './dto/reindex.dto';
+import { SummaryQueryDto } from './dto/summary-query.dto';
 import { IndexingService } from 'src/indexing/indexing.service';
 import { SearchService } from 'src/search/search.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';
@@ -134,13 +135,15 @@ export class NotesController {
     );
   }
 
+  /** SUMMARY of a note: ?mode=brief (default) or ?mode=actions (action items first) */
   @Post(':id/summary')
   summarize(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,
     @Param('id') id: string,
+    @Query() query: SummaryQueryDto,
   ) {
-    return this.notesService.summarize(token, userId, id);
+    return this.notesService.summarize(token, userId, id, query.mode);
   }
 
   /** RE-INDEX one note */

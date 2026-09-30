@@ -1,21 +1,16 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import { AtSign, ChevronDown, Clock, Paperclip, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { AtSign, ChevronDown, Clock, Paperclip, Sparkles, Trash2 } from "lucide-react";
 import { INote, NoteIndexState } from "../models/note";
 import { IndexBadge } from "./indexBadge";
+import { NoteSummaryPanel } from "./noteSummaryPanel";
 import FileDisplay from "./fileDisplay";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "../service/noteLinkUtils";
-import { summarizeNote } from "@/service/noteService";
-import { getErrorMessage } from "@/service/axios/axios";
 import { Modal } from "../ui/Modal";
 import { Tooltip } from "../ui/Tooltip";
 import { cn } from "../ui/cn";
 import { displayFileName } from "../service/fileName";
-
-const ATTACHMENT_INDEXING_PENDING_SUMMARY =
-  "Attachment text is still being indexed for this note. Please try the summary again in a moment.";
 
 const PREVIEW_MAX_HEIGHT = 168; // px
 
@@ -76,10 +71,6 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
   const [isTruncated, setIsTruncated] = useState(false);
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryText, setSummaryText] = useState("");
-  const [summaryError, setSummaryError] = useState("");
-  const [summaryMeta, setSummaryMeta] = useState<{ cached: boolean; model: string | null; generatedAt: string | null } | null>(null);
 
   const contentRef = useRef<HTMLDivElement>(null);
   const categoryLabel = note.category?.trim() || "Uncategorized";
@@ -89,7 +80,6 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
     [note.content],
   );
   const hasContent = Boolean(note.content?.replace(/<[^>]+>/g, "").trim()) || note.content?.includes("file-token");
-  const summaryPending = summaryText.trim() === ATTACHMENT_INDEXING_PENDING_SUMMARY;
 
   useEffect(() => {
     const el = contentRef.current;
@@ -101,40 +91,6 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
     observer.observe(el);
     return () => observer.disconnect();
   }, [normalizedContent]);
-
-  useEffect(() => {
-    setSummaryOpen(false);
-    setSummaryLoading(false);
-    setSummaryText("");
-    setSummaryError("");
-    setSummaryMeta(null);
-  }, [note.id, note.updatedAt]);
-
-  const loadSummary = async () => {
-    setSummaryLoading(true);
-    setSummaryError("");
-    setSummaryText("");
-    setSummaryMeta(null);
-    try {
-      const response = await summarizeNote(note.id);
-      setSummaryText(response.summary);
-      setSummaryMeta({ cached: response.cached, model: response.model, generatedAt: response.generatedAt });
-    } catch (error) {
-      setSummaryError(getErrorMessage(error, "Couldn't generate the summary right now."));
-    } finally {
-      setSummaryLoading(false);
-    }
-  };
-
-  const handleSummaryClick = () => {
-    if (summaryOpen && !summaryPending) {
-      setSummaryOpen(false);
-      return;
-    }
-    setSummaryOpen(true);
-    if (summaryLoading) return;
-    if (!summaryText || summaryPending || summaryError) void loadSummary();
-  };
 
   const handleCardClick = (e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -198,7 +154,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
             <IconAction label={selected ? "Unpin from AI question" : "Pin for AI question"} active={selected} onClick={() => onToggleSelect?.()}>
               <AtSign />
             </IconAction>
-            <IconAction label={summaryOpen ? "Hide AI summary" : "AI summary"} active={summaryOpen} onClick={handleSummaryClick}>
+            <IconAction label={summaryOpen ? "Hide AI summary" : "AI summary"} active={summaryOpen} onClick={() => setSummaryOpen((open) => !open)}>
               <Sparkles />
             </IconAction>
             <IconAction label="Delete note" danger onClick={() => onDelete?.()}>
@@ -228,53 +184,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
         )}
 
         {/* AI summary */}
-        {summaryOpen && (
-          <section
-            onClick={(e) => e.stopPropagation()}
-            className="mt-4 animate-fade-in cursor-default rounded-2xl border border-indigo-100 bg-linear-to-br from-blue-50/80 via-indigo-50/80 to-violet-50/80 p-4 dark:border-indigo-400/20 dark:from-blue-500/10 dark:via-indigo-500/10 dark:to-violet-500/10"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-fg">
-                <Sparkles className="size-3.5" /> AI summary
-              </span>
-              {(summaryMeta || summaryError || summaryPending) && !summaryLoading && (
-                <button
-                  type="button"
-                  onClick={() => void loadSummary()}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.7rem] font-medium text-fg-subtle hover:bg-surface/70 hover:text-fg"
-                  aria-label="Refresh summary"
-                >
-                  <RefreshCw className="size-3" />
-                  Refresh
-                </button>
-              )}
-            </div>
-
-            <div className="mt-2 text-sm leading-relaxed">
-              {summaryLoading && (
-                <div className="space-y-2" aria-live="polite" aria-label="Generating summary">
-                  {[100, 90, 70].map((w) => (
-                    <div key={w} className="h-3 animate-pulse rounded-full bg-indigo-200/50 dark:bg-indigo-400/15" style={{ width: `${w}%` }} />
-                  ))}
-                </div>
-              )}
-              {!summaryLoading && summaryError && <p className="text-rose-600 dark:text-rose-400">{summaryError}</p>}
-              {!summaryLoading && !summaryError && summaryText && (
-                <div className="rich-content text-sm text-fg">
-                  <ReactMarkdown>{summaryText}</ReactMarkdown>
-                </div>
-              )}
-            </div>
-
-            {summaryMeta && !summaryLoading && (
-              <p className="mt-3 text-[0.7rem] text-fg-subtle">
-                {summaryMeta.cached ? "Cached" : "Fresh"}
-                {summaryMeta.model ? ` · ${summaryMeta.model}` : ""}
-                {summaryMeta.generatedAt ? ` · ${dateFormat.format(new Date(summaryMeta.generatedAt))}` : ""}
-              </p>
-            )}
-          </section>
-        )}
+        {summaryOpen && <NoteSummaryPanel noteId={note.id} updatedAt={note.updatedAt} />}
 
         {/* Footer */}
         <div className="mt-4 flex items-center justify-between gap-3">

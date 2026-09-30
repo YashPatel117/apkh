@@ -96,6 +96,7 @@ export class MigrationsService implements OnModuleInit {
         name: '2026-09-30-note-plain-text',
         up: () => this.recomputeNotePlainText(),
       },
+      { name: '2026-09-30-summary-modes', up: () => this.addSummaryModes() },
     ];
   }
 
@@ -219,6 +220,24 @@ export class MigrationsService implements OnModuleInit {
       vectorsConverted: converted,
       vectorsDropped: dropped,
     };
+  }
+
+  /**
+   * Summaries are cached per mode now (brief, actions): existing ones are
+   * brief, and the unique index moves from (noteId, userId) to (noteId,
+   * userId, mode), since the old one would reject a second mode for a note.
+   */
+  private async addSummaryModes() {
+    const summaries = this.summaryModel.collection;
+    const { modifiedCount } = await summaries.updateMany(
+      { mode: { $exists: false } },
+      { $set: { mode: 'brief' } },
+    );
+    const indexDropped = await summaries
+      .dropIndex('noteId_1_userId_1')
+      .then(() => 1)
+      .catch(() => 0);
+    return { summariesUpdated: modifiedCount, indexDropped };
   }
 
   /** contentPlain used to glue paragraphs together ("<p>a</p><p>b</p>" → "ab"). */

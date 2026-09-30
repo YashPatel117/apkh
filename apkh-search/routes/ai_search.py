@@ -4,6 +4,7 @@ API endpoints for AI RAG requests from the API orchestration layer.
 
 import logging
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
@@ -41,6 +42,8 @@ class RagRequest(BaseModel):
 
 
 class SummaryRequest(BaseModel):
+    # brief: a compact summary · actions: tasks, decisions, deadlines and people
+    mode: Literal["brief", "actions"] = "brief"
     note_id: str | None = None
     title: str | None = None
     category: str | None = None
@@ -162,9 +165,11 @@ async def summarize_note(body: SummaryRequest, request: Request):
         model=model,
         user_id=user_id,
         request_id=request_id,
+        mode=body.mode,
     )
     return {
         "summary": result["summary"],
+        "actions": result.get("actions"),
         "error": result.get("error", False),
         "tokens_used": result["tokens_used"],
         "request_id": request_id,
