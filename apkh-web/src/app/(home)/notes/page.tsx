@@ -3,16 +3,16 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import { FolderOpen, MousePointerClick, Plus, SearchX, Sparkles, X } from "lucide-react";
-import { ShowNote } from "@/app/common/components/showNote";
-import { useNotes } from "@/app/common/context/notesContext";
+import { ShowNote } from "@/components/showNote";
+import { useNotes } from "@/context/notesContext";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { deleteNote as deleteNoteAction, markNoteIndexing } from "@/store/slices/noteSlice";
-import { deleteNote, reindexNote } from "@/service/noteService";
-import { getErrorMessage } from "@/service/axios/axios";
-import { INote } from "@/app/common/models/note";
-import { Button } from "@/app/common/ui/Button";
-import { ConfirmDialog } from "@/app/common/ui/ConfirmDialog";
-import { useToast } from "@/app/common/ui/Toast";
+import { deleteNote, reindexNote } from "@/services/noteService";
+import { getErrorMessage } from "@/services/axios";
+import { INote } from "@/models/note";
+import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
 
 function NotesSkeleton() {
   return (

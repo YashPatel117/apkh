@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
-import { getChatSessions } from "@/service/chatService";
+import { getChatSessions } from "@/services/chatService";
 import { setSessions, setLoading, setActiveSession } from "@/store/slices/chatSlice";
-import { Spinner } from "@/app/common/ui/Spinner";
+import { getErrorMessage } from "@/services/axios";
+import { Spinner } from "@/components/ui/Spinner";
+import { useToast } from "@/components/ui/Toast";
 
 export default function ChatLayout({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
+  const toast = useToast();
   const hasCachedSessions = useAppSelector((state) => state.chat.sessions.length > 0);
   const [ready, setReady] = useState(hasCachedSessions);
 
@@ -27,7 +30,7 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
           window.history.replaceState(null, "", "/chat");
         }
       } catch (err) {
-        console.error("Failed to load chat sessions:", err);
+        if (mounted) toast(getErrorMessage(err, "Couldn't load your chats."), "error");
       } finally {
         if (mounted) {
           dispatch(setLoading(false));
@@ -38,7 +41,7 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
     return () => {
       mounted = false;
     };
-  }, [dispatch]);
+  }, [dispatch, toast]);
 
   if (!ready) {
     return (

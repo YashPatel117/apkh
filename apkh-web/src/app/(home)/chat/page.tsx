@@ -10,8 +10,8 @@ import {
   deleteChatSession,
   IChatMessage,
   IChatSession,
-} from "@/service/chatService";
-import { getErrorMessage } from "@/service/axios/axios";
+} from "@/services/chatService";
+import { getErrorMessage } from "@/services/axios";
 import {
   addSession,
   setActiveSession,
@@ -22,18 +22,18 @@ import {
   renameSession,
   updateSessionTime,
 } from "@/store/slices/chatSlice";
-import { useNotes } from "@/app/common/context/notesContext";
-import { Avatar } from "@/app/common/components/sidebar";
-import { CitedMarkdown } from "@/app/common/components/citedMarkdown";
-import { useSourceViewer } from "@/app/common/components/sourceViewer";
-import { useSaveAnswerAsNote } from "@/app/common/hooks/useSaveAnswerAsNote";
-import { Tooltip } from "@/app/common/ui/Tooltip";
-import { LogoMark } from "@/app/common/ui/Logo";
-import { Button } from "@/app/common/ui/Button";
-import { Spinner } from "@/app/common/ui/Spinner";
-import { ConfirmDialog } from "@/app/common/ui/ConfirmDialog";
-import { useToast } from "@/app/common/ui/Toast";
-import { cn } from "@/app/common/ui/cn";
+import { useNotes } from "@/context/notesContext";
+import { Avatar } from "@/components/sidebar";
+import { CitedMarkdown } from "@/components/citedMarkdown";
+import { useSourceViewer } from "@/components/sourceViewer";
+import { useSaveAnswerAsNote } from "@/hooks/useSaveAnswerAsNote";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { LogoMark } from "@/components/ui/Logo";
+import { Button } from "@/components/ui/Button";
+import { Spinner } from "@/components/ui/Spinner";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
+import { cn } from "@/lib/cn";
 
 const dayFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 

@@ -5,14 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import axios from "axios";
 import { ArrowRight, Lock, Mail } from "lucide-react";
-import { login } from "@/service/authService";
-import { getValidToken } from "@/service/session";
-import { getErrorMessage } from "@/service/axios/axios";
+import { login } from "@/services/authService";
+import { getValidToken } from "@/services/session";
+import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch } from "@/store/hook";
 import { setToken } from "@/store/slices/authSlice";
-import { AuthShell, FormAlert } from "../common/components/authShell";
-import { Input } from "../common/ui/Input";
-import { Button } from "../common/ui/Button";
+import { AuthShell, FormAlert } from "@/components/authShell";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");

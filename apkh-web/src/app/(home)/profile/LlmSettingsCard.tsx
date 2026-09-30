@@ -2,17 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
-import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels } from "@/service/authService";
-import { getErrorMessage } from "@/service/axios/axios";
+import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels } from "@/services/authService";
+import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
-import { ILlmConfig, ILlmModel, IUser, LlmProvider, providerOfModel } from "@/app/common/models/user";
-import { Button } from "@/app/common/ui/Button";
-import { Input, fieldClass } from "@/app/common/ui/Input";
-import { ConfirmDialog } from "@/app/common/ui/ConfirmDialog";
-import { useToast } from "@/app/common/ui/Toast";
-import { Spinner } from "@/app/common/ui/Spinner";
-import { cn } from "@/app/common/ui/cn";
+import { ILlmConfig, ILlmModel, IUser, LlmProvider, providerOfModel } from "@/models/user";
+import { Button } from "@/components/ui/Button";
+import { Input, fieldClass } from "@/components/ui/Input";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
+import { Spinner } from "@/components/ui/Spinner";
+import { cn } from "@/lib/cn";
 
 // ── Provider catalogue ───────────────────────────────────────────────────────
 // Models are not listed here: they are fetched live from the provider with the

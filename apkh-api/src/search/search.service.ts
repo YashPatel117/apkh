@@ -117,10 +117,6 @@ export class SearchService {
     topK = 5,
     referencedNoteIds?: string[],
   ): Promise<AiSearchResult> {
-    this.logger.log(
-      `Performing AI Search for user ${userId}, query: "${query}"`,
-    );
-
     const activeLlm = await this.usersService.getActiveLlmSettings(userId);
     if (!activeLlm) {
       return this.buildGuidanceResponse(
@@ -275,8 +271,6 @@ export class SearchService {
     mode: SummaryMode = 'brief',
   ): Promise<NoteSummaryGenerationResult> {
     const noteId = String(note._id);
-    this.logger.log(`Generating ${mode} summary for note ${noteId}`);
-
     const activeLlm = await this.usersService.getActiveLlmSettings(userId);
     if (!activeLlm) {
       return {

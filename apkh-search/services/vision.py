@@ -48,7 +48,6 @@ def build_image_reader(
         cached = _cache.get(key)
         if cached is not None:
             _cache.move_to_end(key)
-            logger.info("Vision cache hit for %s", key[-12:])
             return cached
 
         async with semaphore:

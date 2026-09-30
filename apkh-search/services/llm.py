@@ -346,12 +346,6 @@ async def generate_rag_answer(
             user_prompt,
             config=trace_config,
         )
-        logger.info(
-            "RAG answer generated via %s/%s - %s tokens",
-            provider,
-            resolved_model,
-            result["tokens_used"],
-        )
         if not result["answer"]:
             result["answer"] = "The model returned an empty response. Please try again."
             result["error"] = True
@@ -499,12 +493,6 @@ async def generate_note_summary(
                 "tokens_used": result["tokens_used"],
                 "run_id": result.get("run_id"),
             }
-        logger.info(
-            "Note summary generated via %s/%s - %s tokens",
-            provider,
-            resolved_model,
-            result["tokens_used"],
-        )
         return {
             "summary": summary_text,
             "tokens_used": result["tokens_used"],
@@ -574,12 +562,6 @@ async def extract_image_content(
         _IMAGE_EXTRACTION_INSTRUCTION,
         user_content,
         config=trace_config,
-    )
-    logger.info(
-        "Image content extracted via %s/%s - %s tokens",
-        provider,
-        resolved_model,
-        result["tokens_used"],
     )
     return {"text": result["answer"], "tokens_used": result["tokens_used"]}
 

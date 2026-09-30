@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import axios from "axios";
 import { Lock, Mail } from "lucide-react";
-import { resetPassword } from "@/service/authService";
-import { getErrorMessage } from "@/service/axios/axios";
-import { AuthShell, FormAlert } from "../common/components/authShell";
-import { Input } from "../common/ui/Input";
-import { Button } from "../common/ui/Button";
+import { resetPassword } from "@/services/authService";
+import { getErrorMessage } from "@/services/axios";
+import { AuthShell, FormAlert } from "@/components/authShell";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 
 const MIN_PASSWORD = 6;
 

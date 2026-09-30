@@ -80,7 +80,6 @@ async def embed_query(body: EmbedQueryRequest, request: Request):
             detail="api_key and model are required for semantic search.",
         )
 
-    logger.info("Embedding AI query for model: %s", model)
     try:
         space = resolve_space(model, body.embedding_model, body.dimensions)
         embedding = await embed_query_text(body.query, api_key, space)
@@ -110,12 +109,6 @@ async def generate_rag(body: RagRequest, request: Request):
     request_id = str(uuid.uuid4())
     user_id = getattr(request.state, "user_id", None)
 
-    logger.info(
-        "Generating RAG for AI query: %s (with %s contexts) [request_id=%s]",
-        body.query,
-        len(body.contexts),
-        request_id,
-    )
     result = await generate_rag_answer(
         query=body.query,
         contexts=body.contexts,
@@ -150,12 +143,6 @@ async def summarize_note(body: SummaryRequest, request: Request):
     request_id = str(uuid.uuid4())
     user_id = getattr(request.state, "user_id", None)
 
-    logger.info(
-        "Generating note summary for note: %s with model %s [request_id=%s]",
-        body.note_id or "unknown",
-        model,
-        request_id,
-    )
     result = await generate_note_summary(
         title=body.title or "",
         category=body.category or "",
@@ -205,7 +192,6 @@ async def rewrite_query(body: RewriteQueryRequest, request: Request):
         user_id=getattr(request.state, "user_id", None),
         request_id=request_id,
     )
-    logger.info("Rewrote query %r -> %r [request_id=%s]", body.query, result["query"], request_id)
     return result
 
 
@@ -226,7 +212,6 @@ async def test_connection(body: TestLLMRequest, request: Request):
     request_id = str(uuid.uuid4())
     user_id = getattr(request.state, "user_id", None)
 
-    logger.info("Testing LLM connection for model: %s [request_id=%s]", model, request_id)
     result = await test_llm_connection(
         api_key=api_key,
         model=model,
@@ -239,7 +224,7 @@ async def test_connection(body: TestLLMRequest, request: Request):
 @router.post("/models")
 async def list_models(body: ListModelsRequest):
     """
-    List the chat models the given API key can use, fetched live from the provider.
+    List the models the given API key can use, fetched live from the provider.
     """
     api_key = (body.api_key or body.apiKey or "").strip()
 
@@ -254,5 +239,4 @@ async def list_models(body: ListModelsRequest):
     except ModelListError as exc:
         return {"ok": False, "error": str(exc), "models": []}
 
-    logger.info("Listed %s %s models", len(models), body.provider)
     return {"ok": True, "error": None, "models": models}

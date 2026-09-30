@@ -1,6 +1,6 @@
 "use client";
 
-import { INote, IndexStatus } from "@/app/common/models/note";
+import { INote, IndexStatus } from "@/models/note";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { logout } from "./authSlice";
 

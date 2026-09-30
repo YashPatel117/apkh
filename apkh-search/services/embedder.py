@@ -112,7 +112,6 @@ async def embed_documents(
     except Exception as exc:  # pragma: no cover - provider-specific behavior
         raise _to_embedding_error(space, exc) from exc
 
-    logger.info("Embedded %s texts with %s@%s", len(vectors), space.model, space.dimensions)
     return vectors
 
 

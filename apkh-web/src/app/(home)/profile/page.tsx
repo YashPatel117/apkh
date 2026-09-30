@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { Coins, Cpu, FolderOpen, Mail, MessagesSquare, NotebookText, Paperclip, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useAppSelector } from "@/store/hook";
-import { Avatar } from "@/app/common/components/sidebar";
-import { supportsSemanticSearch } from "@/app/common/models/user";
+import { Avatar } from "@/components/sidebar";
+import { supportsSemanticSearch } from "@/models/user";
 import LlmSettingsCard from "./LlmSettingsCard";
 import SearchIndexCard from "./SearchIndexCard";
 

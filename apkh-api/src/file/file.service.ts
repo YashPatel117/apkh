@@ -12,7 +12,7 @@ export class FileService {
   constructor(
     private readonly httpService: HttpService,
     @InjectModel(NoteFiles.name) private fileModel: Model<NoteFileDocument>,
-  ) { }
+  ) {}
 
   // 📌 Upload files for a note
   async upload(token: string, noteId: string, files: Express.Multer.File[]) {

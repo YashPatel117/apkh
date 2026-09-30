@@ -14,7 +14,17 @@ type ResolvedNoteMetadata = {
 
 const FALLBACK_TITLE = 'Untitled Note';
 const FALLBACK_CATEGORY = 'General';
-const ACRONYMS = new Set(['ai', 'api', 'db', 'ml', 'qa', 'seo', 'sql', 'ui', 'ux']);
+const ACRONYMS = new Set([
+  'ai',
+  'api',
+  'db',
+  'ml',
+  'qa',
+  'seo',
+  'sql',
+  'ui',
+  'ux',
+]);
 const STOP_WORDS = new Set([
   'a',
   'an',
@@ -201,9 +211,12 @@ export function resolveNoteMetadata({
   existingCategories = [],
 }: ResolveNoteMetadataInput): ResolvedNoteMetadata {
   const plainText = htmlToPlainText(content);
-  const sourceText = normalizeWhitespace([title, plainText].filter(Boolean).join(' '));
+  const sourceText = normalizeWhitespace(
+    [title, plainText].filter(Boolean).join(' '),
+  );
   const resolvedTitle = normalizeUserText(title) || generateTitle(plainText);
-  const categorySource = sourceText || (resolvedTitle === FALLBACK_TITLE ? '' : resolvedTitle);
+  const categorySource =
+    sourceText || (resolvedTitle === FALLBACK_TITLE ? '' : resolvedTitle);
   const resolvedCategory =
     resolveProvidedCategory(category, existingCategories) ||
     findBestExistingCategory(existingCategories, categorySource) ||
@@ -231,7 +244,9 @@ function normalizeUserText(value?: string | null): string {
 function generateTitle(plainText: string): string {
   const firstLine = firstMeaningfulLine(plainText);
   if (firstLine) {
-    const firstSentence = normalizeWhitespace(firstLine.split(/[.!?](?:\s|$)/)[0] || firstLine);
+    const firstSentence = normalizeWhitespace(
+      firstLine.split(/[.!?](?:\s|$)/)[0] || firstLine,
+    );
     return trimToLength(firstSentence || firstLine, 72) || FALLBACK_TITLE;
   }
 
@@ -247,7 +262,9 @@ function firstMeaningfulLine(plainText: string): string {
   const lines = plainText
     .split(/\n+/)
     .map((line) =>
-      normalizeWhitespace(line.replace(/^#+\s*/, '').replace(/^[\s\-*\u2022\d.)]+/, '')),
+      normalizeWhitespace(
+        line.replace(/^#+\s*/, '').replace(/^[\s\-*\u2022\d.)]+/, ''),
+      ),
     )
     .filter(Boolean);
 
@@ -276,7 +293,8 @@ function resolveProvidedCategory(
 
   const matchingExistingCategory = existingCategories.find(
     (existingCategory) =>
-      existingCategory.trim().toLowerCase() === normalizedCategory.toLowerCase(),
+      existingCategory.trim().toLowerCase() ===
+      normalizedCategory.toLowerCase(),
   );
 
   return matchingExistingCategory?.trim() || normalizedCategory;
@@ -332,7 +350,9 @@ function scoreExistingCategory(
     return score;
   }
 
-  const matchedTokens = categoryTokens.filter((token) => sourceTokens.has(token)).length;
+  const matchedTokens = categoryTokens.filter((token) =>
+    sourceTokens.has(token),
+  ).length;
   if (!matchedTokens) {
     return score;
   }
@@ -355,7 +375,8 @@ function inferHintCategory(sourceText: string): string | null {
 
   for (const hint of CATEGORY_HINTS) {
     const score = hint.keywords.reduce(
-      (total, keyword) => total + (sourceTokens.has(normalizeToken(keyword)) ? 1 : 0),
+      (total, keyword) =>
+        total + (sourceTokens.has(normalizeToken(keyword)) ? 1 : 0),
       0,
     );
 

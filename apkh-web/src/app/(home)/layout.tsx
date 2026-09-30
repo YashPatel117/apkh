@@ -4,13 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu as MenuIcon, RefreshCw, Sparkles, WifiOff } from "lucide-react";
-import { profile } from "@/service/authService";
-import { getValidToken, clearToken } from "@/service/session";
-import { getErrorMessage } from "@/service/axios/axios";
+import { profile } from "@/services/authService";
+import { getValidToken, clearToken } from "@/services/session";
+import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { logout, setToken, setUser } from "@/store/slices/authSlice";
 import { addNote, markNoteIndexing, setNotes } from "@/store/slices/noteSlice";
-import { useIndexStatusSync } from "../common/hooks/useIndexStatusSync";
+import { useIndexStatusSync } from "@/hooks/useIndexStatusSync";
 import { addSession, setActiveSession, setSessions } from "@/store/slices/chatSlice";
 import {
   aiSearchNotes,
@@ -19,25 +19,25 @@ import {
   getAllNotes,
   getNoteLastUpdatedTime,
   updateNote,
-} from "@/service/noteService";
-import { createChatSession, getChatSessions } from "@/service/chatService";
-import { INote, INoteDto } from "../common/models/note";
-import { NotesContext, SelectedNote } from "../common/context/notesContext";
-import { cleanAiErrorMessage, htmlToText, isAiErrorResponse } from "../common/service/aiResponse";
-import MentionTextField from "../common/components/mentionTextField";
-import { AiAnswerPanel } from "../common/components/aiAnswerPanel";
-import { SourceViewerProvider } from "../common/components/sourceViewer";
-import { fromAiReference } from "../common/components/sources";
-import { Sidebar } from "../common/components/sidebar";
-import { Modal } from "../common/ui/Modal";
-import { Button } from "../common/ui/Button";
-import { Tooltip } from "../common/ui/Tooltip";
-import { ThemeToggle } from "../common/ui/theme";
-import { useToast } from "../common/ui/Toast";
-import { Spinner } from "../common/ui/Spinner";
+} from "@/services/noteService";
+import { createChatSession, getChatSessions } from "@/services/chatService";
+import { INote, INoteDto } from "@/models/note";
+import { NotesContext, SelectedNote } from "@/context/notesContext";
+import { cleanAiErrorMessage, htmlToText, isAiErrorResponse } from "@/lib/aiResponse";
+import MentionTextField from "@/components/mentionTextField";
+import { AiAnswerPanel } from "@/components/aiAnswerPanel";
+import { SourceViewerProvider } from "@/components/sourceViewer";
+import { fromAiReference } from "@/components/sources";
+import { Sidebar } from "@/components/sidebar";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { ThemeToggle } from "@/components/ui/theme";
+import { useToast } from "@/components/ui/Toast";
+import { Spinner } from "@/components/ui/Spinner";
 import HomeLoading from "./loading";
 
-const NoteEditor = dynamic(() => import("../common/components/noteEditor"), {
+const NoteEditor = dynamic(() => import("@/components/noteEditor"), {
   ssr: false,
   loading: () => (
     <div className="flex h-96 items-center justify-center text-fg-subtle">

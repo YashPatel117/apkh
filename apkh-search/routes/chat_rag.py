@@ -29,8 +29,6 @@ async def chat_rag(body: ChatRagRequest, request: Request):
     Generate an AI response based on multi-source RAG context + conversational history.
     """
     request_id = str(uuid.uuid4())
-    logger.info("Received Chat RAG request for query: %s [request_id=%s]", body.query, request_id)
-
     try:
         dict_history = [{"role": msg.role, "content": msg.content} for msg in body.chat_history]
 

@@ -4,12 +4,12 @@ import { useState } from "react";
 import { DatabaseZap, RotateCw } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { setIndexStatus } from "@/store/slices/noteSlice";
-import { rebuildIndex, retryFailedIndexing } from "@/service/noteService";
-import { getErrorMessage } from "@/service/axios/axios";
-import { Button } from "@/app/common/ui/Button";
-import { ConfirmDialog } from "@/app/common/ui/ConfirmDialog";
-import { Spinner } from "@/app/common/ui/Spinner";
-import { useToast } from "@/app/common/ui/Toast";
+import { rebuildIndex, retryFailedIndexing } from "@/services/noteService";
+import { getErrorMessage } from "@/services/axios";
+import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Spinner } from "@/components/ui/Spinner";
+import { useToast } from "@/components/ui/Toast";
 
 function Count({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (

@@ -87,12 +87,6 @@ async def extract_files(body: ExtractRequest, request: Request):
         body.files,
         read_image,
     )
-    logger.info(
-        "Extracted %s file(s) for note %s: %s",
-        len(files),
-        body.note_id,
-        ", ".join(f"{f.file_name}={f.status}" for f in files),
-    )
     return ExtractResponse(files=files, tokens_used=usage.tokens_used)
 
 

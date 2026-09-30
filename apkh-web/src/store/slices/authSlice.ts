@@ -1,6 +1,6 @@
 "use client";
 
-import { IUser } from "@/app/common/models/user";
+import { IUser } from "@/models/user";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 interface AuthState {

@@ -14,10 +14,10 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { getValidToken } from "@/service/session";
-import { LogoMark, LogoWithText, Wordmark } from "./common/ui/Logo";
-import { ThemeToggle } from "./common/ui/theme";
-import { cn } from "./common/ui/cn";
+import { getValidToken } from "@/services/session";
+import { LogoMark, LogoWithText, Wordmark } from "@/components/ui/Logo";
+import { ThemeToggle } from "@/components/ui/theme";
+import { cn } from "@/lib/cn";
 
 const features = [
   {

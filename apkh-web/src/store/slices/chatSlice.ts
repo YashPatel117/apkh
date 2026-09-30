@@ -1,7 +1,7 @@
 "use client";
 
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-import { IChatSession, IChatMessage } from "@/service/chatService";
+import { IChatSession, IChatMessage } from "@/services/chatService";
 import { logout } from "./authSlice";
 
 interface ChatState {
