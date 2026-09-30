@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowUpRight, CircleAlert, FileText, Hourglass, MessageSquarePlus, Paperclip, Settings, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, BookmarkPlus, Check, CircleAlert, FileText, Hourglass, MessageSquarePlus, Paperclip, Settings, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { AiSearchResponse } from "@/service/noteService";
 import { Button } from "../ui/Button";
@@ -8,6 +9,9 @@ import { cn } from "../ui/cn";
 import { CitedMarkdown } from "./citedMarkdown";
 import { useSourceViewer } from "./sourceViewer";
 import { fromAiReference, sourceLocation } from "./sources";
+import { useSaveAnswerAsNote } from "../hooks/useSaveAnswerAsNote";
+import { useToast } from "../ui/Toast";
+import { getErrorMessage } from "@/service/axios/axios";
 
 type Reference = AiSearchResponse["references"][number];
 
@@ -39,6 +43,25 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onCont
   const confidence = answer && !errorMessage ? confidenceTone[answer.confidence] ?? confidenceTone.medium : null;
   const openSource = useSourceViewer();
   const openReference = (reference: Reference) => openSource(fromAiReference(reference));
+  const saveAnswerAsNote = useSaveAnswerAsNote();
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  // The answer already saved, so the same one isn't saved twice
+  const [savedAnswer, setSavedAnswer] = useState<string | null>(null);
+
+  const save = async () => {
+    if (!answer) return;
+    setSaving(true);
+    try {
+      await saveAnswerAsNote(answer.query || query, answer.answer, answer.references.map(fromAiReference));
+      setSavedAnswer(answer.answer);
+      toast("Saved as a note in AI Insights.", "success");
+    } catch (error) {
+      toast(getErrorMessage(error, "Couldn't save the answer."), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -174,8 +197,17 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onCont
       </div>
 
       {!isSearching && answer && !errorMessage && (
-        <div className="shrink-0 border-t border-line bg-surface px-5 py-4 sm:px-6">
-          <Button onClick={onContinue} loading={continuing} className="w-full" icon={<MessageSquarePlus className="size-4" />}>
+        <div className="flex shrink-0 gap-2 border-t border-line bg-surface px-5 py-4 sm:px-6">
+          <Button
+            variant="secondary"
+            onClick={() => void save()}
+            loading={saving}
+            disabled={savedAnswer === answer.answer}
+            icon={savedAnswer === answer.answer ? <Check className="size-4" /> : <BookmarkPlus className="size-4" />}
+          >
+            {savedAnswer === answer.answer ? "Saved" : "Save as note"}
+          </Button>
+          <Button onClick={onContinue} loading={continuing} className="flex-1" icon={<MessageSquarePlus className="size-4" />}>
             Continue this conversation
           </Button>
         </div>

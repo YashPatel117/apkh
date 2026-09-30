@@ -22,6 +22,14 @@ export interface ChatMessageResponse {
   answer: string;
   tokens_used: number;
   sources?: SourceRef[];
+  /** The chat's title (set from the first question of a new chat) */
+  title?: string;
+}
+
+/** An empty conversation, titled after its first question. */
+export async function createEmptyChat() {
+  const res = await webApi.post("/chat/session", {});
+  return res.data.data as IChatSession;
 }
 
 /** Starts a conversation from an AI search answer (and the sources it cites). */

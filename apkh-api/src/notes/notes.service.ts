@@ -318,6 +318,15 @@ export class NotesService {
     }
   }
 
+  /** Notes related to (or near-duplicates of) a note. */
+  async similar(userId: string, _id: string) {
+    const note = await this.noteModel.exists({ userId, _id });
+    if (!note) {
+      throw new HttpException('Note not found', HttpStatus.BAD_REQUEST);
+    }
+    return this.searchService.similarNotes(userId, _id);
+  }
+
   /** Queue a note for re-indexing (e.g. to retry an attachment). */
   async reindex(userId: string, _id: string, force = false) {
     const note = await this.noteModel.exists({ userId, _id });

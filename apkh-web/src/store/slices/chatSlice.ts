@@ -39,6 +39,10 @@ const chatSlice = createSlice({
         state.sessions.unshift(session);
       }
     },
+    renameSession: (state, action: PayloadAction<{ id: string; title: string }>) => {
+      const session = state.sessions.find((s) => s.id === action.payload.id);
+      if (session) session.title = action.payload.title;
+    },
     removeSession: (state, action: PayloadAction<string>) => {
       state.sessions = state.sessions.filter((s) => s.id !== action.payload);
       if (state.activeSessionId === action.payload) {
@@ -77,7 +81,8 @@ export const {
   addMessage,
   removeMessage,
   setLoading,
-  updateSessionTime
+  updateSessionTime,
+  renameSession,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

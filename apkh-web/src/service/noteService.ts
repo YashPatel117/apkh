@@ -158,3 +158,14 @@ export async function rebuildIndex(force: boolean) {
   const res = await webApi.post("/notes/reindex", { force });
   return res.data as IndexStatus;
 }
+
+export type SimilarNotes = {
+  /** Compared by meaning (false: by keywords, e.g. with a Claude key) */
+  semantic: boolean;
+  notes: { noteId: string; noteTitle: string; similarity: number | null; nearDuplicate: boolean }[];
+};
+
+export async function getSimilarNotes(noteId: string) {
+  const res = await webApi.get(`/notes/${noteId}/similar`);
+  return res.data as SimilarNotes;
+}

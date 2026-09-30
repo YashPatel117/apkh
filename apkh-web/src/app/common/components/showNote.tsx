@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AtSign, ChevronDown, Clock, Paperclip, Sparkles, Trash2 } from "lucide-react";
+import { AtSign, ChevronDown, Clock, Layers, Paperclip, Sparkles, Trash2 } from "lucide-react";
 import { INote, NoteIndexState } from "../models/note";
 import { IndexBadge } from "./indexBadge";
 import { NoteSummaryPanel } from "./noteSummaryPanel";
+import { SimilarNotesModal } from "./similarNotes";
+import { useNotes } from "../context/notesContext";
 import FileDisplay from "./fileDisplay";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "../service/noteLinkUtils";
 import { Modal } from "../ui/Modal";
@@ -71,6 +73,8 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
   const [isTruncated, setIsTruncated] = useState(false);
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [similarOpen, setSimilarOpen] = useState(false);
+  const { openNote } = useNotes();
 
   const contentRef = useRef<HTMLDivElement>(null);
   const categoryLabel = note.category?.trim() || "Uncategorized";
@@ -157,6 +161,9 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
             <IconAction label={summaryOpen ? "Hide AI summary" : "AI summary"} active={summaryOpen} onClick={() => setSummaryOpen((open) => !open)}>
               <Sparkles />
             </IconAction>
+            <IconAction label="Similar notes" onClick={() => setSimilarOpen(true)}>
+              <Layers />
+            </IconAction>
             <IconAction label="Delete note" danger onClick={() => onDelete?.()}>
               <Trash2 />
             </IconAction>
@@ -208,6 +215,14 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
           )}
         </div>
       </article>
+
+      <SimilarNotesModal
+        noteId={note.id}
+        noteTitle={note.title}
+        open={similarOpen}
+        onClose={() => setSimilarOpen(false)}
+        onOpenNote={openNote}
+      />
 
       <Modal open={Boolean(previewFile)} onClose={() => setPreviewFile(null)} title={previewFile ? displayFileName(previewFile) : ""} size="xl">
         {previewFile && <FileDisplay fileName={previewFile} noteId={note.id} />}

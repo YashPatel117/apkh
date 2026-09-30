@@ -780,6 +780,47 @@ describeWithDb('indexing pipeline', () => {
     aggregate.mockRestore();
   });
 
+  it('finds similar notes by meaning (or keywords for Claude) and flags near-duplicates', async () => {
+    const note = await createNote(
+      'Deploy runbook',
+      '<p>Rollout steps for the production cluster</p>',
+    );
+    await createNote(
+      'Deploy runbook copy',
+      '<p>Rollout steps for the production cluster</p>',
+    );
+    await createNote(
+      'Cluster upgrade',
+      '<p>Production cluster rollout plan</p>',
+    );
+    await createNote('Recipes', '<p>Banana bread with walnuts</p>');
+    await indexing.reindexAll(userId.toHexString());
+    await drain();
+
+    const byMeaning = await app
+      .get(SearchService)
+      .similarNotes(userId.toHexString(), note._id.toHexString());
+    expect(byMeaning.semantic).toBe(true);
+    expect(byMeaning.notes[0]).toMatchObject({
+      noteTitle: 'Deploy runbook copy',
+      nearDuplicate: true,
+    });
+    const related = byMeaning.notes.map((n) => n.noteTitle);
+    expect(related).toContain('Cluster upgrade');
+    expect(related).not.toContain('Recipes');
+    expect(related).not.toContain('Deploy runbook');
+
+    user.provider = 'anthropic';
+    const byKeywords = await app
+      .get(SearchService)
+      .similarNotes(userId.toHexString(), note._id.toHexString());
+    expect(byKeywords.semantic).toBe(false);
+    expect(byKeywords.notes.map((n) => n.noteTitle).sort()).toEqual([
+      'Cluster upgrade',
+      'Deploy runbook copy',
+    ]);
+  });
+
   it('chat transcripts are indexed and extended incrementally', async () => {
     const sessionModel = app.get<Model<any>>(getModelToken(ChatSession.name));
     const messageModel = app.get<Model<any>>(getModelToken(ChatMessage.name));

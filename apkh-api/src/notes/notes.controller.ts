@@ -146,6 +146,12 @@ export class NotesController {
     return this.notesService.summarize(token, userId, id, query.mode);
   }
 
+  /** SIMILAR NOTES: related notes and near-duplicates */
+  @Get(':id/similar')
+  similar(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    return this.notesService.similar(userId, id);
+  }
+
   /** RE-INDEX one note */
   @Post(':id/reindex')
   @HttpCode(HttpStatus.ACCEPTED)

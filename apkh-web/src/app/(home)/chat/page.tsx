@@ -1,22 +1,33 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowUp, MessagesSquare, Paperclip, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowUp, BookmarkPlus, Check, MessagesSquare, Paperclip, Plus, Search, Trash2 } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
-import { getChatMessages, sendChatMessage, deleteChatSession, IChatMessage, IChatSession } from "@/service/chatService";
+import {
+  createEmptyChat,
+  getChatMessages,
+  sendChatMessage,
+  deleteChatSession,
+  IChatMessage,
+  IChatSession,
+} from "@/service/chatService";
 import { getErrorMessage } from "@/service/axios/axios";
 import {
+  addSession,
   setActiveSession,
   setMessages,
   addMessage,
   removeMessage,
   removeSession,
+  renameSession,
   updateSessionTime,
 } from "@/store/slices/chatSlice";
 import { useNotes } from "@/app/common/context/notesContext";
 import { Avatar } from "@/app/common/components/sidebar";
 import { CitedMarkdown } from "@/app/common/components/citedMarkdown";
 import { useSourceViewer } from "@/app/common/components/sourceViewer";
+import { useSaveAnswerAsNote } from "@/app/common/hooks/useSaveAnswerAsNote";
+import { Tooltip } from "@/app/common/ui/Tooltip";
 import { LogoMark } from "@/app/common/ui/Logo";
 import { Button } from "@/app/common/ui/Button";
 import { Spinner } from "@/app/common/ui/Spinner";
@@ -38,6 +49,7 @@ export default function ChatPage() {
   const [fetchingMessages, setFetchingMessages] = useState(false);
   const [mobileShowList, setMobileShowList] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<IChatSession | null>(null);
+  const [creating, setCreating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeRef = useRef(activeSessionId);
@@ -95,6 +107,7 @@ export default function ChatPage() {
     try {
       const response = await sendChatMessage(sessionId, content);
       dispatch(updateSessionTime(sessionId));
+      if (response.title) dispatch(renameSession({ id: sessionId, title: response.title }));
       // Only append if the user is still looking at this conversation.
       if (activeRef.current === sessionId) {
         dispatch(
@@ -130,6 +143,21 @@ export default function ChatPage() {
     }
   };
 
+  const startNewChat = async () => {
+    setCreating(true);
+    try {
+      const session = await createEmptyChat();
+      dispatch(addSession(session));
+      dispatch(setActiveSession(session.id));
+      setMobileShowList(false);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    } catch (error) {
+      toast(getErrorMessage(error, "Couldn't start a new chat."), "error");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const selectSession = (id: string) => {
     dispatch(setActiveSession(id));
     setMobileShowList(false);
@@ -144,12 +172,17 @@ export default function ChatPage() {
           </span>
           <h1 className="mt-5 text-xl font-bold tracking-tight text-fg">No conversations yet</h1>
           <p className="mt-2 text-sm leading-relaxed text-fg-muted">
-            Ask AI a question from the search bar, then choose <span className="font-semibold text-fg">Continue this conversation</span>{" "}
-            to keep chatting here with full context.
+            Start a chat grounded in your notes, or ask AI from the search bar and choose{" "}
+            <span className="font-semibold text-fg">Continue this conversation</span>.
           </p>
-          <Button className="mt-6" onClick={focusSearch} icon={<Search className="size-4" />}>
-            Ask a question
-          </Button>
+          <div className="mt-6 flex justify-center gap-2">
+            <Button onClick={() => void startNewChat()} loading={creating} icon={<Plus className="size-4" />}>
+              New chat
+            </Button>
+            <Button variant="secondary" onClick={focusSearch} icon={<Search className="size-4" />}>
+              Ask AI
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -164,9 +197,13 @@ export default function ChatPage() {
           mobileShowList ? "flex" : "hidden",
         )}
       >
-        <div className="flex h-14 shrink-0 items-center justify-between px-4">
-          <h2 className="text-sm font-semibold text-fg">Conversations</h2>
-          <span className="text-xs text-fg-subtle tabular-nums">{sessions.length}</span>
+        <div className="flex h-14 shrink-0 items-center justify-between gap-2 px-4">
+          <h2 className="text-sm font-semibold text-fg">
+            Conversations <span className="ml-1 text-xs font-normal text-fg-subtle tabular-nums">{sessions.length}</span>
+          </h2>
+          <Button size="sm" variant="soft" onClick={() => void startNewChat()} loading={creating} icon={<Plus className="size-3.5" />}>
+            New chat
+          </Button>
         </div>
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
           {sessions.map((session) => {
@@ -232,7 +269,14 @@ export default function ChatPage() {
                 <Spinner />
               </div>
             ) : (
-              messages.map((msg, idx) => <MessageBubble key={msg.id || idx} message={msg} userName={user?.name ?? ""} />)
+              messages.map((msg, idx) => (
+                <MessageBubble
+                  key={msg.id || idx}
+                  message={msg}
+                  userName={user?.name ?? ""}
+                  question={messages.slice(0, idx).findLast((m) => m.role === "user")?.content ?? ""}
+                />
+              ))
             )}
             {isSending && (
               <div className="flex items-start gap-3">
@@ -296,7 +340,7 @@ export default function ChatPage() {
   );
 }
 
-function MessageBubble({ message, userName }: { message: IChatMessage; userName: string }) {
+function MessageBubble({ message, userName, question }: { message: IChatMessage; userName: string; question: string }) {
   const isUser = message.role === "user";
 
   if (isUser) {
@@ -312,22 +356,50 @@ function MessageBubble({ message, userName }: { message: IChatMessage; userName:
     );
   }
 
-  return <AssistantBubble message={message} />;
+  return <AssistantBubble message={message} question={question} />;
 }
 
 /** An answer, with its [n] citations and the note passages behind them. */
-function AssistantBubble({ message }: { message: IChatMessage }) {
+function AssistantBubble({ message, question }: { message: IChatMessage; question: string }) {
   const openSource = useSourceViewer();
+  const saveAnswerAsNote = useSaveAnswerAsNote();
+  const toast = useToast();
   const [showAllSources, setShowAllSources] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+
+  const save = async () => {
+    setSaveState("saving");
+    try {
+      await saveAnswerAsNote(question, message.content, message.sources ?? []);
+      setSaveState("saved");
+      toast("Saved as a note in AI Insights.", "success");
+    } catch (error) {
+      setSaveState("idle");
+      toast(getErrorMessage(error, "Couldn't save the answer."), "error");
+    }
+  };
   const sources = (message.sources ?? []).map((source, i) => ({ source, number: i + 1 }));
   const shown = showAllSources ? sources : sources.filter(({ source }) => source.cited);
 
   return (
-    <div className="flex items-start gap-3">
+    <div className="group/answer flex items-start gap-3">
       <span className="mt-0.5 hidden sm:block">
         <LogoMark size={32} className="rounded-full" />
       </span>
-      <div className="min-w-0 max-w-full flex-1 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 sm:max-w-[85%] sm:flex-none">
+      <div className="relative min-w-0 max-w-full flex-1 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 sm:max-w-[85%] sm:flex-none">
+        <div className="absolute -top-3 right-3 opacity-0 transition-opacity group-hover/answer:opacity-100 focus-within:opacity-100">
+          <Tooltip label={saveState === "saved" ? "Saved to AI Insights" : "Save as note"}>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saveState !== "idle"}
+              className="flex size-7 cursor-pointer items-center justify-center rounded-lg border border-line bg-surface text-fg-subtle shadow-xs transition-colors hover:text-fg disabled:cursor-default"
+              aria-label="Save answer as note"
+            >
+              {saveState === "saved" ? <Check className="size-3.5" /> : saveState === "saving" ? <Spinner className="size-3.5" /> : <BookmarkPlus className="size-3.5" />}
+            </button>
+          </Tooltip>
+        </div>
         <div className="rich-content text-fg">
           <CitedMarkdown
             text={message.content}

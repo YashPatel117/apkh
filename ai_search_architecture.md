@@ -176,7 +176,17 @@ In the web app every `[n]` is a button, and every source card opens the **source
 - a note passage opens the whole note, scrolled to the passage, which is highlighted (whitespace-insensitive matching; the CSS Custom Highlight API, with a `<mark>` fallback)
 - an attachment passage opens the file, PDFs at the cited page (`#page=N`)
 
+### Similar notes
+
+`GET /notes/:id/similar` represents each note by the average of its passage vectors (text and attachments) and returns the closest notes, flagging near-duplicates (similarity 0.95 and up). Below a per-provider floor (Gemini 0.6, OpenAI 0.35) notes aren't considered related. With a Claude key, notes are compared by the words at the start of the note instead.
+
+### Saving answers
+
+"Save as note" on an AI answer or a chat reply creates a note in the **AI Insights** category: the answer, followed by a numbered list of its sources so its `[n]` citations still make sense. It is then indexed like any other note, so saved answers become searchable knowledge.
+
 ## 8. Chat
+
+A chat starts either from an AI search answer ("Continue this conversation") or empty ("New chat", titled after its first question).
 
 For each message the API assembles a small, ranked context with the same hybrid retrieval. A short follow-up that leans on the conversation ("and the budget for it?") is first rewritten into a standalone question for the search; the model still answers the question as asked. The context has up to 6 passages from notes and attachments, 3 from this conversation's indexed transcript, and 3 from other conversations, plus the last 10 messages. The answer is generated before anything is saved, so a failed answer leaves no unanswered question in the history.
 

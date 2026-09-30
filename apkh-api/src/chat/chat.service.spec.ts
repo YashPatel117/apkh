@@ -135,6 +135,7 @@ describe('ChatService.sendMessage', () => {
       answer: 'The answer',
       tokens_used: 42,
       sources: [],
+      title: 'Chat',
     });
     expect(saved).toEqual([
       expect.objectContaining({ role: 'user', content: 'What did we decide?' }),
@@ -178,6 +179,13 @@ describe('ChatService.sendMessage', () => {
         expect.objectContaining({ excerpt: 'budget 10k', cited: false }),
       ],
     });
+  });
+
+  it('names a new chat after its first question', async () => {
+    session.title = 'New chat';
+    const result = await send('How should we plan the Q3 product launch?');
+    expect(result.title).toBe('How should we plan the Q3...');
+    expect(session.title).toBe('How should we plan the Q3...');
   });
 
   it('saves nothing when the model fails, so the question can be retried', async () => {

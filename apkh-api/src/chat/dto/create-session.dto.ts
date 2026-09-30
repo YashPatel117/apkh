@@ -39,14 +39,17 @@ export class ChatSourceDto {
   cited?: boolean;
 }
 
+/** Empty for a new chat, or an AI search question + answer to continue from. */
 export class CreateSessionDto {
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  firstMessage: string;
+  firstMessage?: string;
 
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  aiResponse: string;
+  aiResponse?: string;
 
   /** Sources of `aiResponse`, so its citations keep working in the chat */
   @IsOptional()

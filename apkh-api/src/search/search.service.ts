@@ -86,6 +86,8 @@ export function similarityThresholds(provider: LlmProvider) {
 // larger share of the note instead.
 const PINNED_NOTES_MAX_CHUNKS = 12;
 
+const SIMILAR_NOTES_LIMIT = 5;
+
 const SUMMARY_CONTEXT_CHAR_LIMIT = 24000;
 const SUMMARY_CONTEXT_MAX_CHUNKS = 36;
 
@@ -246,6 +248,22 @@ export class SearchService {
       isError: false,
       pendingNotes,
       searchedFor,
+    };
+  }
+
+  /** Notes like a given note (see RetrievalService.similarNotes). */
+  async similarNotes(userId: string, noteId: string) {
+    const space = embeddingSpaceFor(
+      await this.usersService.getActiveProvider(userId),
+    );
+    return {
+      semantic: Boolean(space),
+      notes: await this.retrieval.similarNotes(
+        userId,
+        noteId,
+        space,
+        SIMILAR_NOTES_LIMIT,
+      ),
     };
   }
 

@@ -60,6 +60,24 @@ const RRF_K = 60;
 const ATLAS_NUM_CANDIDATES = CANDIDATES_PER_LEG * 15;
 // After an Atlas Vector Search error, scan in the API for a while before trying again.
 const ATLAS_RETRY_MS = 10 * 60_000;
+// Similar notes: below the floor they're not really related (Gemini's scores run
+// higher than OpenAI's, as with search); above NEAR_DUPLICATE, near-copies.
+const SIMILAR_NOTE_MIN_SIMILARITY: Record<EmbeddingSpace['provider'], number> =
+  {
+    gemini: 0.6,
+    openai: 0.35,
+  };
+const NEAR_DUPLICATE_SIMILARITY = 0.95;
+// Words from the start of a note used to find related notes by keyword.
+const KEYWORD_SIMILARITY_WORDS = 40;
+
+export interface SimilarNote {
+  noteId: string;
+  noteTitle: string;
+  /** Similarity of the notes' average vectors; null when found by keywords */
+  similarity: number | null;
+  nearDuplicate: boolean;
+}
 
 /**
  * Hybrid retrieval over the chunk index: a semantic leg (cosine similarity in
@@ -212,6 +230,134 @@ export class RetrievalService {
             minSimilarity === null || similarity >= minSimilarity,
         )
     );
+  }
+
+  /**
+   * Notes most like a given note. With embeddings, each note is represented
+   * by the average of its passage vectors (text and attachments); without,
+   * by keyword overlap with the start of the note. Near-duplicates (almost
+   * identical in meaning) are flagged.
+   */
+  async similarNotes(
+    userId: string,
+    noteId: string,
+    space: EmbeddingSpace | null,
+    limit: number,
+  ): Promise<SimilarNote[]> {
+    const userOid = new Types.ObjectId(userId);
+    const noteOid = new Types.ObjectId(noteId);
+    return space
+      ? this.similarByMeaning(userOid, noteOid, space, limit)
+      : this.similarByKeywords(userOid, noteOid, limit);
+  }
+
+  private async similarByMeaning(
+    userId: Types.ObjectId,
+    noteId: Types.ObjectId,
+    space: EmbeddingSpace,
+    limit: number,
+  ): Promise<SimilarNote[]> {
+    const docs = await this.chunkModel
+      .find({
+        userId,
+        embeddingModel: space.id,
+        sourceType: { $in: ['note', 'file'] },
+      })
+      .select('noteId noteTitle vector')
+      .lean<{ noteId: Types.ObjectId; noteTitle: string; vector: unknown }[]>()
+      .exec();
+
+    const centroids = new Map<string, { title: string; sum: Float32Array }>();
+    for (const doc of docs) {
+      const vector = fromStoredVector(doc.vector);
+      if (!vector) continue;
+      const key = String(doc.noteId);
+      const entry = centroids.get(key) ?? {
+        title: doc.noteTitle,
+        sum: new Float32Array(vector.length),
+      };
+      if (entry.sum.length !== vector.length) continue;
+      vector.forEach((value, i) => (entry.sum[i] += value));
+      centroids.set(key, entry);
+    }
+
+    const target = centroids.get(String(noteId));
+    if (!target) {
+      return []; // not indexed in this space (yet)
+    }
+    return [...centroids.entries()]
+      .filter(([id]) => id !== String(noteId))
+      .map(([id, entry]) => {
+        // cosineSimilarity normalises, so summed vectors compare like averages
+        const similarity = cosineSimilarity(target.sum, entry.sum);
+        return {
+          noteId: id,
+          noteTitle: entry.title,
+          similarity,
+          nearDuplicate: similarity >= NEAR_DUPLICATE_SIMILARITY,
+        };
+      })
+      .filter(
+        (note) =>
+          note.similarity >= SIMILAR_NOTE_MIN_SIMILARITY[space.provider],
+      )
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+  }
+
+  private async similarByKeywords(
+    userId: Types.ObjectId,
+    noteId: Types.ObjectId,
+    limit: number,
+  ): Promise<SimilarNote[]> {
+    const own = await this.chunkModel
+      .find({ noteId, sourceType: 'note' })
+      .sort({ chunkIndex: 1 })
+      .limit(2)
+      .select('noteTitle text')
+      .lean()
+      .exec();
+    if (!own.length) {
+      return [];
+    }
+    const words = toTextSearch(
+      [own[0].noteTitle, ...own.map((chunk) => chunk.text)]
+        .join(' ')
+        .split(/\s+/)
+        .slice(0, KEYWORD_SIMILARITY_WORDS)
+        .join(' '),
+    );
+    const matches = await this.chunkModel
+      .find(
+        {
+          userId,
+          $text: { $search: words },
+          sourceType: { $in: ['note', 'file'] },
+          noteId: { $ne: noteId },
+        },
+        { score: { $meta: 'textScore' } },
+      )
+      .select('noteId noteTitle')
+      .sort({ score: { $meta: 'textScore' } })
+      .limit(CANDIDATES_PER_LEG)
+      .lean<{ noteId: Types.ObjectId; noteTitle: string }[]>()
+      .exec()
+      .catch(() => []);
+
+    const seen = new Set<string>();
+    const notes: SimilarNote[] = [];
+    for (const match of matches) {
+      const id = String(match.noteId);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      notes.push({
+        noteId: id,
+        noteTitle: match.noteTitle,
+        similarity: null,
+        nearDuplicate: false,
+      });
+    }
+    return notes.slice(0, limit);
   }
 
   private async keywordLeg(

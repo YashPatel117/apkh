@@ -187,6 +187,41 @@ describeWithDb('whole API (real AppModule)', () => {
       .expect(400);
   });
 
+  it('starts an empty chat, and rejects half a first exchange', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/chat/session')
+      .set('Authorization', token)
+      .send({})
+      .expect(201);
+    expect(created.body.data).toMatchObject({
+      title: 'New chat',
+      messageCount: 0,
+    });
+
+    await request(app.getHttpServer())
+      .post('/chat/session')
+      .set('Authorization', token)
+      .send({ firstMessage: 'only a question' })
+      .expect(400);
+  });
+
+  it('similar notes answers for an existing note and rejects unknown ones', async () => {
+    const notes = (
+      await request(app.getHttpServer())
+        .get('/notes')
+        .set('Authorization', token)
+    ).body.data;
+    const similar = await request(app.getHttpServer())
+      .get(`/notes/${notes[0].id}/similar`)
+      .set('Authorization', token)
+      .expect(200);
+    expect(similar.body).toMatchObject({ notes: [] }); // nothing indexed: search service is down
+    await request(app.getHttpServer())
+      .get('/notes/507f1f77bcf86cd799439011/similar')
+      .set('Authorization', token)
+      .expect(400);
+  });
+
   it('deleting a note removes its index job', async () => {
     const notes = (
       await request(app.getHttpServer())

@@ -56,6 +56,9 @@ export interface ChatSourceView {
 // Enough of a passage to show it and to find it again in the note.
 const SOURCE_EXCERPT_CHARS = 1000;
 
+const NEW_CHAT_TITLE = 'New chat';
+const TITLE_WORDS = 6;
+
 // Previous messages sent along with each question.
 const CHAT_HISTORY_LIMIT = 10;
 // Retrieved context per source; everything else in the library stays out of the prompt.
@@ -82,43 +85,49 @@ export class ChatService {
     private readonly queryRewrite: QueryRewriteService,
   ) {}
 
-  /** CREATE SESSION */
+  /**
+   * CREATE SESSION: empty ("New chat", titled by its first message), or
+   * continuing an AI search answer (its question, answer and sources).
+   */
   async createSession(userId: string, createSessionDto: CreateSessionDto) {
     try {
-      const words = createSessionDto.firstMessage
-        .split(' ')
-        .filter((w) => w.trim());
-      const rawTitle = words.slice(0, 6).join(' ');
-      const title = words.length > 6 ? `${rawTitle}...` : rawTitle;
+      const { firstMessage, aiResponse } = createSessionDto;
+      if (Boolean(firstMessage) !== Boolean(aiResponse)) {
+        throw new HttpException(
+          'firstMessage and aiResponse go together',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
 
       const session = new this.sessionModel({
         userId: new Types.ObjectId(userId),
-        title,
+        title: firstMessage ? titleFromMessage(firstMessage) : NEW_CHAT_TITLE,
         isChunked: false,
       });
       await session.save();
 
-      const userMessage = new this.messageModel({
-        sessionId: session._id,
-        role: 'user',
-        content: createSessionDto.firstMessage,
-      });
-      const aiMessage = new this.messageModel({
-        sessionId: session._id,
-        role: 'assistant',
-        content: createSessionDto.aiResponse,
-        sources: createSessionDto.sources?.map((source) =>
-          toStoredSource({ ...source, cited: source.cited ?? false }),
-        ),
-      });
-
-      await Promise.all([userMessage.save(), aiMessage.save()]);
+      if (firstMessage && aiResponse) {
+        const userMessage = new this.messageModel({
+          sessionId: session._id,
+          role: 'user',
+          content: firstMessage,
+        });
+        const aiMessage = new this.messageModel({
+          sessionId: session._id,
+          role: 'assistant',
+          content: aiResponse,
+          sources: createSessionDto.sources?.map((source) =>
+            toStoredSource({ ...source, cited: source.cited ?? false }),
+          ),
+        });
+        await Promise.all([userMessage.save(), aiMessage.save()]);
+      }
 
       return {
         id: session._id as string,
         title: session.title,
         updatedAt: session.updatedAt,
-        messageCount: 2,
+        messageCount: firstMessage ? 2 : 0,
       };
     } catch (error: unknown) {
       this.logger.error(`Failed to create session: ${errorMessage(error)}`);
@@ -318,6 +327,10 @@ export class ChatService {
       });
       await aiMessage.save();
 
+      // A new chat is named after its first question.
+      if (session.title === NEW_CHAT_TITLE && !chatHistory.length) {
+        session.title = titleFromMessage(sendMessageDto.message);
+      }
       // Update session time — assigning marks the doc modified so save() persists and bumps the timestamp
       session.updatedAt = new Date();
       await session.save();
@@ -350,6 +363,7 @@ export class ChatService {
         answer,
         tokens_used: tokensUsed,
         sources: sources.map(toSourceView),
+        title: session.title,
       };
     } catch (error: unknown) {
       throw toHttpException(error);
@@ -473,4 +487,11 @@ function toSourceView(source: ChatSource): ChatSourceView {
     excerpt: source.excerpt,
     cited: source.cited,
   };
+}
+
+/** A chat title from its first question: the first few words. */
+function titleFromMessage(message: string): string {
+  const words = message.split(/\s+/).filter(Boolean);
+  const title = words.slice(0, TITLE_WORDS).join(' ');
+  return words.length > TITLE_WORDS ? `${title}...` : title || NEW_CHAT_TITLE;
 }
