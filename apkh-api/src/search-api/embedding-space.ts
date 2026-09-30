@@ -6,15 +6,22 @@ import type { LlmProvider } from 'src/users/users.service';
  */
 export interface EmbeddingSpace {
   id: string;
-  provider: 'gemini' | 'openai';
+  provider: 'free' | 'gemini' | 'openai';
   model: string;
   dimensions: number;
 }
 
-// Both providers at 1536 dimensions: one vector index definition fits either,
-// and Gemini's vectors are half the size of its 3072 default for a negligible
-// quality difference.
+// Every space at 1536 dimensions: one vector index definition fits all of
+// them. Gemini's vectors are half the size of its 3072 default for a
+// negligible quality difference; the free AI's Qwen3-Embedding-0.6B vectors
+// (1024) are zero-padded by apkh-search, which leaves similarities unchanged.
 const SPACES: Record<EmbeddingSpace['provider'], EmbeddingSpace> = {
+  free: {
+    id: 'qwen3-embedding-0.6b@1536',
+    provider: 'free',
+    model: 'qwen3-embedding-0.6b',
+    dimensions: 1536,
+  },
   gemini: {
     id: 'gemini-embedding-001@1536',
     provider: 'gemini',
@@ -38,7 +45,7 @@ export function embeddingSpaceFor(
   provider: LlmProvider | null | undefined,
 ): EmbeddingSpace | null {
   if (provider === 'openrouter') return SPACES.openai;
-  return provider === 'gemini' || provider === 'openai'
+  return provider === 'free' || provider === 'gemini' || provider === 'openai'
     ? SPACES[provider]
     : null;
 }

@@ -15,7 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { INote } from "@/models/note";
-import { IUser } from "@/models/user";
+import { activeAi, IUser } from "@/models/user";
 import { LogoMark, Wordmark } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
 import { Menu, MenuItem } from "@/components/ui/Menu";
@@ -65,7 +65,7 @@ export function Avatar({ name, size = "md", className }: { name: string; size?: 
 export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory, onNewNote, onNavigate, onLogout }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const activeConfig = user.llmConfigs?.find((c) => c.isActive) ?? null;
+  const ai = activeAi(user);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -173,15 +173,15 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
           onClick={onNavigate}
           className={cn(
             "flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs transition-colors",
-            activeConfig
+            ai
               ? "bg-surface-2 text-fg-muted hover:text-fg"
               : "bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/15",
           )}
         >
-          {activeConfig ? <Cpu className="size-4 shrink-0 text-accent" /> : <TriangleAlert className="size-4 shrink-0" />}
+          {ai ? <Cpu className="size-4 shrink-0 text-accent" /> : <TriangleAlert className="size-4 shrink-0" />}
           <span className="min-w-0 flex-1">
-            <span className="block font-semibold">{activeConfig ? "AI model active" : "AI not configured"}</span>
-            <span className="block truncate opacity-80">{activeConfig ? activeConfig.llmModel : "Add an API key to ask AI"}</span>
+            <span className="block font-semibold">{ai ? "AI model active" : "AI not configured"}</span>
+            <span className="block truncate opacity-80">{ai ? (ai.kind === "free" ? ai.name : ai.model) : "Add an API key to ask AI"}</span>
           </span>
         </Link>
 

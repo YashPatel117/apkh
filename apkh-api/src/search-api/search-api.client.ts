@@ -60,6 +60,15 @@ export interface GeneratedText {
 const EXTRACT_TIMEOUT_MS = 10 * 60_000;
 const EMBED_TIMEOUT_MS = 2 * 60_000;
 const ANSWER_TIMEOUT_MS = 90_000;
+// The free AI runs on the host's CPU and serves one request at a time, so
+// calls can wait behind other users' as well as run slower.
+const FREE_AI_TIMEOUT_FACTOR = 4;
+
+function timeoutFor(llm: ActiveLlmSettings, timeoutMs: number) {
+  return llm.provider === 'free'
+    ? timeoutMs * FREE_AI_TIMEOUT_FACTOR
+    : timeoutMs;
+}
 
 /** Typed client for the apkh-search service. */
 @Injectable()
@@ -84,7 +93,7 @@ export class SearchApiClient {
         model: llm.model,
       },
       token,
-      EXTRACT_TIMEOUT_MS,
+      timeoutFor(llm, EXTRACT_TIMEOUT_MS),
     );
     return { files: data.files, tokensUsed: data.tokens_used ?? 0 };
   }
@@ -134,7 +143,7 @@ export class SearchApiClient {
         dimensions: space.dimensions,
       },
       token,
-      EMBED_TIMEOUT_MS,
+      timeoutFor(llm, EMBED_TIMEOUT_MS),
     );
     return {
       vectors: data.vectors.map(decodeVector),
@@ -158,7 +167,7 @@ export class SearchApiClient {
         dimensions: space.dimensions,
       },
       token,
-      EMBED_TIMEOUT_MS,
+      timeoutFor(llm, EMBED_TIMEOUT_MS),
     );
     return Float32Array.from(data.embedding);
   }
@@ -177,7 +186,7 @@ export class SearchApiClient {
       '/ai-search/rag',
       { query, contexts, api_key: llm.apiKey, model: llm.model },
       token,
-      ANSWER_TIMEOUT_MS,
+      timeoutFor(llm, ANSWER_TIMEOUT_MS),
     );
     return {
       text: data.answer ?? '',
@@ -213,7 +222,7 @@ export class SearchApiClient {
         model: llm.model,
       },
       token,
-      ANSWER_TIMEOUT_MS,
+      timeoutFor(llm, ANSWER_TIMEOUT_MS),
     );
     return {
       text: data.answer ?? '',
@@ -246,7 +255,7 @@ export class SearchApiClient {
       '/ai-search/rewrite-query',
       { query, history, api_key: llm.apiKey, model: llm.model },
       token,
-      ANSWER_TIMEOUT_MS,
+      timeoutFor(llm, ANSWER_TIMEOUT_MS),
     );
     return {
       query: data.query || query,
@@ -286,7 +295,7 @@ export class SearchApiClient {
         model: llm.model,
       },
       token,
-      ANSWER_TIMEOUT_MS,
+      timeoutFor(llm, ANSWER_TIMEOUT_MS),
     );
     return {
       text: data.summary ?? '',

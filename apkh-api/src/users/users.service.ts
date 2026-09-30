@@ -8,13 +8,35 @@ import { Model } from 'mongoose';
 import { User, UserDocument } from '../common/schema/user';
 import { EncryptionService } from '../common/utils/encryption.service';
 
-export type LlmProvider = 'openrouter' | 'gemini' | 'openai' | 'anthropic';
+export type LlmProvider =
+  | 'free'
+  | 'openrouter'
+  | 'gemini'
+  | 'openai'
+  | 'anthropic';
+/** Providers used with a user's own key (their models can be listed). */
 export const LLM_PROVIDERS: LlmProvider[] = [
   'openrouter',
   'gemini',
   'openai',
   'anthropic',
 ];
+
+/**
+ * The free built-in AI: open-source models the host runs (apkh-search picks
+ * them), used whenever a user has no active key of their own. On unless
+ * FREE_AI=off.
+ */
+export const FREE_MODEL_ID = 'free';
+export function freeAiEnabled(): boolean {
+  return process.env.FREE_AI?.trim().toLowerCase() !== 'off';
+}
+const FREE_AI_SETTINGS: ActiveLlmSettings = {
+  keyName: 'Free AI',
+  apiKey: '',
+  model: FREE_MODEL_ID,
+  provider: 'free',
+};
 
 export interface ActiveLlmSettings {
   keyName: string;
@@ -128,6 +150,20 @@ export class UsersService {
     return user.save();
   }
 
+  /** Switch to the free built-in AI: no saved config stays active. */
+  async useFreeAi(userId: string): Promise<UserDocument> {
+    if (!freeAiEnabled()) {
+      throw new BadRequestException('The free AI is turned off on this server');
+    }
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) throw new NotFoundException('User not found');
+
+    user.llmConfigs.forEach((c) => {
+      c.isActive = false;
+    });
+    return user.save();
+  }
+
   /** Delete a config by keyName */
   async deleteLlmConfig(
     userId: string,
@@ -166,7 +202,10 @@ export class UsersService {
     return this.encryption.decrypt(config.llmApiKey);
   }
 
-  /** Provider of the active config (no key decryption), or null if none/unknown. */
+  /**
+   * Provider of the active config (no key decryption); the free AI when no
+   * config is active; null if neither is available or the model is unknown.
+   */
   async getActiveProvider(userId: string): Promise<LlmProvider | null> {
     const user = await this.userModel
       .findById(userId)
@@ -175,7 +214,7 @@ export class UsersService {
       .exec();
     const active = user?.llmConfigs?.find((config) => config.isActive);
     if (!active) {
-      return null;
+      return user && freeAiEnabled() ? 'free' : null;
     }
     try {
       return this.detectProvider(active.llmModel);
@@ -184,7 +223,10 @@ export class UsersService {
     }
   }
 
-  /** Get the active config's decrypted key + model (used internally for RAG) */
+  /**
+   * The active config's decrypted key + model (used internally for RAG), or
+   * the free AI when no config is active.
+   */
   async getActiveLlmSettings(
     userId: string,
   ): Promise<ActiveLlmSettings | null> {
@@ -194,13 +236,9 @@ export class UsersService {
       .lean()
       .exec();
 
-    if (!user?.llmConfigs?.length) {
-      return null;
-    }
-
-    const active = user.llmConfigs.find((config) => config.isActive);
+    const active = user?.llmConfigs?.find((config) => config.isActive);
     if (!active) {
-      return null;
+      return user && freeAiEnabled() ? FREE_AI_SETTINGS : null;
     }
 
     return {

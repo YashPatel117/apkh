@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Coins, Cpu, FolderOpen, Mail, MessagesSquare, NotebookText, Paperclip, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useAppSelector } from "@/store/hook";
 import { Avatar } from "@/components/sidebar";
-import { supportsSemanticSearch } from "@/models/user";
+import { activeAi, supportsSemanticSearch } from "@/models/user";
 import LlmSettingsCard from "./LlmSettingsCard";
 import SearchIndexCard from "./SearchIndexCard";
 
@@ -35,7 +35,7 @@ export default function ProfilePage() {
 
   if (!user) return null; // the (home) layout renders the loading state
 
-  const activeConfig = user.llmConfigs?.find((c) => c.isActive) ?? null;
+  const ai = activeAi(user);
   const categories = new Set(notes.map((n) => n.category?.trim()).filter(Boolean)).size;
   const attachments = notes.reduce((t, n) => t + n.files.length, 0);
 
@@ -72,24 +72,24 @@ export default function ProfilePage() {
         <div className="space-y-6">
           <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
             <h2 className="font-semibold text-fg">AI search status</h2>
-            {activeConfig && supportsSemanticSearch(activeConfig.llmModel) ? (
+            {ai && (ai.kind === "free" || supportsSemanticSearch(ai.model)) ? (
               <div className="mt-4 flex items-start gap-3 rounded-2xl bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
                 <Cpu className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 text-sm">
                   <p className="font-semibold">Ready for grounded answers</p>
                   <p className="mt-0.5 truncate opacity-90">
-                    Using <span className="font-medium">{activeConfig.keyName}</span> · {activeConfig.llmModel}
+                    Using <span className="font-medium">{ai.name}</span> · {ai.model}
                   </p>
                 </div>
               </div>
-            ) : activeConfig ? (
+            ) : ai ? (
               <div className="mt-4 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 text-sm">
                   <p className="font-semibold">Keyword matching only</p>
                   <p className="mt-0.5 opacity-90">
-                    {activeConfig.llmModel} can answer and summarize, but Claude has no embedding model, so notes and
-                    attachments are found by keywords rather than meaning. Add a Gemini or OpenAI key for semantic search.
+                    {ai.model} can answer and summarize, but Claude has no embedding model, so notes and attachments are
+                    found by keywords rather than meaning. Use the free AI or a Gemini or OpenAI key for semantic search.
                   </p>
                 </div>
               </div>

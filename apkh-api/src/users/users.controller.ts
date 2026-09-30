@@ -26,7 +26,11 @@ import {
   IsString,
 } from 'class-validator';
 import { UsersService } from './users.service';
-import { LLM_PROVIDERS, type LlmProvider } from './users.service';
+import {
+  freeAiEnabled,
+  LLM_PROVIDERS,
+  type LlmProvider,
+} from './users.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
@@ -189,6 +193,18 @@ export class UsersController {
     return this.sanitizeUser(user);
   }
 
+  /** Use the free built-in AI instead of a saved config */
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @Post('/llm-configs/use-free')
+  @HttpCode(HttpStatus.OK)
+  async useFreeAi(@JwtTokenUserId() userId: string) {
+    const previousProvider = await this.usersService.getActiveProvider(userId);
+    const user = await this.usersService.useFreeAi(userId);
+    await this.reindexIfProviderChanged(userId, previousProvider);
+    return this.sanitizeUser(user);
+  }
+
   /** Delete a named config */
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
@@ -233,13 +249,16 @@ export class UsersController {
     throw new BadRequestException('apiKey or keyName is required');
   }
 
-  /** Strip encrypted keys before sending to frontend */
+  /**
+   * Strip encrypted keys before sending to frontend, and say whether the free
+   * AI is available (it is used whenever no config is active).
+   */
   private sanitizeUser(user: UserDocument) {
     const obj = user.toObject();
     obj.llmConfigs = obj.llmConfigs.map(
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       ({ llmApiKey: _k, ...rest }) => rest,
     );
-    return obj;
+    return { ...obj, freeAi: freeAiEnabled() };
   }
 }

@@ -74,6 +74,7 @@ const SIMILARITY_THRESHOLDS: Record<
   EmbeddingSpace['provider'],
   { min: number; high: number }
 > = {
+  free: { min: 0.45, high: 0.6 },
   gemini: { min: 0.5, high: 0.7 },
   openai: { min: 0.3, high: 0.5 },
 };

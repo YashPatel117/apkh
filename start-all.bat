@@ -20,6 +20,17 @@ if defined MISSING (
   exit /b 1
 )
 
+rem The free AI needs Ollama. Its Windows app normally runs in the background;
+rem start the server here if it's installed but not running.
+where ollama >nul 2>&1
+if not errorlevel 1 (
+  curl -s -o nul http://localhost:11434/api/version
+  if errorlevel 1 (
+    echo Starting Ollama for the free AI...
+    start "Ollama" /min ollama serve
+  )
+)
+
 set "API=npm run start:dev"
 set "STORAGE=npm start"
 set "WEB=npm run dev"

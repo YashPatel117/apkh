@@ -13,6 +13,7 @@ from services.embedder import EmbeddingError, embed_query as embed_query_text, r
 from services.llm import (
     generate_note_summary,
     generate_rag_answer,
+    has_credentials,
     rewrite_search_query,
     test_llm_connection,
 )
@@ -71,10 +72,10 @@ async def embed_query(body: EmbedQueryRequest, request: Request):
     """
     Generate an embedding vector for a single query string.
     """
-    api_key = body.api_key or body.apiKey
+    api_key = body.api_key or body.apiKey or ""
     model = body.model
 
-    if not api_key or not model:
+    if not has_credentials(api_key, model):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="api_key and model are required for semantic search.",
@@ -97,10 +98,10 @@ async def generate_rag(body: RagRequest, request: Request):
     """
     Feed context chunks and query to the active user's LLM provider.
     """
-    api_key = body.api_key or body.apiKey
+    api_key = body.api_key or body.apiKey or ""
     model = body.model
 
-    if not api_key or not model:
+    if not has_credentials(api_key, model):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="api_key and model are required for answer generation.",
@@ -131,10 +132,10 @@ async def summarize_note(body: SummaryRequest, request: Request):
     """
     Generate a concise summary for a single note.
     """
-    api_key = body.api_key or body.apiKey
+    api_key = body.api_key or body.apiKey or ""
     model = body.model
 
-    if not api_key or not model:
+    if not has_credentials(api_key, model):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="api_key and model are required for summary generation.",
@@ -200,10 +201,10 @@ async def test_connection(body: TestLLMRequest, request: Request):
     """
     Validate that a given API key + model combo actually works.
     """
-    api_key = body.api_key or body.apiKey
+    api_key = body.api_key or body.apiKey or ""
     model = body.model
 
-    if not api_key or not model:
+    if not has_credentials(api_key, model):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="api_key and model are required for connection testing.",

@@ -22,6 +22,7 @@ import {
 } from "@/services/noteService";
 import { createChatSession, getChatSessions } from "@/services/chatService";
 import { INote, INoteDto } from "@/models/note";
+import { activeAi } from "@/models/user";
 import { NotesContext, SelectedNote } from "@/context/notesContext";
 import { cleanAiErrorMessage, htmlToText, isAiErrorResponse } from "@/lib/aiResponse";
 import MentionTextField from "@/components/mentionTextField";
@@ -81,7 +82,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [saving, setSaving] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
-  const activeLlmConfig = user?.llmConfigs?.find((config) => config.isActive) ?? null;
+  const ai = activeAi(user);
   const indexCounts = useAppSelector((state) => state.note.indexStatus?.counts);
   const pendingIndex = indexCounts ? indexCounts.queued + indexCounts.processing : 0;
 
@@ -190,7 +191,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const canAsk = trimmedSearch.length >= MIN_AI_QUERY && !isAiSearching;
 
   async function handleAiSearch() {
-    if (!activeLlmConfig) {
+    if (!ai) {
       toast("Add and activate an AI key in Profile to enable answers.", "info");
       router.push("/profile");
       return;
@@ -391,7 +392,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 />
                 <Tooltip
                   label={
-                    !activeLlmConfig
+                    !ai
                       ? "Set up an AI key in Profile first"
                       : !canAsk && !isAiSearching
                         ? `Type at least ${MIN_AI_QUERY} characters`
@@ -401,7 +402,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 >
                   <Button
                     onClick={() => void handleAiSearch()}
-                    disabled={Boolean(activeLlmConfig) && !canAsk}
+                    disabled={Boolean(ai) && !canAsk}
                     loading={isAiSearching}
                     icon={!isAiSearching && <Sparkles className="size-4" />}
                     size="toolbar"
@@ -445,7 +446,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               AI answer
             </span>
           }
-          description={activeLlmConfig ? `${activeLlmConfig.keyName} · ${activeLlmConfig.llmModel}` : undefined}
+          description={ai ? `${ai.name} · ${ai.model}` : undefined}
         >
           <AiAnswerPanel
             query={aiQuery}

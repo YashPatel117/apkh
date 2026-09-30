@@ -2,6 +2,7 @@
 LLM service for answer generation using only per-request credentials.
 
 Supported providers (detected by model name):
+  - Free built-in  : the model id "free" (open-source models the host runs; see free_ai.py)
   - OpenRouter     : "author/model" ids (e.g. "qwen/qwen3.8-27b:free"); no native id has a "/"
   - Google Gemini  : model starts with "gemini-"
   - OpenAI         : model starts with "gpt-", "chatgpt-" or "o<N>" (o1, o3, o4-mini, ...)
@@ -19,6 +20,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+from services import free_ai
 from services.html_parser import parse_note_html
 from services.langsmith_config import build_langchain_config
 
@@ -124,9 +126,17 @@ def is_openrouter_model(model: str) -> bool:
     return "/" in model.strip()
 
 
+def has_credentials(api_key: str | None, model: str | None) -> bool:
+    """A model, plus the user's key unless it is the free built-in model."""
+    resolved_model = (model or "").strip()
+    return bool(resolved_model) and (bool((api_key or "").strip()) or free_ai.is_free_model(resolved_model))
+
+
 def detect_provider(model: str) -> str:
     """Detect provider from model name."""
     normalized = model.lower()
+    if free_ai.is_free_model(normalized):
+        return "free"
     if is_openrouter_model(normalized):
         return "openrouter"
     if normalized.startswith("gemini"):
@@ -213,14 +223,36 @@ def _model_unavailable_message(model: str) -> str:
     )
 
 
+def _failure_message(provider: str, model: str, exc: Exception, default: str) -> str:
+    """What to tell the user when a call to their model failed."""
+    if provider == "free":
+        free_ai.log_failure("chat", exc)
+        return free_ai.UNAVAILABLE_MESSAGE
+    if _is_model_unavailable(exc):
+        return _model_unavailable_message(model)
+    return default
+
+
 def supports_vision(model: str) -> bool:
     """Whether the model accepts images (used for OCR and image descriptions)."""
     normalized = model.strip().lower()
+    if free_ai.is_free_model(normalized):
+        return free_ai.reads_images()
     return normalized != "gpt-4" and not normalized.startswith(_TEXT_ONLY_MODEL_PREFIXES)
 
 
 def _chat_model(provider: str, api_key: str, model: str, temperature: float = 0.2) -> Any:
     """The LangChain chat model for a provider."""
+    if provider == "free":
+        return ChatOpenAI(
+            model=free_ai.chat_model(),
+            api_key=free_ai.api_key(),
+            base_url=free_ai.base_url(),
+            # No thinking: a small model on a CPU can't spare the time, and the
+            # prompts ask for direct answers.
+            reasoning_effort="none",
+            temperature=temperature,
+        )
     if provider == "gemini":
         return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, temperature=temperature)
     if provider == "openai":
@@ -286,10 +318,10 @@ async def generate_rag_answer(
             "run_id": None,
         }
 
-    resolved_key = api_key.strip()
+    resolved_key = (api_key or "").strip()
     resolved_model = model.strip()
 
-    if not resolved_key or not resolved_model:
+    if not has_credentials(resolved_key, resolved_model):
         return {
             "answer": "Add an active API key and model in profile settings to enable AI search.",
             "error": True,
@@ -339,15 +371,11 @@ async def generate_rag_answer(
         return result
     except Exception as exc:
         logger.error("LLM call failed [%s/%s]: %s", provider, resolved_model, exc)
-        if _is_model_unavailable(exc):
-            return {
-                "answer": _model_unavailable_message(resolved_model),
-                "error": True,
-                "tokens_used": 0,
-                "run_id": None,
-            }
         return {
-            "answer": "I'm sorry, I encountered an error while formulating the answer.",
+            "answer": _failure_message(
+                provider, resolved_model, exc,
+                "I'm sorry, I encountered an error while formulating the answer.",
+            ),
             "error": True,
             "tokens_used": 0,
             "run_id": None,
@@ -370,10 +398,10 @@ async def generate_note_summary(
     also returns `actions` (tasks, decisions, deadlines, people) extracted as
     structured data, with a one or two sentence summary.
     """
-    resolved_key = api_key.strip()
+    resolved_key = (api_key or "").strip()
     resolved_model = model.strip()
 
-    if not resolved_key or not resolved_model:
+    if not has_credentials(resolved_key, resolved_model):
         return {
             "summary": "Add an active API key and model in profile settings to generate summaries.",
             "error": True,
@@ -482,15 +510,11 @@ async def generate_note_summary(
         }
     except Exception as exc:
         logger.error("Note summary failed [%s/%s]: %s", provider, resolved_model, exc)
-        if _is_model_unavailable(exc):
-            return {
-                "summary": _model_unavailable_message(resolved_model),
-                "error": True,
-                "tokens_used": 0,
-                "run_id": None,
-            }
         return {
-            "summary": "I'm sorry, I encountered an error while generating the summary.",
+            "summary": _failure_message(
+                provider, resolved_model, exc,
+                "I'm sorry, I encountered an error while generating the summary.",
+            ),
             "error": True,
             "tokens_used": 0,
             "run_id": None,
@@ -510,7 +534,7 @@ async def extract_image_content(
     describe the visual content. Returns {text, tokens_used}; raises on
     provider errors.
     """
-    resolved_key = api_key.strip()
+    resolved_key = (api_key or "").strip()
     resolved_model = model.strip()
     provider = detect_provider(resolved_model)
 
@@ -551,10 +575,10 @@ async def test_llm_connection(
     """
     Verify that a given API key + model combination works.
     """
-    resolved_key = api_key.strip()
+    resolved_key = (api_key or "").strip()
     resolved_model = model.strip()
 
-    if not resolved_key or not resolved_model:
+    if not has_credentials(resolved_key, resolved_model):
         return {"ok": False, "error": "api_key and model are required"}
 
     try:
@@ -585,6 +609,8 @@ async def test_llm_connection(
         return {"ok": True, "error": None, "provider": provider}
     except Exception as exc:
         logger.info("Connection test for %s failed: %s", resolved_model, exc)
+        if provider == "free":
+            return {"ok": False, "error": _failure_message(provider, resolved_model, exc, "")}
         return {"ok": False, "error": provider_error_message(exc)}
 
 
@@ -599,10 +625,10 @@ async def generate_chat_rag_answer(
     user_id: str | None = None,
     request_id: str | None = None,
 ) -> dict:
-    resolved_key = api_key.strip()
+    resolved_key = (api_key or "").strip()
     resolved_model = model.strip()
 
-    if not resolved_key or not resolved_model:
+    if not has_credentials(resolved_key, resolved_model):
         return {
             "answer": "Add an active API key and model in profile settings to enable AI search.",
             "error": True,
@@ -677,15 +703,11 @@ async def generate_chat_rag_answer(
         }
     except Exception as exc:
         logger.error("Chat RAG call failed [%s/%s]: %s", provider, resolved_model, exc)
-        if _is_model_unavailable(exc):
-            return {
-                "answer": _model_unavailable_message(resolved_model),
-                "error": True,
-                "tokens_used": 0,
-                "run_id": None,
-            }
         return {
-            "answer": "I'm sorry, I encountered an error while formulating the response.",
+            "answer": _failure_message(
+                provider, resolved_model, exc,
+                "I'm sorry, I encountered an error while formulating the response.",
+            ),
             "error": True,
             "tokens_used": 0,
             "run_id": None,
@@ -705,7 +727,7 @@ async def rewrite_search_query(
     extra keywords. On any failure the original query comes back, flagged.
     """
     fallback = {"query": query, "keywords": [], "tokens_used": 0, "error": True}
-    resolved_key = api_key.strip()
+    resolved_key = (api_key or "").strip()
     resolved_model = model.strip()
     try:
         provider = detect_provider(resolved_model)

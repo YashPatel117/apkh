@@ -73,6 +73,12 @@ export async function activateLlmConfig(keyName: string) {
   return res.data as IUser;
 }
 
+/** Use the free built-in AI instead of a saved config */
+export async function switchToFreeAi() {
+  const res = await webApi.post("/users/llm-configs/use-free");
+  return res.data as IUser;
+}
+
 /** Delete a named config */
 export async function deleteLlmConfig(keyName: string) {
   const res = await webApi.delete(`/users/llm-configs/${encodeURIComponent(keyName)}`);

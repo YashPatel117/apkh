@@ -9,6 +9,11 @@ OpenAI's text-embedding-3-small through OpenRouter: the same model, so the same
 space as OpenAI keys. It is paid; a key without credit gets a 402, and the API
 falls back to keyword search.
 
+The free built-in AI embeds with Qwen3-Embedding-0.6B on the host's own server.
+Its 1024-dimension vectors are zero-padded to 1536 so they fit the same vector
+index as the other spaces; padding changes neither the norm nor any cosine
+similarity. Queries carry the model's retrieval instruction, documents don't.
+
 Vectors are L2-normalised: cosine similarity is then a plain dot product, and
 Gemini's reduced-size outputs (which the API returns unnormalised) score
 correctly.
@@ -23,11 +28,13 @@ import tiktoken
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
+from services import free_ai
 from services.llm import OPENROUTER_BASE_URL, OPENROUTER_HEADERS, detect_provider, provider_error_message
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_EMBEDDING_MODELS = {
+    "free": "qwen3-embedding-0.6b",
     "gemini": "gemini-embedding-001",
     "openai": "text-embedding-3-small",
     "openrouter": "text-embedding-3-small",
@@ -41,7 +48,13 @@ EMBED_BATCH_SIZE = 100
 _SUPPORTED_DIMENSIONS = {
     "gemini-embedding-001": {768, 1536, 3072},
     "text-embedding-3-small": {512, 1536},
+    "qwen3-embedding-0.6b": {1536},
 }
+
+# Qwen3-Embedding ranks better when queries (not documents) state the task.
+_FREE_QUERY_INSTRUCTION = (
+    "Instruct: Given a question, retrieve passages from the user's notes that answer it\nQuery:"
+)
 
 _token_encoder = tiktoken.get_encoding("cl100k_base")
 
@@ -100,7 +113,7 @@ async def embed_documents(
     """Embed passages for storage (Gemini: RETRIEVAL_DOCUMENT task type)."""
     if not texts:
         return []
-    embedder = _build_embedder(api_key.strip(), space)
+    embedder = _build_embedder((api_key or "").strip(), space)
     normalized_texts = [text if text.strip() else " " for text in texts]
     vectors: list[list[float]] = []
     try:
@@ -114,7 +127,7 @@ async def embed_documents(
                 )
             else:
                 batch_vectors = await embedder.aembed_documents(batch)
-            vectors.extend(_normalize(vector) for vector in batch_vectors)
+            vectors.extend(_fit(_normalize(vector), space) for vector in batch_vectors)
     except Exception as exc:  # pragma: no cover - provider-specific behavior
         raise _to_embedding_error(space, exc) from exc
 
@@ -123,7 +136,7 @@ async def embed_documents(
 
 async def embed_query(text: str, api_key: str, space: EmbeddingSpace) -> list[float]:
     """Embed a search query (Gemini: RETRIEVAL_QUERY task type, which pairs with documents)."""
-    embedder = _build_embedder(api_key.strip(), space)
+    embedder = _build_embedder((api_key or "").strip(), space)
     try:
         if space.provider == "gemini":
             vector = await embedder.aembed_query(
@@ -131,14 +144,23 @@ async def embed_query(text: str, api_key: str, space: EmbeddingSpace) -> list[fl
                 task_type="RETRIEVAL_QUERY",
                 output_dimensionality=space.dimensions,
             )
+        elif space.provider == "free":
+            vector = await embedder.aembed_query(f"{_FREE_QUERY_INSTRUCTION}{text}")
         else:
             vector = await embedder.aembed_query(text)
     except Exception as exc:  # pragma: no cover - provider-specific behavior
         raise _to_embedding_error(space, exc) from exc
-    return _normalize(vector)
+    return _fit(_normalize(vector), space)
 
 
 def _build_embedder(api_key: str, space: EmbeddingSpace) -> Any:
+    if space.provider == "free":
+        return OpenAIEmbeddings(
+            model=free_ai.embedding_model(),
+            api_key=free_ai.api_key(),
+            base_url=free_ai.base_url(),
+            check_embedding_ctx_length=False,
+        )
     if space.provider == "gemini":
         return GoogleGenerativeAIEmbeddings(model=space.model, google_api_key=api_key)
     if space.provider == "openrouter":
@@ -160,6 +182,16 @@ def _normalize(vector: list[float]) -> list[float]:
     return [value / norm for value in vector] if norm else list(vector)
 
 
+def _fit(vector: list[float], space: EmbeddingSpace) -> list[float]:
+    """Zero-pad a shorter model output (Qwen3-Embedding's 1024) to the space's size."""
+    if len(vector) > space.dimensions:
+        raise EmbeddingError(
+            f"The embedding model returned {len(vector)} dimensions; {space.dimensions} is the most the index takes.",
+            502,
+        )
+    return vector + [0.0] * (space.dimensions - len(vector))
+
+
 _PAYMENT_MARKERS = ("402", "payment required", "insufficient credits", "more credits")
 _RATE_LIMIT_MARKERS = ("429", "rate limit", "rate_limit", "resource_exhausted", "quota")
 _AUTH_MARKERS = ("api key not found", "api_key_invalid", "invalid api key", "incorrect api key", "401", "permission_denied")
@@ -167,6 +199,12 @@ _LABELS = {"gemini": "Gemini", "openai": "OpenAI", "openrouter": "OpenRouter"}
 
 
 def _to_embedding_error(space: EmbeddingSpace, exc: Exception) -> EmbeddingError:
+    if isinstance(exc, EmbeddingError):
+        return exc
+    if space.provider == "free":
+        # The host's own server is down or the model isn't pulled: worth retrying later.
+        free_ai.log_failure("embedding", exc)
+        return EmbeddingError(free_ai.UNAVAILABLE_MESSAGE, 503)
     message = provider_error_message(exc)
     lowered = f"{message} {exc}".lower()
     label = _LABELS.get(space.provider, space.provider)

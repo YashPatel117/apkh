@@ -4,8 +4,14 @@
 
 ## Up next
 
+### Free AI follow-ups
+- Tune the free AI's similarity thresholds (search 0.45 / 0.6, similar notes 0.5) on real notes. A first test (5 notes, 7 queries) scored relevant passages 0.54–0.69 and unrelated ones at most 0.44.
+- Lower the embedding model's memory: with the 8K context window Ollama loads it at about 2.9 GB, though embeddings need far less context.
+- Streaming answers (below) matter most here: a CPU model takes 10–30 seconds per answer.
+- Show waiting users their place in the queue when the free AI is busy.
+
 ### Free semantic search on OpenRouter
-OpenRouter is a provider now (free chat models; see ARCHITECTURE.md), but its embedding model is paid, so keys without credit get keyword search only. Optionally offer a free embedding model (e.g. `nvidia/nemotron-3-embed-1b:free`): it needs a second vector index for its dimensions, and free models may retain requests for training, so it must be an explicit opt-in with a warning.
+OpenRouter keys without credit get keyword search only (its embedding model is paid). Now that the free AI exists, an OpenRouter user could embed with the free AI's Qwen3-Embedding instead, while answering with their OpenRouter model.
 
 ### Account
 - Real forgot-password flow (email link or OTP). Resetting currently requires the current password.
@@ -52,4 +58,5 @@ OpenRouter is a provider now (free chat models; see ARCHITECTURE.md), but its em
 - [x] Background queue + retry system
 - [x] Reindex button
 - [x] Database-side vector search (Atlas `$vectorSearch`, in-API fallback)
+- [x] Free built-in AI, no key needed (self-hosted Qwen3.5 4B + Qwen3-Embedding-0.6B via Ollama)
 - [ ] Usage dashboard (tokens, model usage)

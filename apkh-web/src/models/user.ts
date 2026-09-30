@@ -1,4 +1,4 @@
-export type LlmProvider = "openrouter" | "gemini" | "openai" | "anthropic";
+export type LlmProvider = "free" | "openrouter" | "gemini" | "openai" | "anthropic";
 
 /** Provider serving a model ID, or null for an unrecognised one. */
 export function providerOfModel(model: string): LlmProvider | null {
@@ -18,6 +18,20 @@ export function providerOfModel(model: string): LlmProvider | null {
 export function supportsSemanticSearch(model: string) {
   const provider = providerOfModel(model);
   return provider === "openrouter" || provider === "gemini" || provider === "openai";
+}
+
+export const FREE_AI_LABEL = "Free AI";
+
+/**
+ * What powers AI features: the active saved config, else the free built-in AI
+ * (open-source models the app's server runs), else nothing.
+ */
+export type ActiveAi = { kind: "key"; config: ILlmConfig; name: string; model: string } | { kind: "free"; name: string; model: string };
+
+export function activeAi(user: IUser | null | undefined): ActiveAi | null {
+  const config = user?.llmConfigs?.find((c) => c.isActive);
+  if (config) return { kind: "key", config, name: config.keyName, model: config.llmModel };
+  return user?.freeAi ? { kind: "free", name: FREE_AI_LABEL, model: "Open-source model" } : null;
 }
 
 export interface ILlmModel {
@@ -40,5 +54,6 @@ export interface IUser {
   type: string;
   totalTokensUsed: number;
   llmConfigs: ILlmConfig[];
+  /** The server offers the free built-in AI, used when no config is active */
+  freeAi?: boolean;
 }
-

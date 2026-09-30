@@ -204,7 +204,7 @@ export default function LandingPage() {
             <div aria-hidden className="absolute -right-10 -bottom-24 size-72 rounded-full bg-violet-300/20 blur-3xl" />
             <h2 className="relative text-3xl font-bold tracking-tight text-white sm:text-4xl">Give your notes a brain.</h2>
             <p className="relative mx-auto mt-3 max-w-lg text-indigo-100">
-              Set up in a minute. Bring your own AI key and start asking.
+              Free AI built in, no key needed. Start asking in a minute, or bring your own key.
             </p>
             <Link
               href="/register"

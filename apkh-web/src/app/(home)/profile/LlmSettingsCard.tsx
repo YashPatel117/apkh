@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
-import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels } from "@/services/authService";
+import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, Gift, KeyRound, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
+import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels, switchToFreeAi } from "@/services/authService";
 import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
-import { ILlmConfig, ILlmModel, IUser, LlmProvider, providerOfModel } from "@/models/user";
+import { FREE_AI_LABEL, ILlmConfig, ILlmModel, IUser, LlmProvider, providerOfModel } from "@/models/user";
 import { Button } from "@/components/ui/Button";
 import { Input, fieldClass } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -17,8 +17,9 @@ import { cn } from "@/lib/cn";
 // ── Provider catalogue ───────────────────────────────────────────────────────
 // Models are not listed here: they are fetched live from the provider with the
 // user's key, so new releases appear and retired models disappear on their own.
-// OpenRouter lists its free models.
-const PROVIDER_GROUPS: { id: LlmProvider; label: string; docsUrl: string }[] = [
+// OpenRouter lists its free models. The free built-in AI needs no key, so it
+// has a row of its own instead of a place in this form.
+const PROVIDER_GROUPS: { id: Exclude<LlmProvider, "free">; label: string; docsUrl: string }[] = [
   { id: "openrouter", label: "OpenRouter", docsUrl: "https://openrouter.ai/keys" },
   { id: "gemini", label: "Google Gemini", docsUrl: "https://aistudio.google.com/app/apikey" },
   { id: "openai", label: "OpenAI", docsUrl: "https://platform.openai.com/api-keys" },
@@ -38,6 +39,75 @@ function modelOptionLabel(model: ILlmModel) {
 }
 
 type TestStatus = "idle" | "testing" | "ok" | "error";
+
+function RadioDot({ checked, busy }: { checked: boolean; busy: boolean }) {
+  if (busy) return <Spinner className="size-4 text-accent" />;
+  return (
+    <span className={cn("flex size-[1.1rem] items-center justify-center rounded-full border-2", checked ? "border-accent" : "border-fg-subtle")}>
+      {checked && <span className="size-2 rounded-full bg-accent" />}
+    </span>
+  );
+}
+
+function ActiveBadge() {
+  return (
+    <span className="rounded-md bg-indigo-600 px-1.5 py-0.5 text-[0.62rem] font-bold tracking-wider text-white uppercase dark:bg-indigo-500">
+      Active
+    </span>
+  );
+}
+
+// ── Free built-in AI row ─────────────────────────────────────────────────────
+function FreeAiRow({ active, onActivate }: { active: boolean; onActivate: () => Promise<void> }) {
+  const [activating, setActivating] = useState(false);
+
+  async function handleActivate() {
+    if (active || activating) return;
+    setActivating(true);
+    try {
+      await onActivate();
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-2xl border p-3 transition-colors",
+        active ? "border-indigo-200 bg-accent-soft dark:border-indigo-400/30" : "border-line bg-surface",
+      )}
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={active}
+        onClick={handleActivate}
+        disabled={active || activating}
+        aria-label={active ? `${FREE_AI_LABEL} is active` : `Use ${FREE_AI_LABEL}`}
+        className={cn(
+          "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-default",
+          !active && "hover:bg-surface-2",
+        )}
+      >
+        <RadioDot checked={active} busy={activating} />
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-semibold text-fg">{FREE_AI_LABEL}</p>
+          {active && <ActiveBadge />}
+        </div>
+        <p className="mt-0.5 text-xs text-fg-subtle">Open-source models on this app&apos;s server · no key needed · slower than a paid model</p>
+      </div>
+
+      <span className="hidden items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 sm:inline-flex dark:bg-emerald-500/10 dark:text-emerald-300">
+        <Gift className="size-3" />
+        Free
+      </span>
+    </div>
+  );
+}
 type ModelRequest = { provider: LlmProvider; apiKey?: string; keyName?: string };
 type LoadedModels = { request: ModelRequest; ok: boolean; items: ILlmModel[]; error: string | null };
 
@@ -85,28 +155,13 @@ function ConfigRow({
           !config.isActive && "hover:bg-surface-2",
         )}
       >
-        {activating ? (
-          <Spinner className="size-4 text-accent" />
-        ) : (
-          <span
-            className={cn(
-              "flex size-[1.1rem] items-center justify-center rounded-full border-2",
-              config.isActive ? "border-accent" : "border-fg-subtle",
-            )}
-          >
-            {config.isActive && <span className="size-2 rounded-full bg-accent" />}
-          </span>
-        )}
+        <RadioDot checked={config.isActive} busy={activating} />
       </button>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-semibold text-fg">{config.keyName}</p>
-          {config.isActive && (
-            <span className="rounded-md bg-indigo-600 px-1.5 py-0.5 text-[0.62rem] font-bold tracking-wider text-white uppercase dark:bg-indigo-500">
-              Active
-            </span>
-          )}
+          {config.isActive && <ActiveBadge />}
         </div>
         <p className="mt-0.5 truncate text-xs text-fg-subtle">
           {config.llmModel}
@@ -134,7 +189,9 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const dispatch = useAppDispatch();
   const toast = useToast();
   const configs: ILlmConfig[] = user.llmConfigs ?? [];
-  const [showForm, setShowForm] = useState(configs.length === 0);
+  const freeAi = Boolean(user.freeAi);
+  const freeAiActive = freeAi && !configs.some((c) => c.isActive);
+  const [showForm, setShowForm] = useState(configs.length === 0 && !freeAi);
   const [pendingDelete, setPendingDelete] = useState<ILlmConfig | null>(null);
 
   // The saved config whose model is being changed; null when adding a new one.
@@ -258,6 +315,16 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     }
   }
 
+  async function handleUseFreeAi() {
+    try {
+      const updatedUser = await switchToFreeAi();
+      dispatch(setUser({ ...user, ...updatedUser }));
+      toast(`Now using ${FREE_AI_LABEL}.`, "success");
+    } catch (err) {
+      toast(getErrorMessage(err, "Couldn't switch to the free AI."), "error");
+    }
+  }
+
   async function confirmDelete() {
     if (!pendingDelete) return;
     try {
@@ -282,17 +349,22 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="font-semibold text-fg">AI models</h2>
-          <p className="mt-1 text-sm text-fg-muted">Bring your own key. The active config powers search, summaries and chat.</p>
+          <p className="mt-1 text-sm text-fg-muted">
+            {freeAi
+              ? "The free AI works without a key. Add your own key for faster, stronger models."
+              : "Bring your own key. The active config powers search, summaries and chat."}
+          </p>
         </div>
         {!showForm && (
           <Button size="sm" variant="soft" onClick={() => setShowForm(true)} icon={<Plus className="size-3.5" />}>
-            Add
+            Add key
           </Button>
         )}
       </div>
 
-      {configs.length > 0 && (
-        <div role="radiogroup" aria-label="Saved AI configs" className="mt-5 space-y-2">
+      {(configs.length > 0 || freeAi) && (
+        <div role="radiogroup" aria-label="AI configs" className="mt-5 space-y-2">
+          {freeAi && <FreeAiRow active={freeAiActive} onActivate={handleUseFreeAi} />}
           {configs.map((cfg) => (
             <ConfigRow key={cfg.keyName} config={cfg} onActivate={handleActivate} onEdit={startEdit} onDelete={setPendingDelete} />
           ))}
@@ -300,7 +372,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
       )}
 
       {showForm && (
-        <div className={cn("space-y-4", configs.length > 0 ? "mt-5 border-t border-line pt-5" : "mt-5")}>
+        <div className={cn("space-y-4", configs.length > 0 || freeAi ? "mt-5 border-t border-line pt-5" : "mt-5")}>
           <h3 className="text-sm font-semibold text-fg">{editing ? `Change model for “${editing.keyName}”` : "New config"}</h3>
 
           <Input
@@ -435,7 +507,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
                 {testStatus === "testing" ? "Testing…" : "Test connection"}
               </Button>
             )}
-            {(configs.length > 0 || editing) && (
+            {(configs.length > 0 || freeAi || editing) && (
               <Button variant="ghost" onClick={resetForm} disabled={saving}>
                 Cancel
               </Button>
@@ -450,7 +522,12 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
         message={
           <>
             The key <span className="font-semibold text-fg">“{pendingDelete?.keyName}”</span> will be deleted.
-            {pendingDelete?.isActive && " AI features will be off until you activate another config."}
+            {pendingDelete?.isActive &&
+              (configs.length > 1
+                ? ` “${configs.find((c) => c !== pendingDelete)?.keyName}” becomes active.`
+                : freeAi
+                  ? ` ${FREE_AI_LABEL} takes over.`
+                  : " AI features will be off until you add another key.")}
           </>
         }
         confirmLabel="Remove"
