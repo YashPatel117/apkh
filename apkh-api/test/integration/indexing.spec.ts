@@ -679,7 +679,7 @@ describeWithDb('indexing pipeline', () => {
       note_title: 'Deploy runbook',
       match: 'both',
     });
-    expect(ragContexts[0]).toContain('[SOURCE: Note "Deploy runbook"]');
+    expect(ragContexts[0]).toContain('Note "Deploy runbook"');
   });
 
   it('a vague question is rewritten and searched again', async () => {

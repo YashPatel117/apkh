@@ -167,9 +167,20 @@ Details:
 - The response includes `pendingNotes`: how many notes are still being indexed and weren't searched yet.
 - Chat transcripts are never AI-search sources.
 
+### Citations and source jump
+
+The passages are sent to the model as numbered sources (`[1] Note "Plan" | File: q3.pdf | Page 2` followed by the text), and the prompt asks it to cite them inline as `[1]`, `[2][3]`. General knowledge is only allowed when labelled "From general knowledge:" and uncited. The API marks each reference `cited` when the answer contains its number.
+
+In the web app every `[n]` is a button, and every source card opens the **source viewer**:
+
+- a note passage opens the whole note, scrolled to the passage, which is highlighted (whitespace-insensitive matching; the CSS Custom Highlight API, with a `<mark>` fallback)
+- an attachment passage opens the file, PDFs at the cited page (`#page=N`)
+
 ## 8. Chat
 
 For each message the API assembles a small, ranked context with the same hybrid retrieval. A short follow-up that leans on the conversation ("and the budget for it?") is first rewritten into a standalone question for the search; the model still answers the question as asked. The context has up to 6 passages from notes and attachments, 3 from this conversation's indexed transcript, and 3 from other conversations, plus the last 10 messages. The answer is generated before anything is saved, so a failed answer leaves no unanswered question in the history.
+
+Chat answers cite the note passages the same way. The passages are saved with the assistant message (`sources`, each marked `cited`), so citations still work when a conversation is reopened, and "Continue this conversation" carries over the AI answer's sources.
 
 ## 9. Summaries
 

@@ -1,12 +1,13 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
 import { ArrowUpRight, CircleAlert, FileText, Hourglass, MessageSquarePlus, Paperclip, Settings, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { AiSearchResponse } from "@/service/noteService";
 import { Button } from "../ui/Button";
 import { cn } from "../ui/cn";
-import { displayFileName } from "../service/fileName";
+import { CitedMarkdown } from "./citedMarkdown";
+import { useSourceViewer } from "./sourceViewer";
+import { fromAiReference, sourceLocation } from "./sources";
 
 type Reference = AiSearchResponse["references"][number];
 
@@ -25,26 +26,19 @@ function matchLabel(reference: Reference) {
   return similarity;
 }
 
-function sourceMeta(reference: Reference) {
-  if (reference.source_type === "file") {
-    const page = typeof reference.source_page === "number" ? ` · page ${reference.source_page}` : "";
-    return `${reference.source_name ? displayFileName(reference.source_name) : "Attachment"}${page}`;
-  }
-  return "From note content";
-}
-
 interface AiAnswerPanelProps {
   query: string;
   answer: AiSearchResponse | null;
   isSearching: boolean;
   errorMessage: string | null;
-  onOpenNote: (noteId: string) => void;
   onContinue: () => void;
   continuing: boolean;
 }
 
-export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onOpenNote, onContinue, continuing }: AiAnswerPanelProps) {
+export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onContinue, continuing }: AiAnswerPanelProps) {
   const confidence = answer && !errorMessage ? confidenceTone[answer.confidence] ?? confidenceTone.medium : null;
+  const openSource = useSourceViewer();
+  const openReference = (reference: Reference) => openSource(fromAiReference(reference));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -110,7 +104,11 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onOpen
             </div>
 
             <div className="rich-content mt-4 text-fg">
-              <ReactMarkdown>{answer.answer}</ReactMarkdown>
+              <CitedMarkdown
+                text={answer.answer}
+                sourceCount={answer.references.length}
+                onCite={(n) => openReference(answer.references[n - 1])}
+              />
             </div>
 
             {Boolean(answer.pendingNotes) && (
@@ -123,7 +121,7 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onOpen
 
             <div className="mt-8">
               <h3 className="text-sm font-semibold text-fg">Sources</h3>
-              <p className="text-xs text-fg-subtle">Open a source to jump into the note.</p>
+              <p className="text-xs text-fg-subtle">Open a source to see the passage in its note or file.</p>
               <div className="mt-3 space-y-2.5">
                 {answer.references.length === 0 ? (
                   <p className="rounded-2xl border border-dashed border-line p-4 text-sm text-fg-muted">
@@ -134,12 +132,15 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onOpen
                     <button
                       key={`${reference.note_id}-${reference.source_name ?? "note"}-${index}`}
                       type="button"
-                      onClick={() => onOpenNote(reference.note_id)}
+                      onClick={() => openReference(reference)}
                       className="group w-full cursor-pointer rounded-2xl border border-line bg-surface p-4 text-left transition-all hover:border-indigo-200 hover:shadow-md hover:shadow-indigo-500/5 dark:hover:border-indigo-400/30"
                     >
                       <div className="flex items-start gap-3">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
+                        <span className="relative flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
                           {reference.source_type === "file" ? <Paperclip className="size-4" /> : <FileText className="size-4" />}
+                          <span className="absolute -top-1.5 -left-1.5 flex size-4 items-center justify-center rounded-full bg-surface text-[0.6rem] font-bold text-fg-muted ring-1 ring-line">
+                            {index + 1}
+                          </span>
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
@@ -155,7 +156,10 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onOpen
                               {matchLabel(reference)}
                             </span>
                           </div>
-                          <p className="truncate text-xs text-fg-subtle">{sourceMeta(reference)}</p>
+                          <p className="truncate text-xs text-fg-subtle">
+                            {sourceLocation(fromAiReference(reference))}
+                            {reference.cited && <span className="font-semibold text-accent-fg"> · cited</span>}
+                          </p>
                           <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-fg-muted">{reference.excerpt}</p>
                         </div>
                         <ArrowUpRight className="size-4 shrink-0 text-fg-subtle transition-colors group-hover:text-accent" />

@@ -101,6 +101,8 @@ export type AiSearchResponse = {
     similarity_score: number;
     /** Why the passage was found (older API versions omit it) */
     match?: "semantic" | "keyword" | "both";
+    /** The answer cites it as [n], n being its position + 1 */
+    cited?: boolean;
   }[];
 };
 

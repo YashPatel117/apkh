@@ -24,22 +24,18 @@ from services.langsmith_config import build_langchain_config
 logger = logging.getLogger(__name__)
 
 _SYSTEM_INSTRUCTION = (
-    "You are an intelligent Knowledge Base Assistant. Your objective is to answer the user's query by analyzing their provided notes/documents ({context}) and deciding when it is appropriate to use external knowledge.. \n\n"
-    "### 🧠 DECISION LOGIC. \n"
-    "Before generating an answer, silently evaluate the user's query and choose one of the following strategies:. \n\n"
-    "1. STRICTLY CONTEXT (Document-Specific Queries):. \n"
-    "   - Trigger: The user asks about specific details within their uploaded files, personal data, or summarizes a note.. \n"
-    "   - Action: Answer ONLY using the {context}. Do not use outside knowledge. If the answer is completely missing, state: I couldn't find information about this in your current notes.. \n\n"
-    "2. HYBRID (Context + External Enrichment):. \n"
-    "   - Trigger: The query references a concept in the notes but requires broader explanation, or asks to compare note content with general facts.. \n"
-    "   - Action: Synthesize both. Clearly distinguish between what is in the user's notes and what comes from external knowledge (e.g., According to your notes... Additionally, general knowledge indicates...). \n\n"
-    "3. EXTERNAL ONLY (General Queries):. \n"
-    "   - Trigger: The query is entirely unrelated to the provided {context}.. \n"
-    "   - Action: Ignore the empty/irrelevant context. Answer using your general knowledge or search capabilities, but keep it concise.. \n\n"
-    "### 🛑 STRICT RULES. \n"
-    "- ZERO HALLUCINATION: Never invent, assume, or infer personal information or document contents that are not explicitly provided in the {context}.. \n"
-    "- PARTIAL MATCHES: If a question is only partially answered by the notes, provide the available information and explicitly state what details are missing from the context.. \n"
-    "- FORMATTING: Be concise and highly readable. Prioritize bullet points for multi-part answers, lists, or comparisons. Drop unnecessary conversational filler.. \n"
+    "You are a knowledge-base assistant. You answer the user's question from their own notes, "
+    "which are given as numbered sources.\n\n"
+    "How to answer:\n"
+    "- Base the answer on the sources whenever they cover the question. After each statement "
+    "taken from a source, cite it with its number in square brackets, e.g. [1] or [2][3]. Only "
+    "cite numbers that appear in the sources.\n"
+    "- If the sources cover the question only partly, answer that part and say what is missing.\n"
+    "- If the sources don't cover the question at all, say: I couldn't find this in your notes. "
+    'You may then add a short answer from general knowledge, labelled "From general knowledge:" '
+    "and without citations.\n"
+    "- Never invent personal details or note contents that aren't in the sources.\n"
+    "- Be concise. Use bullet points for lists, steps and comparisons; skip filler."
 )
 
 
@@ -54,24 +50,23 @@ _SUMMARY_SYSTEM_INSTRUCTION = (
 )
 
 _CHAT_SYSTEM_INSTRUCTION = (
-    "You are a helpful AI assistant with access to the user's personal knowledge base.\n\n"
-    "You are given context from three sources in order of priority:\n\n"
-    "[CURRENT CHAT CONTEXT]\n"
-    "{current_chat_chunks}\n"
-    "This is from the ongoing conversation. Treat this as the most relevant context.\n\n"
-    "[NOTES CONTEXT]\n"
-    "{notes_chunks}\n"
-    "This is from the user's saved notes and documents.\n\n"
-    "[RELATED PAST CHATS]\n"
-    "{similar_chat_chunks}\n"
-    "These are from previous conversations on similar topics. Use as supporting context only.\n\n"
+    "You are a helpful assistant with access to the user's personal knowledge base.\n\n"
+    "Context, in order of priority:\n\n"
+    "[EARLIER IN THIS CONVERSATION]\n"
+    "{current_chat_chunks}\n\n"
+    "[NOTES] (numbered sources)\n"
+    "{notes_chunks}\n\n"
+    "[RELATED PAST CONVERSATIONS]\n"
+    "{similar_chat_chunks}\n\n"
     "Instructions:\n"
-    "- Prioritize CURRENT CHAT CONTEXT over everything else for follow-up questions\n"
-    "- Use NOTES CONTEXT as your primary knowledge source\n"
-    "- Reference RELATED PAST CHATS only when current context is insufficient\n"
-    "- If the user asks a follow-up question, resolve pronouns and references using CURRENT CHAT CONTEXT first\n"
-    "- Always be concise. If unsure, say so.\n"
-    "- Never fabricate information not present in the context above."
+    "- For follow-up questions, resolve references (it, that, the second one) from this "
+    "conversation first.\n"
+    "- Use the NOTES as your main source of facts. After each statement taken from a note, cite "
+    "it with its number in square brackets, e.g. [1] or [2][3]. Only cite numbers that appear "
+    "in NOTES.\n"
+    "- Use related past conversations only as supporting context, and don't cite them.\n"
+    "- Be concise. If the notes don't cover something, say so; never invent personal details or "
+    "note contents."
 )
 
 _IMAGE_EXTRACTION_INSTRUCTION = (
@@ -238,8 +233,9 @@ async def generate_rag_answer(
             "run_id": None,
         }
 
-    context_text = "\n\n---\n\n".join(contexts)
-    user_prompt = f"Context:\n\n{context_text}\n\n---\n\nUser Question: {query}"
+    # Numbered so the answer can cite them; the API maps [n] back to contexts[n-1].
+    sources = "\n\n---\n\n".join(f"[{i}] {context}" for i, context in enumerate(contexts, start=1))
+    user_prompt = f"Sources:\n\n{sources}\n\n---\n\nQuestion: {query}"
 
     try:
         provider = detect_provider(resolved_model)
@@ -579,7 +575,11 @@ async def generate_chat_rag_answer(
         }
 
     formatted_current = "\n\n".join(current_chat_chunks) if current_chat_chunks else "None"
-    formatted_notes = "\n\n".join(notes_chunks) if notes_chunks else "None"
+    formatted_notes = (
+        "\n\n".join(f"[{i}] {chunk}" for i, chunk in enumerate(notes_chunks, start=1))
+        if notes_chunks
+        else "None"
+    )
     formatted_similar = "\n\n".join(similar_chat_chunks) if similar_chat_chunks else "None"
 
     system_content = _CHAT_SYSTEM_INSTRUCTION.format(
@@ -611,16 +611,16 @@ async def generate_chat_rag_answer(
     )
 
     if provider == "gemini":
-        llm = ChatGoogleGenerativeAI(model=resolved_model, api_key=resolved_key, temperature=0.7)
+        llm = ChatGoogleGenerativeAI(model=resolved_model, api_key=resolved_key, temperature=0.3)
     elif provider == "openai":
-        llm = ChatOpenAI(model=resolved_model, api_key=resolved_key, temperature=0.7)
+        llm = ChatOpenAI(model=resolved_model, api_key=resolved_key, temperature=0.3)
     else:
         # Same output budget as _call_anthropic; the SDK default cuts long answers short.
         llm = ChatAnthropic(
             model_name=resolved_model,
             anthropic_api_key=resolved_key,
             max_tokens=2048,
-            temperature=0.7,
+            temperature=0.3,
         )
 
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage

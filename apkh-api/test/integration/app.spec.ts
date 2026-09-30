@@ -144,6 +144,49 @@ describeWithDb('whole API (real AppModule)', () => {
     });
   });
 
+  it('a conversation started from an AI answer keeps its cited sources', async () => {
+    const notes = (
+      await request(app.getHttpServer())
+        .get('/notes')
+        .set('Authorization', token)
+    ).body.data;
+    const source = {
+      noteId: notes[0].id,
+      noteTitle: 'First paragraph',
+      sourceType: 'note',
+      excerpt: 'First paragraph',
+      cited: true,
+    };
+    const session = await request(app.getHttpServer())
+      .post('/chat/session')
+      .set('Authorization', token)
+      .send({
+        firstMessage: 'What is first?',
+        aiResponse: 'The first paragraph [1].',
+        sources: [source],
+      })
+      .expect(201);
+
+    const messages = await request(app.getHttpServer())
+      .get(`/chat/session/${session.body.data.id}`)
+      .set('Authorization', token)
+      .expect(200);
+    expect(
+      (messages.body.data as { role: string }[]).map((m) => m.role),
+    ).toEqual(['user', 'assistant']);
+    expect(messages.body.data[1].sources).toEqual([source]);
+
+    await request(app.getHttpServer())
+      .post('/chat/session')
+      .set('Authorization', token)
+      .send({
+        firstMessage: 'q',
+        aiResponse: 'a',
+        sources: [{ ...source, sourceType: 'bogus' }],
+      })
+      .expect(400);
+  });
+
   it('deleting a note removes its index job', async () => {
     const notes = (
       await request(app.getHttpServer())

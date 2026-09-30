@@ -46,6 +46,8 @@ export interface AiSearchResultReference {
   similarity_score: number;
   /** Why the passage was retrieved */
   match: 'semantic' | 'keyword' | 'both';
+  /** The answer cites it as [n], n being its 1-based position */
+  cited: boolean;
 }
 
 export interface AiSearchResult {
@@ -224,6 +226,7 @@ export class SearchService {
       throw error;
     }
 
+    const cited = citedSources(answer, chunks.length);
     const bestSimilarity = Math.max(...chunks.map((c) => c.similarity ?? -1));
     return {
       query,
@@ -235,7 +238,9 @@ export class SearchService {
           ? 'high'
           : 'low'
         : 'medium',
-      references: chunks.map(toReference),
+      references: chunks.map((chunk, i) =>
+        toReference(chunk, cited.has(i + 1)),
+      ),
       isError: false,
       pendingNotes,
       searchedFor,
@@ -432,6 +437,10 @@ export class SearchService {
 }
 
 /** A retrieved passage labelled with where it came from, for the prompt. */
+/**
+ * A retrieved passage labelled with where it came from, for the prompt.
+ * apkh-search numbers these [1], [2], ... in order, and answers cite them.
+ */
 export function contextBlock(chunk: RetrievedChunk): string {
   let source = `Note "${chunk.noteTitle}"`;
   if (chunk.sourceType === 'file' && chunk.sourceName) {
@@ -440,11 +449,27 @@ export function contextBlock(chunk: RetrievedChunk): string {
       source += ` | Page ${chunk.sourcePage}`;
     }
   }
-  return `[SOURCE: ${source}]\n${chunk.text}`;
+  return `${source}\n${chunk.text}`;
 }
 
-function toReference(chunk: RetrievedChunk): AiSearchResultReference {
+/** Source numbers (1-based) an answer cites as [n], limited to 1..count. */
+export function citedSources(answer: string, count: number): Set<number> {
+  const cited = new Set<number>();
+  for (const match of answer.matchAll(/\[(\d+)\]/g)) {
+    const n = Number(match[1]);
+    if (n >= 1 && n <= count) {
+      cited.add(n);
+    }
+  }
+  return cited;
+}
+
+function toReference(
+  chunk: RetrievedChunk,
+  cited: boolean,
+): AiSearchResultReference {
   return {
+    cited,
     note_id: chunk.noteId ?? '',
     note_title: chunk.noteTitle,
     source_type: chunk.sourceType,

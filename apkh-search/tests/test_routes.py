@@ -115,6 +115,46 @@ class RewriteQueryTests(unittest.TestCase):
         self.assertTrue(prompts[0].endswith("Question: and the budget for it?"))
 
 
+class CitationPromptTests(unittest.TestCase):
+    """Sources are numbered in the order given, so [n] in an answer maps back to contexts[n-1]."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(main.app)
+
+    def setUp(self):
+        self.calls = []
+
+        async def fake_call(api_key, model, system, user_prompt, config=None):
+            self.calls.append((system, user_prompt))
+            return {"answer": "Ship in Q3 [1].", "tokens_used": 5, "run_id": None}
+
+        self.original = llm._call_openai
+        llm._call_openai = fake_call
+
+    def tearDown(self):
+        llm._call_openai = self.original
+
+    def test_rag_numbers_the_sources(self):
+        res = self.client.post(
+            "/ai-search/rag",
+            json={
+                "query": "When do we ship?",
+                "contexts": ['Note "Plan"\nShip in Q3', 'Note "Old"\nShip in Q2'],
+                "api_key": "k",
+                "model": "gpt-4o-mini",
+            },
+            headers=AUTH,
+        )
+        self.assertEqual(res.json()["answer"], "Ship in Q3 [1].")
+        system, prompt = self.calls[0]
+        self.assertIn("[1] Note \"Plan\"\nShip in Q3", prompt)
+        self.assertIn("[2] Note \"Old\"\nShip in Q2", prompt)
+        self.assertTrue(prompt.endswith("Question: When do we ship?"))
+        self.assertIn("square brackets", system)
+        self.assertNotIn("{context}", system)
+
+
 class EmbeddingSpaceTests(unittest.TestCase):
     def test_each_provider_has_one_embedding_space(self):
         gemini = resolve_space("gemini-2.5-flash")

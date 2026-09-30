@@ -11,13 +11,15 @@ interface FileDisplayWithAuthProps {
   fileName: string;
   noteId?: string;
   file?: File;
+  /** PDF page to open at (e.g. the page a search result came from) */
+  page?: number;
 }
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.25;
 
-const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, file }) => {
+const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, file, page }) => {
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>("");
   const [failed, setFailed] = useState(false);
@@ -183,7 +185,12 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
       return (
         <>
           <div className="mb-3 flex justify-end">{downloadLink}</div>
-          <iframe src={fileBlobUrl} title={displayName} className="h-[70dvh] w-full rounded-2xl border border-line bg-white" />
+          <iframe
+            // Browsers' PDF viewers open at #page=N
+            src={page && mimeType === "application/pdf" ? `${fileBlobUrl}#page=${page}` : fileBlobUrl}
+            title={displayName}
+            className="h-[70dvh] w-full rounded-2xl border border-line bg-white"
+          />
         </>
       );
     }

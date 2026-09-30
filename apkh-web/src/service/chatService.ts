@@ -1,3 +1,4 @@
+import { SourceRef } from "@/app/common/components/sources";
 import { webApi } from "./axios/axios";
 
 export interface IChatSession {
@@ -13,15 +14,31 @@ export interface IChatMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  /** Assistant messages: the note passages the answer drew on, cited as [n] */
+  sources?: SourceRef[];
 }
 
 export interface ChatMessageResponse {
   answer: string;
   tokens_used: number;
+  sources?: SourceRef[];
 }
 
-export async function createChatSession(firstMessage: string, aiResponse: string) {
-  const res = await webApi.post("/chat/session", { firstMessage, aiResponse });
+/** Starts a conversation from an AI search answer (and the sources it cites). */
+export async function createChatSession(firstMessage: string, aiResponse: string, sources: SourceRef[] = []) {
+  const res = await webApi.post("/chat/session", {
+    firstMessage,
+    aiResponse,
+    sources: sources.map(({ noteId, noteTitle, sourceType, sourceName, sourcePage, excerpt, cited }) => ({
+      noteId,
+      noteTitle,
+      sourceType,
+      sourceName,
+      sourcePage,
+      excerpt,
+      cited: Boolean(cited),
+    })),
+  });
   return res.data.data as IChatSession;
 }
 

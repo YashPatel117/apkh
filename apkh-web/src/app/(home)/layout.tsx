@@ -26,6 +26,8 @@ import { NotesContext, SelectedNote } from "../common/context/notesContext";
 import { cleanAiErrorMessage, htmlToText, isAiErrorResponse } from "../common/service/aiResponse";
 import MentionTextField from "../common/components/mentionTextField";
 import { AiAnswerPanel } from "../common/components/aiAnswerPanel";
+import { SourceViewerProvider } from "../common/components/sourceViewer";
+import { fromAiReference } from "../common/components/sources";
 import { Sidebar } from "../common/components/sidebar";
 import { Modal } from "../common/ui/Modal";
 import { Button } from "../common/ui/Button";
@@ -230,7 +232,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!aiAnswer) return;
     setContinuing(true);
     try {
-      const session = await createChatSession(aiAnswer.query || aiQuery, aiAnswer.answer);
+      // The answer's sources carry over, so its [n] citations keep working in the chat.
+      const session = await createChatSession(aiAnswer.query || aiQuery, aiAnswer.answer, aiAnswer.references.map(fromAiReference));
       dispatch(addSession(session));
       dispatch(setActiveSession(session.id));
       setAnswerOpen(false);
@@ -347,131 +350,132 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         focusSearch,
       }}
     >
-      <div className="relative flex h-dvh overflow-hidden">
-        {/* Themed backdrop: soft orbs in light mode, neural network in dark */}
-        <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
-          <div className="absolute inset-0 bg-[url(/assets/light-background.jpg)] bg-cover bg-center opacity-75 dark:bg-[url(/assets/dark-background.jpg)] dark:opacity-50" />
-          {/* Light veil keeps text readable without washing the artwork out */}
-          <div className="absolute inset-0 bg-linear-to-b from-canvas/10 via-canvas/30 to-canvas/55 dark:from-canvas/20 dark:via-canvas/40 dark:to-canvas/65" />
+      <SourceViewerProvider onOpenNote={openNote}>
+        <div className="relative flex h-dvh overflow-hidden">
+          {/* Themed backdrop: soft orbs in light mode, neural network in dark */}
+          <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
+            <div className="absolute inset-0 bg-[url(/assets/light-background.jpg)] bg-cover bg-center opacity-75 dark:bg-[url(/assets/dark-background.jpg)] dark:opacity-50" />
+            {/* Light veil keeps text readable without washing the artwork out */}
+            <div className="absolute inset-0 bg-linear-to-b from-canvas/10 via-canvas/30 to-canvas/55 dark:from-canvas/20 dark:via-canvas/40 dark:to-canvas/65" />
+          </div>
+
+          {/* Desktop sidebar */}
+          <aside className="hidden w-64 shrink-0 border-r border-line bg-surface/80 backdrop-blur-xl lg:block">{sidebar()}</aside>
+
+          {/* Mobile drawer */}
+          <Modal open={drawerOpen} onClose={() => setDrawerOpen(false)} placement="left" hideClose title={undefined}>
+            {sidebar(() => setDrawerOpen(false))}
+          </Modal>
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Top bar */}
+            <header className="z-20 flex shrink-0 items-center gap-2 border-b border-line bg-surface/75 px-3 py-2.5 backdrop-blur-xl sm:gap-3 sm:px-5">
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg lg:hidden"
+                aria-label="Open navigation"
+              >
+                <MenuIcon className="size-5" />
+              </button>
+
+              <div className="flex min-w-0 flex-1 items-center gap-2 lg:max-w-3xl">
+                <MentionTextField
+                  inputRef={searchRef}
+                  value={search}
+                  onChange={handleSearchChange}
+                  selectedNotes={selectedNotes}
+                  onSelectedNotesChange={setSelectedNotes}
+                  onSubmit={() => void handleAiSearch()}
+                  placeholder="Search notes or ask AI…"
+                />
+                <Tooltip
+                  label={
+                    !activeLlmConfig
+                      ? "Set up an AI key in Profile first"
+                      : !canAsk && !isAiSearching
+                        ? `Type at least ${MIN_AI_QUERY} characters`
+                        : undefined
+                  }
+                  side="bottom"
+                >
+                  <Button
+                    onClick={() => void handleAiSearch()}
+                    disabled={Boolean(activeLlmConfig) && !canAsk}
+                    loading={isAiSearching}
+                    icon={!isAiSearching && <Sparkles className="size-4" />}
+                    size="toolbar"
+                    aria-label="Ask AI"
+                  >
+                    <span className="hidden sm:inline">{isAiSearching ? "Thinking…" : "Ask AI"}</span>
+                  </Button>
+                </Tooltip>
+              </div>
+
+              {/* The one appearance control in the app (light / dark / system). */}
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {pendingIndex > 0 && (
+                  <Tooltip label="New and edited notes become searchable by AI once indexed" side="bottom">
+                    <span className="hidden items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs font-medium text-fg-muted md:inline-flex">
+                      <Spinner className="size-3.5" />
+                      Indexing {pendingIndex} note{pendingIndex === 1 ? "" : "s"}
+                    </span>
+                  </Tooltip>
+                )}
+                <ThemeToggle />
+              </div>
+            </header>
+
+            <main id="main" className="min-h-0 flex-1 overflow-y-auto">
+              {children}
+            </main>
+          </div>
         </div>
 
-        {/* Desktop sidebar */}
-        <aside className="hidden w-64 shrink-0 border-r border-line bg-surface/80 backdrop-blur-xl lg:block">{sidebar()}</aside>
-
-        {/* Mobile drawer */}
-        <Modal open={drawerOpen} onClose={() => setDrawerOpen(false)} placement="left" hideClose title={undefined}>
-          {sidebar(() => setDrawerOpen(false))}
+        {/* AI answer sheet */}
+        <Modal
+          open={answerOpen}
+          onClose={() => setAnswerOpen(false)}
+          placement="right"
+          title={
+            <span className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-xl bg-linear-to-br from-blue-500 via-indigo-500 to-violet-500 text-white">
+                <Sparkles className="size-4" />
+              </span>
+              AI answer
+            </span>
+          }
+          description={activeLlmConfig ? `${activeLlmConfig.keyName} · ${activeLlmConfig.llmModel}` : undefined}
+        >
+          <AiAnswerPanel
+            query={aiQuery}
+            answer={aiAnswer}
+            isSearching={isAiSearching}
+            errorMessage={aiErrorMessage}
+            onContinue={() => void handleContinueConversation()}
+            continuing={continuing}
+          />
         </Modal>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Top bar */}
-          <header className="z-20 flex shrink-0 items-center gap-2 border-b border-line bg-surface/75 px-3 py-2.5 backdrop-blur-xl sm:gap-3 sm:px-5">
-            <button
-              type="button"
-              onClick={() => setDrawerOpen(true)}
-              className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg lg:hidden"
-              aria-label="Open navigation"
-            >
-              <MenuIcon className="size-5" />
-            </button>
-
-            <div className="flex min-w-0 flex-1 items-center gap-2 lg:max-w-3xl">
-              <MentionTextField
-                inputRef={searchRef}
-                value={search}
-                onChange={handleSearchChange}
-                selectedNotes={selectedNotes}
-                onSelectedNotesChange={setSelectedNotes}
-                onSubmit={() => void handleAiSearch()}
-                placeholder="Search notes or ask AI…"
-              />
-              <Tooltip
-                label={
-                  !activeLlmConfig
-                    ? "Set up an AI key in Profile first"
-                    : !canAsk && !isAiSearching
-                      ? `Type at least ${MIN_AI_QUERY} characters`
-                      : undefined
-                }
-                side="bottom"
-              >
-                <Button
-                  onClick={() => void handleAiSearch()}
-                  disabled={Boolean(activeLlmConfig) && !canAsk}
-                  loading={isAiSearching}
-                  icon={!isAiSearching && <Sparkles className="size-4" />}
-                  size="toolbar"
-                  aria-label="Ask AI"
-                >
-                  <span className="hidden sm:inline">{isAiSearching ? "Thinking…" : "Ask AI"}</span>
-                </Button>
-              </Tooltip>
-            </div>
-
-            {/* The one appearance control in the app (light / dark / system). */}
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              {pendingIndex > 0 && (
-                <Tooltip label="New and edited notes become searchable by AI once indexed" side="bottom">
-                  <span className="hidden items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs font-medium text-fg-muted md:inline-flex">
-                    <Spinner className="size-3.5" />
-                    Indexing {pendingIndex} note{pendingIndex === 1 ? "" : "s"}
-                  </span>
-                </Tooltip>
-              )}
-              <ThemeToggle />
-            </div>
-          </header>
-
-          <main id="main" className="min-h-0 flex-1 overflow-y-auto">
-            {children}
-          </main>
-        </div>
-      </div>
-
-      {/* AI answer sheet */}
-      <Modal
-        open={answerOpen}
-        onClose={() => setAnswerOpen(false)}
-        placement="right"
-        title={
-          <span className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-xl bg-linear-to-br from-blue-500 via-indigo-500 to-violet-500 text-white">
-              <Sparkles className="size-4" />
-            </span>
-            AI answer
-          </span>
-        }
-        description={activeLlmConfig ? `${activeLlmConfig.keyName} · ${activeLlmConfig.llmModel}` : undefined}
-      >
-        <AiAnswerPanel
-          query={aiQuery}
-          answer={aiAnswer}
-          isSearching={isAiSearching}
-          errorMessage={aiErrorMessage}
-          onOpenNote={openNote}
-          onContinue={() => void handleContinueConversation()}
-          continuing={continuing}
-        />
-      </Modal>
-
-      {/* Note editor */}
-      <Modal
-        open={editorOpen}
-        onClose={() => setEditorOpen(false)}
-        locked={saving}
-        title={editNote ? "Edit note" : "New note"}
-        description={editNote ? undefined : "Leave the title or category blank and they'll be filled in from your note."}
-        size="lg"
-      >
-        <NoteEditor
-          key={editNote?.id ?? "new-note"}
-          initialNote={editNote}
-          saving={saving}
-          onSave={saveNote}
-          onCancel={() => setEditorOpen(false)}
-          categoryOptions={Array.from(new Set(notes.map((n) => n.category?.trim()).filter(Boolean)))}
-        />
-      </Modal>
+        {/* Note editor */}
+        <Modal
+          open={editorOpen}
+          onClose={() => setEditorOpen(false)}
+          locked={saving}
+          title={editNote ? "Edit note" : "New note"}
+          description={editNote ? undefined : "Leave the title or category blank and they'll be filled in from your note."}
+          size="lg"
+        >
+          <NoteEditor
+            key={editNote?.id ?? "new-note"}
+            initialNote={editNote}
+            saving={saving}
+            onSave={saveNote}
+            onCancel={() => setEditorOpen(false)}
+            categoryOptions={Array.from(new Set(notes.map((n) => n.category?.trim()).filter(Boolean)))}
+          />
+        </Modal>
+      </SourceViewerProvider>
     </NotesContext.Provider>
   );
 }

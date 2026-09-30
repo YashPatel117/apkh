@@ -44,7 +44,7 @@ describe('ChatService.sendMessage', () => {
   const sessionId = new Types.ObjectId().toHexString();
   const userId = new Types.ObjectId().toHexString();
   let service: ChatService;
-  let saved: { role: string; content: string }[];
+  let saved: { role: string; content: string; sources?: unknown[] }[];
   let session: {
     _id: Types.ObjectId;
     title: string;
@@ -56,7 +56,13 @@ describe('ChatService.sendMessage', () => {
   class MessageModel {
     static find = jest.fn();
     static countDocuments = jest.fn();
-    constructor(private readonly doc: { role: string; content: string }) {}
+    constructor(
+      private readonly doc: {
+        role: string;
+        content: string;
+        sources?: unknown[];
+      },
+    ) {}
     save() {
       saved.push(this.doc);
       return Promise.resolve(this);
@@ -128,11 +134,50 @@ describe('ChatService.sendMessage', () => {
     await expect(send()).resolves.toEqual({
       answer: 'The answer',
       tokens_used: 42,
+      sources: [],
     });
     expect(saved).toEqual([
       expect.objectContaining({ role: 'user', content: 'What did we decide?' }),
       expect.objectContaining({ role: 'assistant', content: 'The answer' }),
     ]);
+  });
+
+  it('keeps the note passages behind an answer, marking the cited ones', async () => {
+    retrieval.retrieve.mockImplementation((_user, _query, options) =>
+      Promise.resolve(
+        options.scope.sessionId || options.scope.excludeSessionId
+          ? []
+          : [
+              chunk('launch in Q3', {
+                noteId: new Types.ObjectId().toHexString(),
+              }),
+              chunk('budget 10k', {
+                noteId: new Types.ObjectId().toHexString(),
+              }),
+            ],
+      ),
+    );
+    searchApi.chatRag.mockResolvedValue({
+      text: 'We ship in Q3 [1].',
+      error: false,
+      tokensUsed: 1,
+    });
+
+    const result = await send();
+
+    expect(
+      result.sources.map((source) => [source.excerpt, source.cited]),
+    ).toEqual([
+      ['launch in Q3', true],
+      ['budget 10k', false],
+    ]);
+    expect(saved[1]).toMatchObject({
+      role: 'assistant',
+      sources: [
+        expect.objectContaining({ excerpt: 'launch in Q3', cited: true }),
+        expect.objectContaining({ excerpt: 'budget 10k', cited: false }),
+      ],
+    });
   });
 
   it('saves nothing when the model fails, so the question can be retried', async () => {
@@ -182,7 +227,7 @@ describe('ChatService.sendMessage', () => {
         Record<string, string[]>,
       ][]
     )[0][2];
-    expect(prompt.notesChunks).toEqual(['[SOURCE: Note "Plan"]\nfrom a note']);
+    expect(prompt.notesChunks).toEqual(['Note "Plan"\nfrom a note']);
     expect(prompt.currentChatChunks).toEqual(['earlier in this chat']);
     expect(prompt.similarChatChunks).toEqual([
       '[RELATED CHAT: Old chat]\nanother chat',

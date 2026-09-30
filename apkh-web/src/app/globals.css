@@ -209,3 +209,12 @@
     @apply rounded-md border border-line bg-surface-2 text-fg;
   }
   .note-editor .ql-snow .ql-tooltip a { @apply text-accent; }
+
+/* The passage a search source points to (sourceViewer.tsx), in browsers without
+   the CSS Custom Highlight API. The ::highlight() rule is added at runtime by
+   passageHighlight.ts: the CSS build step can't parse it yet. */
+mark.apkh-source {
+  background-color: rgb(250 204 21 / 0.45);
+  color: inherit;
+  border-radius: 0.2rem;
+}

@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Markdown from "react-markdown";
-import { ArrowLeft, ArrowUp, MessagesSquare, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowUp, MessagesSquare, Paperclip, Search, Trash2 } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { getChatMessages, sendChatMessage, deleteChatSession, IChatMessage, IChatSession } from "@/service/chatService";
 import { getErrorMessage } from "@/service/axios/axios";
@@ -16,6 +15,8 @@ import {
 } from "@/store/slices/chatSlice";
 import { useNotes } from "@/app/common/context/notesContext";
 import { Avatar } from "@/app/common/components/sidebar";
+import { CitedMarkdown } from "@/app/common/components/citedMarkdown";
+import { useSourceViewer } from "@/app/common/components/sourceViewer";
 import { LogoMark } from "@/app/common/ui/Logo";
 import { Button } from "@/app/common/ui/Button";
 import { Spinner } from "@/app/common/ui/Spinner";
@@ -97,7 +98,14 @@ export default function ChatPage() {
       // Only append if the user is still looking at this conversation.
       if (activeRef.current === sessionId) {
         dispatch(
-          addMessage({ id: `ai-${Date.now()}`, sessionId, role: "assistant", content: response.answer, createdAt: new Date().toISOString() }),
+          addMessage({
+            id: `ai-${Date.now()}`,
+            sessionId,
+            role: "assistant",
+            content: response.answer,
+            createdAt: new Date().toISOString(),
+            sources: response.sources,
+          }),
         );
       }
     } catch (err) {
@@ -304,6 +312,16 @@ function MessageBubble({ message, userName }: { message: IChatMessage; userName:
     );
   }
 
+  return <AssistantBubble message={message} />;
+}
+
+/** An answer, with its [n] citations and the note passages behind them. */
+function AssistantBubble({ message }: { message: IChatMessage }) {
+  const openSource = useSourceViewer();
+  const [showAllSources, setShowAllSources] = useState(false);
+  const sources = (message.sources ?? []).map((source, i) => ({ source, number: i + 1 }));
+  const shown = showAllSources ? sources : sources.filter(({ source }) => source.cited);
+
   return (
     <div className="flex items-start gap-3">
       <span className="mt-0.5 hidden sm:block">
@@ -311,8 +329,37 @@ function MessageBubble({ message, userName }: { message: IChatMessage; userName:
       </span>
       <div className="min-w-0 max-w-full flex-1 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 sm:max-w-[85%] sm:flex-none">
         <div className="rich-content text-fg">
-          <Markdown>{message.content}</Markdown>
+          <CitedMarkdown
+            text={message.content}
+            sourceCount={sources.length}
+            onCite={(n) => openSource(sources[n - 1].source)}
+          />
         </div>
+        {sources.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
+            {shown.map(({ source, number }) => (
+              <button
+                key={number}
+                type="button"
+                onClick={() => openSource(source)}
+                className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-1 text-xs text-fg-muted transition-colors hover:text-fg"
+              >
+                <span className="font-bold text-accent-fg">{number}</span>
+                <span className="truncate">{source.noteTitle || "Untitled note"}</span>
+                {source.sourceType === "file" && <Paperclip className="size-3 shrink-0" />}
+              </button>
+            ))}
+            {sources.length > shown.length && (
+              <button
+                type="button"
+                onClick={() => setShowAllSources(true)}
+                className="cursor-pointer px-1 text-xs font-medium text-fg-subtle transition-colors hover:text-fg"
+              >
+                {shown.length ? `+${sources.length - shown.length} more` : `${sources.length} source${sources.length === 1 ? "" : "s"}`}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

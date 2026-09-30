@@ -22,8 +22,13 @@ import {
   SearchApiClient,
   SearchApiError,
 } from 'src/search-api/search-api.client';
-import { RetrievalService } from 'src/search/retrieval.service';
-import { contextBlock, similarityThresholds } from 'src/search/search.service';
+import { RetrievedChunk, RetrievalService } from 'src/search/retrieval.service';
+import { ChatSource } from 'src/common/schema/chat-message';
+import {
+  citedSources,
+  contextBlock,
+  similarityThresholds,
+} from 'src/search/search.service';
 import {
   looksLikeFollowUp,
   QueryRewriteService,
@@ -33,7 +38,23 @@ interface ChatContext {
   currentChatChunks: string[];
   notesChunks: string[];
   similarChatChunks: string[];
+  /** The passages behind notesChunks, in the same order (cited as [n]) */
+  noteSources: RetrievedChunk[];
 }
+
+/** A source as the web app receives it. */
+export interface ChatSourceView {
+  noteId?: string;
+  noteTitle: string;
+  sourceType: string;
+  sourceName?: string;
+  sourcePage?: number;
+  excerpt: string;
+  cited: boolean;
+}
+
+// Enough of a passage to show it and to find it again in the note.
+const SOURCE_EXCERPT_CHARS = 1000;
 
 // Previous messages sent along with each question.
 const CHAT_HISTORY_LIMIT = 10;
@@ -86,6 +107,9 @@ export class ChatService {
         sessionId: session._id,
         role: 'assistant',
         content: createSessionDto.aiResponse,
+        sources: createSessionDto.sources?.map((source) =>
+          toStoredSource({ ...source, cited: source.cited ?? false }),
+        ),
       });
 
       await Promise.all([userMessage.save(), aiMessage.save()]);
@@ -165,6 +189,7 @@ export class ChatService {
         role: m.role,
         content: m.content,
         createdAt: m.createdAt,
+        sources: m.sources?.map(toSourceView),
       }));
     } catch (error: unknown) {
       throw toHttpException(error);
@@ -273,10 +298,23 @@ export class ChatService {
         content: sendMessageDto.message,
       });
       await userMessage.save();
+      const cited = citedSources(answer, context.noteSources.length);
+      const sources = context.noteSources.map((chunk, i) =>
+        toStoredSource({
+          noteId: chunk.noteId,
+          noteTitle: chunk.noteTitle,
+          sourceType: chunk.sourceType,
+          sourceName: chunk.sourceName,
+          sourcePage: chunk.sourcePage,
+          excerpt: chunk.text,
+          cited: cited.has(i + 1),
+        }),
+      );
       const aiMessage = new this.messageModel({
         sessionId: session._id,
         role: 'assistant',
         content: answer,
+        sources,
       });
       await aiMessage.save();
 
@@ -311,6 +349,7 @@ export class ChatService {
       return {
         answer,
         tokens_used: tokensUsed,
+        sources: sources.map(toSourceView),
       };
     } catch (error: unknown) {
       throw toHttpException(error);
@@ -393,6 +432,7 @@ export class ChatService {
     ]);
 
     return {
+      noteSources: notes,
       currentChatChunks: currentChat.map((chunk) => chunk.text),
       notesChunks: notes.map(contextBlock),
       similarChatChunks: otherChats.map(
@@ -400,4 +440,37 @@ export class ChatService {
       ),
     };
   }
+}
+
+function toStoredSource(source: {
+  noteId?: string;
+  noteTitle: string;
+  sourceType: string;
+  sourceName?: string;
+  sourcePage?: number;
+  excerpt: string;
+  cited: boolean;
+}): ChatSource {
+  const stored: ChatSource = {
+    noteTitle: source.noteTitle,
+    sourceType: source.sourceType,
+    excerpt: source.excerpt.slice(0, SOURCE_EXCERPT_CHARS),
+    cited: source.cited,
+  };
+  if (source.noteId) stored.noteId = new Types.ObjectId(source.noteId);
+  if (source.sourceName) stored.sourceName = source.sourceName;
+  if (source.sourcePage) stored.sourcePage = source.sourcePage;
+  return stored;
+}
+
+function toSourceView(source: ChatSource): ChatSourceView {
+  return {
+    noteId: source.noteId?.toString(),
+    noteTitle: source.noteTitle,
+    sourceType: source.sourceType,
+    sourceName: source.sourceName,
+    sourcePage: source.sourcePage,
+    excerpt: source.excerpt,
+    cited: source.cited,
+  };
 }
