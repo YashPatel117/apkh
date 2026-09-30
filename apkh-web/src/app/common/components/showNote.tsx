@@ -83,6 +83,8 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
     () => normalizeNoteLinksInHtml(stripLegacyFileTokenStyles(note.content)),
     [note.content],
   );
+  // Stable, so re-renders don't make React rebuild the preview's DOM (and lose text selection).
+  const contentHtml = useMemo(() => ({ __html: normalizedContent }), [normalizedContent]);
   const hasContent = Boolean(note.content?.replace(/<[^>]+>/g, "").trim()) || note.content?.includes("file-token");
 
   useEffect(() => {
@@ -185,7 +187,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
                 !expanded && isTruncated && "[mask-image:linear-gradient(to_bottom,black_65%,transparent)]",
               )}
               style={!expanded ? { maxHeight: PREVIEW_MAX_HEIGHT } : undefined}
-              dangerouslySetInnerHTML={{ __html: normalizedContent }}
+              dangerouslySetInnerHTML={contentHtml}
             />
           </div>
         )}

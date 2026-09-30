@@ -107,6 +107,9 @@ function HighlightedNote({ html, passage }: { html: string; passage: string }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [found, setFound] = useState<boolean | null>(null);
   const content = useMemo(() => normalizeNoteLinksInHtml(stripLegacyFileTokenStyles(html)), [html]);
+  // A stable object: React re-applies innerHTML whenever this prop is a new object,
+  // which would replace the text nodes and drop the highlight on every re-render.
+  const innerHtml = useMemo(() => ({ __html: content }), [content]);
 
   useEffect(() => {
     const root = contentRef.current;
@@ -127,7 +130,7 @@ function HighlightedNote({ html, passage }: { html: string; passage: string }) {
           from its link list.
         </p>
       )}
-      <div ref={contentRef} className="rich-content text-sm" dangerouslySetInnerHTML={{ __html: content }} />
+      <div ref={contentRef} className="rich-content text-sm" dangerouslySetInnerHTML={innerHtml} />
     </>
   );
 }
