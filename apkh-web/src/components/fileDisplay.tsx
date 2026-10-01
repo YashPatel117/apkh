@@ -56,7 +56,7 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
           objectUrl = URL.createObjectURL(res.data);
           if (!isMounted) return URL.revokeObjectURL(objectUrl);
           setFileBlobUrl(objectUrl);
-          setMimeType(res.headers["content-type"] || "");
+          setMimeType(String(res.headers["content-type"] ?? ""));
           return;
         }
         setFailed(true);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Link2, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
 import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels, switchToBuiltinAi } from "@/services/authService";
 import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch } from "@/store/hook";
@@ -24,6 +24,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/cn";
+import { exchangeOpenrouterCode, startOpenrouterConnect, takeOpenrouterCallback } from "@/lib/openrouterConnect";
 
 // ── Provider catalogue ───────────────────────────────────────────────────────
 // Models are not listed here: they are fetched live from the provider with the
@@ -36,6 +37,11 @@ const PROVIDER_GROUPS: { id: Exclude<LlmProvider, "builtin">; label: string; doc
   { id: "openai", label: "OpenAI", docsUrl: "https://platform.openai.com/api-keys" },
   { id: "anthropic", label: "Anthropic Claude", docsUrl: "https://console.anthropic.com/settings/keys" },
 ];
+
+// "Connect OpenRouter" saves its key under this name, replacing it on a reconnect.
+const OPENROUTER_CONNECT_NAME = "OpenRouter";
+// Free models come and go and some are rate-limited; try a few before giving up.
+const OPENROUTER_MODELS_TO_TRY = 5;
 
 // Shorter input is still being typed or pasted; don't query the provider yet.
 const MIN_KEY_LENGTH = 20;
@@ -246,7 +252,9 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const toast = useToast();
   const configs: ILlmConfig[] = user.llmConfigs ?? [];
   const builtinAi = builtinAiOf(user);
-  const builtinAiActive = Boolean(builtinAi) && !configs.some((c) => c.isActive);
+  // Any saved OpenRouter key, connected or pasted, makes "Connect OpenRouter" redundant
+  const hasOpenrouter = configs.some((c) => providerOfModel(c.llmModel) === "openrouter");
+  const builtinAiActive =Boolean(builtinAi) && !configs.some((c) => c.isActive);
   const [showForm, setShowForm] = useState(configs.length === 0 && !builtinAi);
   const [pendingDelete, setPendingDelete] = useState<ILlmConfig | null>(null);
 
@@ -260,6 +268,8 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testError, setTestError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // "redirecting" to openrouter.ai, or "saving" its key on the way back
+  const [connect, setConnect] = useState<"idle" | "redirecting" | "saving">("idle");
 
   const trimmedKey = apiKey.trim();
   const group = PROVIDER_GROUPS.find((g) => g.id === providerId) ?? PROVIDER_GROUPS[0];
@@ -361,6 +371,50 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     }
   }
 
+  // Back from openrouter.ai: exchange the code for a key, then save it with
+  // the first free model that answers, as the active config.
+  useEffect(() => {
+    const callback = takeOpenrouterCallback();
+    if (!callback) return;
+    setConnect("saving");
+    (async () => {
+      try {
+        const key = await exchangeOpenrouterCode(callback.code, callback.verifier);
+        const listed = await listLlmModels({ provider: "openrouter", apiKey: key });
+        if (!listed.ok || !listed.models.length) throw new Error(listed.error ?? "OpenRouter has no free models right now.");
+
+        let chosen: string | null = null;
+        for (const candidate of listed.models.slice(0, OPENROUTER_MODELS_TO_TRY)) {
+          if ((await testLlmSettings({ apiKey: key, model: candidate.id })).ok) {
+            chosen = candidate.id;
+            break;
+          }
+        }
+        if (!chosen) throw new Error("Connected, but none of OpenRouter's free models answered. Try again in a few minutes.");
+
+        const updatedUser = await addLlmConfig({ keyName: OPENROUTER_CONNECT_NAME, apiKey: key, model: chosen, setActive: true });
+        dispatch(setUser({ ...user, ...updatedUser }));
+        toast(`OpenRouter connected. Now using ${chosen}.`, "success");
+      } catch (err) {
+        toast(getErrorMessage(err, "Couldn't connect OpenRouter. Please try again."), "error");
+      } finally {
+        setConnect("idle");
+      }
+    })();
+    // Runs once per page load; the callback code is single-use
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleConnectOpenrouter() {
+    setConnect("redirecting");
+    try {
+      await startOpenrouterConnect();
+    } catch {
+      setConnect("idle");
+      toast("Couldn't start the OpenRouter sign-in.", "error");
+    }
+  }
+
   async function handleActivate(name: string) {
     try {
       const updatedUser = await activateLlmConfig(name);
@@ -411,12 +465,34 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
               : "Bring your own key. The active config powers search, summaries and chat."}
           </p>
         </div>
-        {!showForm && (
-          <Button size="sm" variant="soft" onClick={() => setShowForm(true)} icon={<Plus className="size-3.5" />}>
-            Add key
-          </Button>
+        {(!hasOpenrouter || !showForm) && (
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {!hasOpenrouter && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void handleConnectOpenrouter()}
+                loading={connect !== "idle"}
+                icon={<Link2 className="size-3.5" />}
+              >
+                Connect OpenRouter
+              </Button>
+            )}
+            {!showForm && (
+              <Button size="sm" variant="soft" onClick={() => setShowForm(true)} icon={<Plus className="size-3.5" />}>
+                Add key
+              </Button>
+            )}
+          </div>
         )}
       </div>
+
+      {connect === "saving" && (
+        <div className="mt-5 flex items-center gap-3 rounded-2xl bg-accent-soft p-4 text-sm text-accent-fg" aria-live="polite">
+          <Spinner className="size-4" />
+          Connecting OpenRouter and picking a free model that works…
+        </div>
+      )}
 
       {(configs.length > 0 || builtinAi) && (
         <div role="radiogroup" aria-label="AI configs" className="mt-5 space-y-2">
