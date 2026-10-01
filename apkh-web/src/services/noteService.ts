@@ -1,5 +1,5 @@
 import { INote, INoteDto, IndexStatus } from "@/models/note";
-import { webApi, storageApi } from "@/services/axios";
+import { webApi } from "@/services/axios";
 
 export async function getAllNotes() {
   const res = await webApi.get("/notes");
@@ -70,7 +70,7 @@ export async function deleteNote(id: string) {
 }
 
 export async function getFile(noteId: string, fileName: string) {
-  const res = await storageApi.get(`/files/${encodeURIComponent(noteId)}/${encodeURIComponent(fileName)}`, {
+  const res = await webApi.get(`/file/${encodeURIComponent(noteId)}/${encodeURIComponent(fileName)}`, {
     responseType: "blob",
   });
   return res;

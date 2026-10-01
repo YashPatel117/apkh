@@ -1,10 +1,10 @@
 const express = require("express");
 const multer = require("multer");
-const fs = require("fs");
 const path = require("path");
 const jwt = require("jsonwebtoken");
 const archiver = require("archiver");
 const cors = require("cors");
+const { MongoClient, GridFSBucket } = require("mongodb");
 
 // Load .env if present (Node >= 20.12); real env vars take precedence
 try {
@@ -14,6 +14,12 @@ try {
 const JwtSecretKey = process.env.JWT_SECRET;
 if (!JwtSecretKey) {
   console.error("Missing JWT_SECRET. Copy .env.example to .env and fill it in.");
+  process.exit(1);
+}
+
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error("Missing MONGODB_URI. Copy .env.example to .env and fill it in.");
   process.exit(1);
 }
 
@@ -33,29 +39,45 @@ app.use(
   })
 );
 
-const baseFolder = path.join(__dirname, "uploads");
-if (!fs.existsSync(baseFolder)) fs.mkdirSync(baseFolder, { recursive: true });
+// Files live in MongoDB GridFS (attachments.files / attachments.chunks), one
+// document per file, keyed by metadata.userId + metadata.noteId + filename.
+const client = new MongoClient(MONGODB_URI);
+let bucket;
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-/**
- * Resolves a path under baseFolder from user-supplied segments (user id, noteId,
- * filename). Returns null if any segment could escape its directory.
- */
-function safePath(...segments) {
-  for (const segment of segments) {
-    if (
-      typeof segment !== "string" ||
-      !segment ||
-      segment === "." ||
-      segment === ".." ||
-      /[\\/\0]/.test(segment)
-    )
-      return null;
-  }
-  const target = path.resolve(baseFolder, ...segments);
-  return target.startsWith(baseFolder + path.sep) ? target : null;
+/** True for a user-supplied id or filename that is safe to store and serve. */
+function validSegment(segment) {
+  return (
+    typeof segment === "string" &&
+    !!segment &&
+    segment !== "." &&
+    segment !== ".." &&
+    !/[\\/\0]/.test(segment)
+  );
+}
+
+/** GridFS file documents of a user, optionally narrowed to a note and filenames. */
+function findFiles(userId, noteId, filenames) {
+  const query = { "metadata.userId": userId };
+  if (noteId) query["metadata.noteId"] = noteId;
+  if (filenames) query.filename = { $in: filenames };
+  return bucket.find(query).toArray();
+}
+
+function deleteFiles(files) {
+  return Promise.all(files.map((f) => bucket.delete(f._id)));
+}
+
+function writeFile(userId, noteId, file) {
+  return new Promise((resolve, reject) => {
+    const stream = bucket.openUploadStream(file.originalname, {
+      metadata: { userId, noteId },
+    });
+    stream.once("finish", resolve).once("error", reject);
+    stream.end(file.buffer);
+  });
 }
 
 app.use(express.json());
@@ -74,30 +96,31 @@ app.use((req, res, next) => {
   }
 });
 
-// 📌 Upload files under noteId
-app.post("/upload/:noteId", upload.array("files"), (req, res) => {
-  const folderPath = safePath(req.id, req.params.noteId);
-  if (!folderPath) return res.status(400).send("Invalid noteId");
+// 📌 Upload files under noteId (a file with the same name is replaced)
+app.post("/upload/:noteId", upload.array("files"), async (req, res) => {
+  const { noteId } = req.params;
+  if (!validSegment(noteId)) return res.status(400).send("Invalid noteId");
 
   const files = req.files || [];
-  const filePaths = files.map((f) => safePath(req.id, req.params.noteId, f.originalname));
-  if (filePaths.some((p) => !p)) return res.status(400).send("Invalid filename");
+  if (files.some((f) => !validSegment(f.originalname)))
+    return res.status(400).send("Invalid filename");
 
-  if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
-  files.forEach((f, i) => fs.writeFileSync(filePaths[i], f.buffer));
-  res.json(files.map((f) => f.originalname));
+  const names = files.map((f) => f.originalname);
+  const previous = await findFiles(req.id, noteId, names);
+  for (const f of files) await writeFile(req.id, noteId, f);
+  await deleteFiles(previous);
+  res.json(names);
 });
 
-app.post("/files", (req, res) => {
+app.post("/files", async (req, res) => {
   const { noteId, files } = req.body; // noteId and array of filenames
   if (!noteId || !Array.isArray(files) || files.length === 0) {
     return res.status(400).send("noteId and files array are required");
   }
+  if (!validSegment(noteId)) return res.status(400).send("Invalid noteId");
 
-  const folderPath = safePath(req.id, noteId);
-  if (!folderPath) return res.status(400).send("Invalid noteId");
-  if (!fs.existsSync(folderPath))
-    return res.status(404).send("Note ID not found");
+  const found = await findFiles(req.id, noteId, files.filter(validSegment));
+  if (found.length === 0) return res.status(404).send("Note ID not found");
 
   // Set headers for ZIP download
   res.setHeader("Content-Type", "application/zip");
@@ -112,62 +135,73 @@ app.post("/files", (req, res) => {
 
   archive.pipe(res);
 
-  files.forEach((filename) => {
-    const filePath = safePath(req.id, noteId, filename);
-    if (filePath && fs.existsSync(filePath)) {
-      archive.file(filePath, { name: filename });
-    }
+  found.forEach((f) => {
+    archive.append(bucket.openDownloadStream(f._id), { name: f.filename });
   });
 
   archive.finalize();
 });
 
 // 📌 Get specific file
-app.get("/files/:noteId/:filename", (req, res) => {
-  const filePath = safePath(req.id, req.params.noteId, req.params.filename);
-  if (!filePath) return res.status(400).send("Invalid path");
-  if (!fs.existsSync(filePath)) return res.status(404).send("File not found");
-  res.sendFile(filePath);
+app.get("/files/:noteId/:filename", async (req, res) => {
+  const { noteId, filename } = req.params;
+  if (!validSegment(noteId) || !validSegment(filename))
+    return res.status(400).send("Invalid path");
+
+  const [file] = await findFiles(req.id, noteId, [filename]);
+  if (!file) return res.status(404).send("File not found");
+
+  res.type(path.extname(filename) || "bin");
+  res.set("Content-Length", String(file.length));
+  bucket
+    .openDownloadStream(file._id)
+    .on("error", () => res.destroy())
+    .pipe(res);
 });
 
+// Deletes succeed even when nothing matches, so notes whose files are already
+// gone (e.g. uploaded before the move to GridFS) can still be deleted.
+
 // 📌 Delete all files for user
-app.delete("/files", (req, res) => {
-  const userFolder = safePath(req.id);
-  if (!userFolder) return res.status(400).send("Invalid user");
-  if (!fs.existsSync(userFolder)) return res.status(404).send("ID not found");
-  fs.rmSync(userFolder, { recursive: true, force: true });
+app.delete("/files", async (req, res) => {
+  await deleteFiles(await findFiles(req.id));
   res.send("All files deleted for user");
 });
 
-// 📌 Delete noteId folder
-app.delete("/files/:noteId", (req, res) => {
-  const folderPath = safePath(req.id, req.params.noteId);
-  if (!folderPath) return res.status(400).send("Invalid noteId");
-  if (!fs.existsSync(folderPath))
-    return res.status(404).send("Note ID not found");
-  fs.rmSync(folderPath, { recursive: true, force: true });
+// 📌 Delete all files of a note
+app.delete("/files/:noteId", async (req, res) => {
+  const { noteId } = req.params;
+  if (!validSegment(noteId)) return res.status(400).send("Invalid noteId");
+  await deleteFiles(await findFiles(req.id, noteId));
   res.send("Note folder deleted");
 });
 
 // 📌 Delete selected files inside noteId
-app.delete("/files/:noteId/files", (req, res) => {
-  const folderPath = safePath(req.id, req.params.noteId);
-  if (!folderPath) return res.status(400).send("Invalid noteId");
-  if (!fs.existsSync(folderPath))
-    return res.status(404).send("Note ID not found");
+app.delete("/files/:noteId/files", async (req, res) => {
+  const { noteId } = req.params;
+  if (!validSegment(noteId)) return res.status(400).send("Invalid noteId");
 
   const { filenames } = req.body; // expect array of filenames
   if (!Array.isArray(filenames))
     return res.status(400).send("filenames[] required");
 
-  filenames.forEach((filename) => {
-    const filePath = safePath(req.id, req.params.noteId, filename);
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  });
-
+  await deleteFiles(await findFiles(req.id, noteId, filenames));
   res.send("Selected files deleted");
 });
 
-app.listen(port, () =>
-  console.log(`Server running at http://localhost:${port}`)
-);
+async function start() {
+  await client.connect();
+  const db = client.db();
+  bucket = new GridFSBucket(db, { bucketName: "attachments" });
+  await db
+    .collection("attachments.files")
+    .createIndex({ "metadata.userId": 1, "metadata.noteId": 1, filename: 1 });
+  app.listen(port, () =>
+    console.log(`Server running at http://localhost:${port}`)
+  );
+}
+
+start().catch((err) => {
+  console.error("Failed to start storage service:", err);
+  process.exit(1);
+});
