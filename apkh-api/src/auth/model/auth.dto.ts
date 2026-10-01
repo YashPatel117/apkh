@@ -28,6 +28,13 @@ export class RegisterDto {
   password: string;
 }
 
+export class GoogleLoginDto {
+  @ApiProperty({ description: 'Firebase ID token from Google sign-in' })
+  @IsString({ message: 'ID token must be a string' })
+  @IsNotEmpty({ message: 'ID token is required' })
+  idToken: string;
+}
+
 export class ResetPasswordDto {
   @ApiProperty({ example: 'user@example.com' })
   @IsEmail({}, { message: 'Email must be a valid email address' })

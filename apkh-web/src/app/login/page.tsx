@@ -13,6 +13,7 @@ import { setToken } from "@/store/slices/authSlice";
 import { AuthShell, FormAlert } from "@/components/authShell";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { GoogleSignIn } from "@/components/googleSignIn";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -101,6 +102,7 @@ export default function LoginPage() {
           {!isLoading && <ArrowRight className="size-4" />}
         </Button>
       </form>
+      <GoogleSignIn disabled={isLoading} onError={setError} />
     </AuthShell>
   );
 }

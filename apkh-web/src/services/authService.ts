@@ -12,6 +12,13 @@ export async function login(email: string, password: string) {
   return res.data;
 }
 
+/** Signs in (or up) with a Firebase ID token from Google's popup (no interceptor). */
+export async function loginWithGoogle(idToken: string) {
+  const res = await axios.post(`${API_URL}/auth/google`, { idToken });
+  localStorage.setItem("token", res.data.data);
+  return res.data;
+}
+
 // Profile (uses interceptor → token auto-attached)
 export async function profile() {
   const res = await webApi.get("/users/profile");

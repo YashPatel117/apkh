@@ -126,13 +126,28 @@ export class UsersService {
     return user.save();
   }
 
-  async create(name: string, email: string, password: string): Promise<User> {
+  /** Without a password for accounts that only sign in with Google. */
+  async create(
+    name: string,
+    email: string,
+    password?: string,
+  ): Promise<UserDocument> {
     const newUser = new this.userModel({ name, email, password });
     return newUser.save();
   }
 
   async findOne(username: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: username }).exec();
+  }
+
+  /** Emails differ in case between providers and what people typed at sign-up. */
+  async findOneByEmailIgnoringCase(
+    email: string,
+  ): Promise<UserDocument | null> {
+    return this.userModel
+      .findOne({ email })
+      .collation({ locale: 'en', strength: 2 })
+      .exec();
   }
 
   async findOneById(userId: string): Promise<UserDocument | null> {

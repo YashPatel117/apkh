@@ -12,6 +12,7 @@ import { setToken } from "@/store/slices/authSlice";
 import { AuthShell, FormAlert } from "@/components/authShell";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { GoogleSignIn } from "@/components/googleSignIn";
 
 const MIN_PASSWORD = 6;
 
@@ -99,6 +100,7 @@ export default function RegisterPage() {
           {!isLoading && <ArrowRight className="size-4" />}
         </Button>
       </form>
+      <GoogleSignIn disabled={isLoading} onError={setError} />
     </AuthShell>
   );
 }
