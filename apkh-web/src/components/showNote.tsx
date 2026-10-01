@@ -11,6 +11,8 @@ import FileDisplay from "@/components/fileDisplay";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "@/lib/noteLinkUtils";
 import { Modal } from "@/components/ui/Modal";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { useAppSelector } from "@/store/hook";
+import { activeAi } from "@/models/user";
 import { cn } from "@/lib/cn";
 import { displayFileName } from "@/lib/fileName";
 
@@ -35,12 +37,14 @@ function IconAction({
   onClick,
   active,
   danger,
+  disabled,
   children,
 }: {
   label: string;
   onClick: () => void;
   active?: boolean;
   danger?: boolean;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -50,12 +54,13 @@ function IconAction({
         type="button"
         aria-label={label}
         aria-pressed={active}
+        disabled={disabled}
         onClick={(e) => {
           e.stopPropagation();
           onClick();
         }}
         className={cn(
-          "flex size-8 cursor-pointer items-center justify-center rounded-lg transition-colors [&>svg]:size-4",
+          "flex size-8 cursor-pointer items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent [&>svg]:size-4",
           active
             ? "bg-accent-soft text-accent"
             : danger
@@ -70,6 +75,7 @@ function IconAction({
 }
 
 export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = false, indexState, onEdit, onDelete, onToggleSelect, onReindex }) => {
+  const aiOn = useAppSelector((state) => Boolean(activeAi(state.auth.user)));
   const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
   const [previewFile, setPreviewFile] = useState<string | null>(null);
@@ -155,13 +161,23 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
           <div
             className={cn(
               "-mt-1 -mr-1 flex shrink-0 items-center gap-0.5 transition-opacity",
-              !selected && !summaryOpen && "sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100",
+              !selected && !(aiOn && summaryOpen) && "sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100",
             )}
           >
-            <IconAction label={selected ? "Unpin from AI question" : "Pin for AI question"} active={selected} onClick={() => onToggleSelect?.()}>
+            <IconAction
+              label={!aiOn ? "AI answers are off" : selected ? "Unpin from AI question" : "Pin for AI question"}
+              active={selected}
+              disabled={!aiOn && !selected}
+              onClick={() => onToggleSelect?.()}
+            >
               <AtSign />
             </IconAction>
-            <IconAction label={summaryOpen ? "Hide AI summary" : "AI summary"} active={summaryOpen} onClick={() => setSummaryOpen((open) => !open)}>
+            <IconAction
+              label={!aiOn ? "AI answers are off" : summaryOpen ? "Hide AI summary" : "AI summary"}
+              active={aiOn && summaryOpen}
+              disabled={!aiOn}
+              onClick={() => setSummaryOpen((open) => !open)}
+            >
               <Sparkles />
             </IconAction>
             <IconAction label="Similar notes" onClick={() => setSimilarOpen(true)}>
@@ -194,7 +210,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
         )}
 
         {/* AI summary */}
-        {summaryOpen && <NoteSummaryPanel noteId={note.id} updatedAt={note.updatedAt} />}
+        {aiOn && summaryOpen && <NoteSummaryPanel noteId={note.id} updatedAt={note.updatedAt} />}
 
         {/* Footer */}
         <div className="mt-4 flex items-center justify-between gap-3">

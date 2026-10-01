@@ -12,6 +12,8 @@ import {
   IChatSession,
 } from "@/services/chatService";
 import { getErrorMessage } from "@/services/axios";
+import { activeAi } from "@/models/user";
+import Link from "next/link";
 import {
   addSession,
   setActiveSession,
@@ -41,6 +43,7 @@ export default function ChatPage() {
   const dispatch = useAppDispatch();
   const { sessions, activeSessionId, messages } = useAppSelector((state) => state.chat);
   const user = useAppSelector((state) => state.auth.user);
+  const aiOn = Boolean(activeAi(user));
   const { focusSearch } = useNotes();
   const toast = useToast();
 
@@ -96,7 +99,7 @@ export default function ChatPage() {
 
   const handleSendMessage = async () => {
     const content = inputValue.trim();
-    if (!content || !activeSessionId || isSending) return;
+    if (!content || !activeSessionId || isSending || !aiOn) return;
     const sessionId = activeSessionId;
     setInputValue("");
 
@@ -176,13 +179,14 @@ export default function ChatPage() {
             <span className="font-semibold text-fg">Continue this conversation</span>.
           </p>
           <div className="mt-6 flex justify-center gap-2">
-            <Button onClick={() => void startNewChat()} loading={creating} icon={<Plus className="size-4" />}>
+            <Button onClick={() => void startNewChat()} loading={creating} disabled={!aiOn} icon={<Plus className="size-4" />}>
               New chat
             </Button>
-            <Button variant="secondary" onClick={focusSearch} icon={<Search className="size-4" />}>
+            <Button variant="secondary" onClick={focusSearch} disabled={!aiOn} icon={<Search className="size-4" />}>
               Ask AI
             </Button>
           </div>
+          {!aiOn && <AiOffNote className="mt-4" />}
         </div>
       </div>
     );
@@ -201,7 +205,14 @@ export default function ChatPage() {
           <h2 className="text-sm font-semibold text-fg">
             Conversations <span className="ml-1 text-xs font-normal text-fg-subtle tabular-nums">{sessions.length}</span>
           </h2>
-          <Button size="sm" variant="soft" onClick={() => void startNewChat()} loading={creating} icon={<Plus className="size-3.5" />}>
+          <Button
+            size="sm"
+            variant="soft"
+            onClick={() => void startNewChat()}
+            loading={creating}
+            disabled={!aiOn}
+            icon={<Plus className="size-3.5" />}
+          >
             New chat
           </Button>
         </div>
@@ -292,6 +303,7 @@ export default function ChatPage() {
         </div>
 
         <div className="shrink-0 border-t border-line bg-surface/60 px-3 py-3 backdrop-blur sm:px-6 sm:py-4">
+          {!aiOn && <AiOffNote className="mx-auto mb-2 max-w-3xl" />}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -309,12 +321,13 @@ export default function ChatPage() {
                   void handleSendMessage();
                 }
               }}
-              placeholder="Ask a follow-up question…"
+              placeholder={aiOn ? "Ask a follow-up question…" : "AI answers are off"}
+              disabled={!aiOn}
               rows={1}
               aria-label="Message"
-              className="max-h-44 min-h-10 flex-1 resize-none bg-transparent py-2 text-[0.95rem] text-fg outline-none placeholder:text-fg-subtle focus-visible:outline-none"
+              className="max-h-44 min-h-10 flex-1 resize-none bg-transparent py-2 text-[0.95rem] text-fg outline-none placeholder:text-fg-subtle focus-visible:outline-none disabled:cursor-not-allowed"
             />
-            <Button type="submit" size="icon" disabled={!inputValue.trim() || isSending} aria-label="Send message">
+            <Button type="submit" size="icon" disabled={!aiOn || !inputValue.trim() || isSending} aria-label="Send message">
               <ArrowUp className="size-5" />
             </Button>
           </form>
@@ -434,5 +447,17 @@ function AssistantBubble({ message, question }: { message: IChatMessage; questio
         )}
       </div>
     </div>
+  );
+}
+
+function AiOffNote({ className }: { className?: string }) {
+  return (
+    <p className={cn("text-center text-xs text-amber-700 dark:text-amber-300", className)}>
+      AI answers are off.{" "}
+      <Link href="/profile" className="font-semibold underline underline-offset-2">
+        Add an AI key in Profile
+      </Link>{" "}
+      to chat.
+    </p>
   );
 }

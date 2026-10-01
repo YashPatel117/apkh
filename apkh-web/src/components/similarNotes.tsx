@@ -5,6 +5,7 @@ import { ArrowUpRight, Copy, Layers } from "lucide-react";
 import { getSimilarNotes, SimilarNotes } from "@/services/noteService";
 import { getErrorMessage } from "@/services/axios";
 import { Modal } from "@/components/ui/Modal";
+import { BUILTIN_AI_ENABLED } from "@/models/user";
 
 /** Notes related to a note, and possible duplicates (roadmap: "Similar notes"). */
 export function SimilarNotesModal({
@@ -92,7 +93,7 @@ export function SimilarNotesModal({
         )}
         {result && !result.semantic && (
           <p className="mt-4 text-xs text-fg-subtle">
-            Compared by shared words. With the built-in AI or a Gemini or OpenAI key, notes are compared by meaning.
+            Compared by shared words. With {BUILTIN_AI_ENABLED ? "the built-in AI or " : ""}a Gemini or OpenAI key, notes are compared by meaning.
           </p>
         )}
       </div>

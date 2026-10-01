@@ -192,8 +192,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   async function handleAiSearch() {
     if (!ai) {
-      toast("Add and activate an AI key in Profile to enable answers.", "info");
-      router.push("/profile");
+      toast("AI answers are off. Add an AI key in Profile to enable them.", "info");
       return;
     }
     if (trimmedSearch.length < MIN_AI_QUERY) {
@@ -402,7 +401,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 >
                   <Button
                     onClick={() => void handleAiSearch()}
-                    disabled={Boolean(ai) && !canAsk}
+                    disabled={!ai || !canAsk}
                     loading={isAiSearching}
                     icon={!isAiSearching && <Sparkles className="size-4" />}
                     size="toolbar"

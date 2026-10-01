@@ -7,7 +7,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
 import { profile } from "@/services/authService";
 import { Avatar } from "@/components/sidebar";
-import { activeAi, supportsSemanticSearch } from "@/models/user";
+import { activeAi, BUILTIN_AI_ENABLED, supportsSemanticSearch } from "@/models/user";
 import LlmSettingsCard from "./LlmSettingsCard";
 import PlanCard from "./PlanCard";
 import SearchIndexCard from "./SearchIndexCard";
@@ -101,7 +101,7 @@ export default function ProfilePage() {
                   <p className="font-semibold">Keyword matching only</p>
                   <p className="mt-0.5 opacity-90">
                     {ai.model} can answer and summarize, but Claude has no embedding model, so notes and attachments are
-                    found by keywords rather than meaning. Use the built-in AI or a Gemini or OpenAI key for semantic search.
+                    found by keywords rather than meaning. Use {BUILTIN_AI_ENABLED ? "the built-in AI or " : ""}a Gemini or OpenAI key for semantic search.
                   </p>
                 </div>
               </div>

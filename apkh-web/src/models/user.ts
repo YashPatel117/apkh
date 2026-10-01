@@ -22,6 +22,14 @@ export function supportsSemanticSearch(model: string) {
 
 export const BUILTIN_AI_LABEL = "Built-in AI";
 
+/** NEXT_PUBLIC_BUILTIN_AI_ENABLED=false hides the built-in AI in this app, whatever the server offers. */
+export const BUILTIN_AI_ENABLED = process.env.NEXT_PUBLIC_BUILTIN_AI_ENABLED?.trim().toLowerCase() !== "false";
+
+/** The user's built-in AI usage, or null when the server doesn't offer it or this app has it turned off. */
+export function builtinAiOf(user: IUser | null | undefined): IBuiltinAiUsage | null {
+  return BUILTIN_AI_ENABLED ? (user?.builtinAi ?? null) : null;
+}
+
 /**
  * What powers AI features: the active saved config, else the built-in AI
  * (open-source models the app's server runs, within the plan's allowance),
@@ -32,7 +40,7 @@ export type ActiveAi = { kind: "key"; config: ILlmConfig; name: string; model: s
 export function activeAi(user: IUser | null | undefined): ActiveAi | null {
   const config = user?.llmConfigs?.find((c) => c.isActive);
   if (config) return { kind: "key", config, name: config.keyName, model: config.llmModel };
-  return user?.builtinAi ? { kind: "builtin", name: BUILTIN_AI_LABEL, model: "Open-source model" } : null;
+  return builtinAiOf(user) ? { kind: "builtin", name: BUILTIN_AI_LABEL, model: "Open-source model" } : null;
 }
 
 export type PlanId = "free" | "pro";

@@ -8,6 +8,7 @@ import { useAppDispatch } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
 import {
   BUILTIN_AI_LABEL,
+  builtinAiOf,
   IBuiltinAiUsage,
   ILlmConfig,
   ILlmModel,
@@ -244,7 +245,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const dispatch = useAppDispatch();
   const toast = useToast();
   const configs: ILlmConfig[] = user.llmConfigs ?? [];
-  const builtinAi = user.builtinAi ?? null;
+  const builtinAi = builtinAiOf(user);
   const builtinAiActive = Boolean(builtinAi) && !configs.some((c) => c.isActive);
   const [showForm, setShowForm] = useState(configs.length === 0 && !builtinAi);
   const [pendingDelete, setPendingDelete] = useState<ILlmConfig | null>(null);

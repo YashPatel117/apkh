@@ -15,7 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { INote } from "@/models/note";
-import { activeAi, IUser, timeUntil } from "@/models/user";
+import { activeAi, builtinAiOf, IUser, timeUntil } from "@/models/user";
 import { LogoMark, Wordmark } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
 import { Menu, MenuItem } from "@/components/ui/Menu";
@@ -67,7 +67,7 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
   const router = useRouter();
   const ai = activeAi(user);
   // Share of this session's built-in AI allowance used, as a whole percentage
-  const usage = user.builtinAi;
+  const usage = builtinAiOf(user);
   const used =
     usage && usage.sessionLimit > 0 ? Math.max(0, Math.min(100, Math.round((100 * usage.sessionTokens) / usage.sessionLimit))) : 0;
 

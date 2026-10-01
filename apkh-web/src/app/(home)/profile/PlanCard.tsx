@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check, Crown, KeyRound, ListOrdered, Sparkles } from "lucide-react";
-import { BUILTIN_AI_LABEL, IPlan, IUser } from "@/models/user";
+import { BUILTIN_AI_ENABLED, BUILTIN_AI_LABEL, IPlan, IUser } from "@/models/user";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import UpgradeModal from "./UpgradeModal";
@@ -16,7 +16,17 @@ function Feature({ Icon, children }: { Icon: typeof Check; children: React.React
   );
 }
 
-function PlanColumn({ plan, current, onUpgrade }: { plan: IPlan; current: boolean; onUpgrade?: () => void }) {
+function PlanColumn({
+  plan,
+  current,
+  disabled,
+  onUpgrade,
+}: {
+  plan: IPlan;
+  current: boolean;
+  disabled: boolean;
+  onUpgrade?: () => void;
+}) {
   return (
     <div
       className={cn(
@@ -44,7 +54,7 @@ function PlanColumn({ plan, current, onUpgrade }: { plan: IPlan; current: boolea
         <Feature Icon={KeyRound}>Your own AI keys, with no limit</Feature>
       </ul>
       {onUpgrade && (
-        <Button size="sm" className="mt-4 w-full" onClick={onUpgrade} icon={<Crown className="size-3.5" />}>
+        <Button size="sm" className="mt-4 w-full" onClick={onUpgrade} disabled={disabled} icon={<Crown className="size-3.5" />}>
           Upgrade
         </Button>
       )}
@@ -65,7 +75,10 @@ export default function PlanCard({ user }: { user: IUser }) {
   const free = plans.find((plan) => plan.id === "free");
 
   return (
-    <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
+    <section
+      aria-disabled={!BUILTIN_AI_ENABLED || undefined}
+      className={cn("rounded-3xl border border-line bg-surface p-5 sm:p-6", !BUILTIN_AI_ENABLED && "opacity-60 select-none")}
+    >
       <h2 className="font-semibold text-fg">Plan</h2>
       <p className="mt-1 text-sm text-fg-muted">
         Your plan sets how much of the {BUILTIN_AI_LABEL} you get. A session starts with your first question; questions, chat
@@ -77,15 +90,20 @@ export default function PlanCard({ user }: { user: IUser }) {
             key={plan.id}
             plan={plan}
             current={plan.id === user.plan?.id}
+            disabled={!BUILTIN_AI_ENABLED}
             onUpgrade={!isPro && plan.id === "pro" ? () => setUpgrading(true) : undefined}
           />
         ))}
       </div>
       <p className="mt-3 text-xs text-fg-subtle">
-        {isPro ? "You're on Pro: your questions go first when the built-in AI is busy." : "Have a Pro code? Choose Upgrade to redeem it."}
+        {!BUILTIN_AI_ENABLED
+          ? `The ${BUILTIN_AI_LABEL} isn't available here, so plans don't apply.`
+          : isPro
+            ? "You're on Pro: your questions go first when the built-in AI is busy."
+            : "Have a Pro code? Choose Upgrade to redeem it."}
       </p>
 
-      {pro && !isPro && <UpgradeModal open={upgrading} onClose={() => setUpgrading(false)} user={user} pro={pro} free={free} />}
+      {BUILTIN_AI_ENABLED && pro && !isPro && <UpgradeModal open={upgrading} onClose={() => setUpgrading(false)} user={user} pro={pro} free={free} />}
     </section>
   );
 }
