@@ -21,7 +21,8 @@ export const metadata: Metadata = {
   },
   description:
     "Capture notes, files and links, then ask questions and get grounded answers with references back to your own knowledge.",
-  icons: { icon: "/assets/logo-main.png", apple: "/assets/logo-main.png" },
+  icons: { icon: "/assets/logo-main.png", apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Knowledge Hub", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
