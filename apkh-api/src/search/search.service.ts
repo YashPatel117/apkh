@@ -7,6 +7,7 @@ import {
 } from 'src/common/schema/chunk';
 import { NoteDocument } from 'src/common/schema/note';
 import type { NoteActions, SummaryMode } from 'src/common/schema/summary';
+import type { UsageKind } from 'src/common/schema/usage-event';
 import { htmlToPlainText } from 'src/common/utils/html';
 import { errorMessage } from 'src/common/utils/http-error';
 import { IndexingService } from 'src/indexing/indexing.service';
@@ -71,6 +72,30 @@ export interface AiSearchResult {
   searchedFor?: string;
 }
 
+/** What a question needs answered, once its passages are found. */
+interface AiSearchPlan {
+  query: string;
+  llm: ActiveLlmSettings;
+  chunks: RetrievedChunk[];
+  /** The query was embedded (confidence is then by similarity) */
+  semantic: boolean;
+  highSimilarity: number;
+  pendingNotes: number;
+  searchedFor?: string;
+}
+
+/** Streamed AI search (see SearchService.streamAiSearch). */
+export type AiSearchStreamEvent =
+  | {
+      type: 'sources';
+      query: string;
+      references: AiSearchResultReference[];
+      pendingNotes: number;
+      searchedFor?: string;
+    }
+  | { type: 'token'; text: string }
+  | { type: 'done'; result: AiSearchResult };
+
 // Semantic matches below `min` similarity are ignored; at `high` the answer is
 // marked "high" confidence. Scores run lower for OpenAI's text-embedding-3
 // models than for Gemini's, so each embedding space gets its own scale.
@@ -126,19 +151,127 @@ export class SearchService {
     topK = 5,
     referencedNoteIds?: string[],
   ): Promise<AiSearchResult> {
+    const plan = await this.planAiSearch(
+      token,
+      userId,
+      query,
+      topK,
+      referencedNoteIds,
+    );
+    if ('result' in plan) return plan.result;
+
+    try {
+      const result = await this.searchApi.rag(
+        token,
+        plan.llm,
+        query,
+        plan.chunks.map(contextBlock),
+      );
+      if (result.error) {
+        return this.buildGuidanceResponse(query, result.text);
+      }
+      this.trackTokens(userId, result.tokensUsed, plan.llm, 'search', query);
+      return this.finishAiSearch(plan, result.text);
+    } catch (error) {
+      if (error instanceof SearchApiError) {
+        return this.buildGuidanceResponse(query, error.message);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * performAiSearch, streamed: first the passages found (`sources`), then the
+   * answer's pieces as the model writes them (`token`), then the full result
+   * (`done`) with citations and confidence.
+   */
+  async *streamAiSearch(
+    token: string,
+    userId: string,
+    query: string,
+    signal: AbortSignal,
+    referencedNoteIds?: string[],
+    topK = 5,
+  ): AsyncGenerator<AiSearchStreamEvent> {
+    const plan = await this.planAiSearch(
+      token,
+      userId,
+      query,
+      topK,
+      referencedNoteIds,
+    );
+    if ('result' in plan) {
+      yield { type: 'done', result: plan.result };
+      return;
+    }
+
+    yield {
+      type: 'sources',
+      query,
+      references: plan.chunks.map((chunk) => toReference(chunk, false)),
+      pendingNotes: plan.pendingNotes,
+      searchedFor: plan.searchedFor,
+    };
+
+    try {
+      for await (const event of this.searchApi.ragStream(
+        token,
+        plan.llm,
+        query,
+        plan.chunks.map(contextBlock),
+        signal,
+      )) {
+        if (event.type === 'token') {
+          yield event;
+          continue;
+        }
+        if (event.error) {
+          yield {
+            type: 'done',
+            result: this.buildGuidanceResponse(query, event.answer),
+          };
+          return;
+        }
+        this.trackTokens(userId, event.tokens_used, plan.llm, 'search', query);
+        yield { type: 'done', result: this.finishAiSearch(plan, event.answer) };
+        return;
+      }
+    } catch (error) {
+      if (signal.aborted) return;
+      if (error instanceof SearchApiError) {
+        yield {
+          type: 'done',
+          result: this.buildGuidanceResponse(query, error.message),
+        };
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /** Everything before the answer: limits, query embedding, retrieval. */
+  private async planAiSearch(
+    token: string,
+    userId: string,
+    query: string,
+    topK: number,
+    referencedNoteIds?: string[],
+  ): Promise<{ result: AiSearchResult } | AiSearchPlan> {
     const activeLlm = await this.usersService.getActiveLlmSettings(userId);
     if (!activeLlm) {
-      return this.buildGuidanceResponse(
-        query,
-        'Add an active API key in Profile settings to enable AI search.',
-      );
+      return {
+        result: this.buildGuidanceResponse(
+          query,
+          'Add an active API key in Profile settings to enable AI search.',
+        ),
+      };
     }
     const overLimit = await this.usersService.builtinLimitMessage(
       userId,
       activeLlm,
     );
     if (overLimit) {
-      return this.buildGuidanceResponse(query, overLimit);
+      return { result: this.buildGuidanceResponse(query, overLimit) };
     }
 
     // Notes indexed by older versions (or before a provider switch) are
@@ -166,7 +299,7 @@ export class SearchService {
           !error.retryable &&
           !needsCredit
         ) {
-          return this.buildGuidanceResponse(query, error.message);
+          return { result: this.buildGuidanceResponse(query, error.message) };
         }
         // No credit for embeddings (OpenRouter) is expected: answer from keywords.
         if (!needsCredit) {
@@ -221,45 +354,41 @@ export class SearchService {
 
     if (!chunks.length) {
       return {
-        query,
-        answer: "I couldn't find any relevant information in your notes.",
-        confidence: 'not_found',
-        references: [],
-        isError: false,
-        pendingNotes,
-        searchedFor,
+        result: {
+          query,
+          answer: "I couldn't find any relevant information in your notes.",
+          confidence: 'not_found',
+          references: [],
+          isError: false,
+          pendingNotes,
+          searchedFor,
+        },
       };
     }
 
-    let answer: string;
-    try {
-      const result = await this.searchApi.rag(
-        token,
-        activeLlm,
-        query,
-        chunks.map(contextBlock),
-      );
-      if (result.error) {
-        return this.buildGuidanceResponse(query, result.text);
-      }
-      answer = result.text;
-      this.trackTokens(userId, result.tokensUsed, activeLlm);
-    } catch (error) {
-      if (error instanceof SearchApiError) {
-        return this.buildGuidanceResponse(query, error.message);
-      }
-      throw error;
-    }
+    return {
+      query,
+      llm: activeLlm,
+      chunks,
+      semantic: vector !== null,
+      highSimilarity: thresholds.high,
+      pendingNotes,
+      searchedFor,
+    };
+  }
 
+  /** The result for an answer: its citations, and how confident it is. */
+  private finishAiSearch(plan: AiSearchPlan, answer: string): AiSearchResult {
+    const { chunks } = plan;
     const cited = citedSources(answer, chunks.length);
     const bestSimilarity = Math.max(...chunks.map((c) => c.similarity ?? -1));
     return {
-      query,
+      query: plan.query,
       answer,
       // Word overlap says nothing about meaning, so keyword-only answers are
       // never "high"; a semantic search that only found keyword matches is "low".
-      confidence: vector
-        ? bestSimilarity >= thresholds.high
+      confidence: plan.semantic
+        ? bestSimilarity >= plan.highSimilarity
           ? 'high'
           : 'low'
         : 'medium',
@@ -267,8 +396,8 @@ export class SearchService {
         toReference(chunk, cited.has(i + 1)),
       ),
       isError: false,
-      pendingNotes,
-      searchedFor,
+      pendingNotes: plan.pendingNotes,
+      searchedFor: plan.searchedFor,
     };
   }
 
@@ -366,7 +495,7 @@ export class SearchService {
         contexts: summaryContexts,
         mode,
       });
-      this.trackTokens(userId, result.tokensUsed, activeLlm);
+      this.trackTokens(userId, result.tokensUsed, activeLlm, 'summary');
       const summary = result.text.trim();
       const complete =
         mode === 'actions' ? Boolean(result.actions) : Boolean(summary);
@@ -440,9 +569,15 @@ export class SearchService {
     return contexts;
   }
 
-  private trackTokens(userId: string, tokens: number, llm: ActiveLlmSettings) {
+  private trackTokens(
+    userId: string,
+    tokens: number,
+    llm: ActiveLlmSettings,
+    kind: UsageKind,
+    query?: string,
+  ) {
     this.usersService
-      .addTokenUsage(userId, tokens, llm, { interactive: true })
+      .addTokenUsage(userId, tokens, llm, { interactive: true, kind, query })
       .catch((err) => {
         this.logger.error(
           `Failed to track token usage for user ${userId}: ${errorMessage(err)}`,

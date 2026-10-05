@@ -13,6 +13,11 @@ export class CreateNoteDto {
   @IsOptional()
   category?: string;
 
+  /** Folder to file the note in; empty for none */
+  @ApiPropertyOptional()
+  @IsOptional()
+  folderId?: string;
+
   @ApiProperty({
     type: 'string',
     format: 'binary',

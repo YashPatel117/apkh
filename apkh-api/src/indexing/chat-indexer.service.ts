@@ -104,7 +104,10 @@ export class ChatIndexerService {
       return { kind: 'deleted' };
     }
     this.usersService
-      .addTokenUsage(userId, stored.tokensUsed, llm, { interactive: false })
+      .addTokenUsage(userId, stored.tokensUsed, llm, {
+        interactive: false,
+        kind: 'index',
+      })
       .catch((err) => {
         this.logger.error(
           `Failed to track indexing tokens: ${errorMessage(err)}`,

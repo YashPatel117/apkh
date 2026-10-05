@@ -1,5 +1,6 @@
 import { SourceRef } from "@/components/sources";
 import { webApi } from "@/services/axios";
+import { streamPost } from "@/services/sse";
 
 export interface IChatSession {
   id: string;
@@ -83,4 +84,20 @@ export async function deleteChatSession(sessionId: string) {
 export async function sendChatMessage(sessionId: string, message: string) {
   const res = await webApi.post(`/chat/session/${sessionId}/message`, { message });
   return res.data.data as ChatMessageResponse;
+}
+
+/** Streamed reply: the passages found, the answer as it is written, then the saved reply. */
+export type ChatStreamEvent =
+  | { type: "sources"; sources: SourceRef[] }
+  | { type: "token"; text: string }
+  | ({ type: "done" } & ChatMessageResponse)
+  | { type: "error"; message: string };
+
+export function sendChatMessageStream(
+  sessionId: string,
+  message: string,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+) {
+  return streamPost<ChatStreamEvent>(`/chat/session/${sessionId}/message/stream`, { message }, onEvent, signal);
 }

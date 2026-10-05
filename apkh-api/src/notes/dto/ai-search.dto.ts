@@ -1,10 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsOptional, IsArray } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class AiSearchDto {
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
+  @MaxLength(4000)
   query: string;
 
   @ApiProperty({
@@ -15,6 +23,7 @@ export class AiSearchDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @IsString({ each: true })
   referencedNoteIds?: string[];
 }

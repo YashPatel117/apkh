@@ -24,6 +24,7 @@ import {
 } from 'src/search-api/search-api.client';
 import { RetrievedChunk, RetrievalService } from 'src/search/retrieval.service';
 import { ChatSource } from 'src/common/schema/chat-message';
+import { RealtimeService } from 'src/realtime/realtime.service';
 import {
   citedSources,
   contextBlock,
@@ -41,6 +42,28 @@ interface ChatContext {
   /** The passages behind notesChunks, in the same order (cited as [n]) */
   noteSources: RetrievedChunk[];
 }
+
+/** A message being answered (see ChatService.prepareTurn). */
+interface ChatTurn {
+  llm: ActiveLlmSettings;
+  session: ChatSessionDocument;
+  message: string;
+  chatHistory: { role: string; content: string }[];
+  context: ChatContext;
+}
+
+/** Streamed chat answer (see ChatService.sendMessageStream). */
+export type ChatStreamEvent =
+  | { type: 'sources'; sources: ChatSourceView[] }
+  | { type: 'token'; text: string }
+  | { type: 'error'; message: string }
+  | {
+      type: 'done';
+      answer: string;
+      tokens_used: number;
+      sources: ChatSourceView[];
+      title: string;
+    };
 
 /** A source as the web app receives it. */
 export interface ChatSourceView {
@@ -83,6 +106,7 @@ export class ChatService {
     private readonly retrieval: RetrievalService,
     private readonly indexing: IndexingService,
     private readonly queryRewrite: QueryRewriteService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /**
@@ -123,6 +147,9 @@ export class ChatService {
         await Promise.all([userMessage.save(), aiMessage.save()]);
       }
 
+      this.realtime.emit(userId, 'chat:updated', {
+        sessionId: String(session._id),
+      });
       return {
         id: session._id as string,
         title: session.title,
@@ -219,6 +246,7 @@ export class ChatService {
 
       await this.messageModel.deleteMany({ sessionId: session._id });
       await this.indexing.removeChat(sessionId);
+      this.realtime.emit(userId, 'chat:updated', { sessionId, deleted: true });
 
       return { success: true };
     } catch (error: unknown) {
@@ -234,59 +262,20 @@ export class ChatService {
     sendMessageDto: SendMessageDto,
   ) {
     try {
-      const activeLlm = await this.usersService.getActiveLlmSettings(userId);
-      if (!activeLlm) {
-        throw new HttpException(
-          'No active AI config found in Profile',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      const overLimit = await this.usersService.builtinLimitMessage(
-        userId,
-        activeLlm,
-      );
-      if (overLimit) {
-        throw new HttpException(overLimit, HttpStatus.TOO_MANY_REQUESTS);
-      }
-
-      const session = await this.sessionModel
-        .findOne({
-          _id: new Types.ObjectId(sessionId),
-          userId: new Types.ObjectId(userId),
-        })
-        .exec();
-
-      if (!session) {
-        throw new HttpException('Session not found', HttpStatus.NOT_FOUND);
-      }
-
-      const recentMessages = await this.messageModel
-        .find({ sessionId: session._id })
-        .sort({ createdAt: -1, _id: -1 })
-        .limit(CHAT_HISTORY_LIMIT)
-        .lean()
-        .exec();
-      const chatHistory = recentMessages.reverse().map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const context = await this.buildContext(
+      const turn = await this.prepareTurn(
         token,
         userId,
         sessionId,
         sendMessageDto.message,
-        chatHistory,
-        activeLlm,
       );
 
       let answer: string;
       let tokensUsed: number;
       try {
-        const result = await this.searchApi.chatRag(token, activeLlm, {
-          query: sendMessageDto.message,
-          chatHistory,
-          ...context,
+        const result = await this.searchApi.chatRag(token, turn.llm, {
+          query: turn.message,
+          chatHistory: turn.chatHistory,
+          ...turn.context,
         });
         // Nothing is saved for a failed answer, so the question can simply be
         // asked again instead of leaving an unanswered message in the history.
@@ -308,73 +297,204 @@ export class ChatService {
         );
       }
 
-      const userMessage = new this.messageModel({
-        sessionId: session._id,
-        role: 'user',
-        content: sendMessageDto.message,
-      });
-      await userMessage.save();
-      const cited = citedSources(answer, context.noteSources.length);
-      const sources = context.noteSources.map((chunk, i) =>
-        toStoredSource({
-          noteId: chunk.noteId,
-          noteTitle: chunk.noteTitle,
-          sourceType: chunk.sourceType,
-          sourceName: chunk.sourceName,
-          sourcePage: chunk.sourcePage,
-          excerpt: chunk.text,
-          cited: cited.has(i + 1),
-        }),
-      );
-      const aiMessage = new this.messageModel({
-        sessionId: session._id,
-        role: 'assistant',
-        content: answer,
-        sources,
-      });
-      await aiMessage.save();
-
-      // A new chat is named after its first question.
-      if (session.title === NEW_CHAT_TITLE && !chatHistory.length) {
-        session.title = titleFromMessage(sendMessageDto.message);
-      }
-      // Update session time — assigning marks the doc modified so save() persists and bumps the timestamp
-      session.updatedAt = new Date();
-      await session.save();
-
-      this.usersService
-        .addTokenUsage(userId, tokensUsed, activeLlm, { interactive: true })
-        .catch((err) => {
-          this.logger.error(
-            `Failed to track token usage for user ${userId}: ${errorMessage(err)}`,
-          );
-        });
-
-      // Index the transcript for "related past chats" once enough new messages
-      // accumulate. Counting what is stored keeps this right after failed requests.
-      const totalMessages = await this.messageModel.countDocuments({
-        sessionId: session._id,
-      });
-      if (
-        totalMessages - (session.chunkedMessageCount ?? 0) >=
-        CHAT_INDEX_MIN_MESSAGES
-      ) {
-        this.indexing.enqueueChat(userId, sessionId).catch((err) => {
-          this.logger.error(
-            `Queueing chat ${sessionId} for indexing failed: ${errorMessage(err)}`,
-          );
-        });
-      }
-
-      return {
-        answer,
-        tokens_used: tokensUsed,
-        sources: sources.map(toSourceView),
-        title: session.title,
-      };
+      return await this.saveTurn(userId, sessionId, turn, answer, tokensUsed);
     } catch (error: unknown) {
       throw toHttpException(error);
     }
+  }
+
+  /**
+   * SEND MESSAGE, streamed: `sources` (the passages found), `token` for each
+   * piece of the answer, then `done` once it is saved (same payload as
+   * sendMessage). A failed answer ends with `error` and nothing is saved.
+   */
+  async *sendMessageStream(
+    token: string,
+    userId: string,
+    sessionId: string,
+    message: string,
+    signal: AbortSignal,
+  ): AsyncGenerator<ChatStreamEvent> {
+    const turn = await this.prepareTurn(token, userId, sessionId, message);
+    yield {
+      type: 'sources',
+      sources: turn.context.noteSources.map((chunk) =>
+        toSourceView(toStoredSource(sourceOf(chunk, false))),
+      ),
+    };
+
+    try {
+      for await (const event of this.searchApi.chatRagStream(
+        token,
+        turn.llm,
+        {
+          query: turn.message,
+          chatHistory: turn.chatHistory,
+          ...turn.context,
+        },
+        signal,
+      )) {
+        if (event.type === 'token') {
+          yield event;
+          continue;
+        }
+        if (event.error || !event.answer.trim()) {
+          yield {
+            type: 'error',
+            message:
+              event.answer.trim() ||
+              'The assistant returned an empty answer. Please try again.',
+          };
+          return;
+        }
+        const saved = await this.saveTurn(
+          userId,
+          sessionId,
+          turn,
+          event.answer,
+          event.tokens_used,
+        );
+        yield { type: 'done', ...saved };
+        return;
+      }
+    } catch (error: unknown) {
+      if (signal.aborted) return;
+      this.logger.error(`Chat RAG stream failed: ${errorMessage(error)}`);
+      yield {
+        type: 'error',
+        message:
+          error instanceof SearchApiError
+            ? error.message
+            : 'Sorry, the assistant could not answer right now. Please try again.',
+      };
+    }
+  }
+
+  /** Checks, history and retrieved context for a new message. */
+  private async prepareTurn(
+    token: string,
+    userId: string,
+    sessionId: string,
+    message: string,
+  ): Promise<ChatTurn> {
+    const activeLlm = await this.usersService.getActiveLlmSettings(userId);
+    if (!activeLlm) {
+      throw new HttpException(
+        'No active AI config found in Profile',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const overLimit = await this.usersService.builtinLimitMessage(
+      userId,
+      activeLlm,
+    );
+    if (overLimit) {
+      throw new HttpException(overLimit, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const session = await this.sessionModel
+      .findOne({
+        _id: new Types.ObjectId(sessionId),
+        userId: new Types.ObjectId(userId),
+      })
+      .exec();
+
+    if (!session) {
+      throw new HttpException('Session not found', HttpStatus.NOT_FOUND);
+    }
+
+    const recentMessages = await this.messageModel
+      .find({ sessionId: session._id })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(CHAT_HISTORY_LIMIT)
+      .lean()
+      .exec();
+    const chatHistory = recentMessages.reverse().map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const context = await this.buildContext(
+      token,
+      userId,
+      sessionId,
+      message,
+      chatHistory,
+      activeLlm,
+    );
+    return { llm: activeLlm, session, message, chatHistory, context };
+  }
+
+  /** Stores the question and its answer, and updates the session. */
+  private async saveTurn(
+    userId: string,
+    sessionId: string,
+    turn: ChatTurn,
+    answer: string,
+    tokensUsed: number,
+  ) {
+    const { session, chatHistory, context } = turn;
+    const userMessage = new this.messageModel({
+      sessionId: session._id,
+      role: 'user',
+      content: turn.message,
+    });
+    await userMessage.save();
+    const cited = citedSources(answer, context.noteSources.length);
+    const sources = context.noteSources.map((chunk, i) =>
+      toStoredSource(sourceOf(chunk, cited.has(i + 1))),
+    );
+    const aiMessage = new this.messageModel({
+      sessionId: session._id,
+      role: 'assistant',
+      content: answer,
+      sources,
+    });
+    await aiMessage.save();
+
+    // A new chat is named after its first question.
+    if (session.title === NEW_CHAT_TITLE && !chatHistory.length) {
+      session.title = titleFromMessage(turn.message);
+    }
+    // Update session time — assigning marks the doc modified so save() persists and bumps the timestamp
+    session.updatedAt = new Date();
+    await session.save();
+
+    this.usersService
+      .addTokenUsage(userId, tokensUsed, turn.llm, {
+        interactive: true,
+        kind: 'chat',
+        query: turn.message,
+      })
+      .catch((err) => {
+        this.logger.error(
+          `Failed to track token usage for user ${userId}: ${errorMessage(err)}`,
+        );
+      });
+
+    // Index the transcript for "related past chats" once enough new messages
+    // accumulate. Counting what is stored keeps this right after failed requests.
+    const totalMessages = await this.messageModel.countDocuments({
+      sessionId: session._id,
+    });
+    if (
+      totalMessages - (session.chunkedMessageCount ?? 0) >=
+      CHAT_INDEX_MIN_MESSAGES
+    ) {
+      this.indexing.enqueueChat(userId, sessionId).catch((err) => {
+        this.logger.error(
+          `Queueing chat ${sessionId} for indexing failed: ${errorMessage(err)}`,
+        );
+      });
+    }
+
+    this.realtime.emit(userId, 'chat:updated', { sessionId });
+    return {
+      answer,
+      tokens_used: tokensUsed,
+      sources: sources.map(toSourceView),
+      title: session.title,
+    };
   }
 
   /**
@@ -461,6 +581,18 @@ export class ChatService {
       ),
     };
   }
+}
+
+function sourceOf(chunk: RetrievedChunk, cited: boolean) {
+  return {
+    noteId: chunk.noteId,
+    noteTitle: chunk.noteTitle,
+    sourceType: chunk.sourceType,
+    sourceName: chunk.sourceName,
+    sourcePage: chunk.sourcePage,
+    excerpt: chunk.text,
+    cited,
+  };
 }
 
 function toStoredSource(source: {

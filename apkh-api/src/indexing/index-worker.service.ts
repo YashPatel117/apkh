@@ -11,6 +11,7 @@ import { errorMessage } from 'src/common/utils/http-error';
 import { ChatIndexerService } from './chat-indexer.service';
 import { ClaimedJob, IndexQueueService } from './index-queue.service';
 import { NoteIndexerService } from './note-indexer.service';
+import { RealtimeService } from 'src/realtime/realtime.service';
 
 // Jobs mostly wait on the provider, so a couple in parallel keeps things moving
 // without tripping per-user rate limits.
@@ -43,6 +44,7 @@ export class IndexWorkerService
     private readonly queue: IndexQueueService,
     private readonly noteIndexer: NoteIndexerService,
     private readonly chatIndexer: ChatIndexerService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   onApplicationBootstrap() {
@@ -111,6 +113,9 @@ export class IndexWorkerService
   }
 
   private async process(job: ClaimedJob) {
+    // Open tabs refresh the index status instead of polling for it.
+    const notify = () => this.realtime.emit(String(job.userId), 'index:changed');
+    notify();
     const heartbeat = setInterval(() => {
       this.queue.heartbeat(job._id, this.workerId).catch(() => undefined);
     }, HEARTBEAT_MS);
@@ -128,6 +133,7 @@ export class IndexWorkerService
       });
     } finally {
       clearInterval(heartbeat);
+      notify();
     }
   }
 

@@ -1,10 +1,12 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { isAxiosError } from 'axios';
 import { InjectModel } from '@nestjs/mongoose';
 import FormData from 'form-data';
 import { Model, Types } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { fileStorageApi } from 'src/common/constant/endpoint';
+import { correlationHeaders } from 'src/common/request-context';
 import { NoteFileDocument, NoteFiles } from 'src/common/schema/file';
 
 @Injectable()
@@ -28,10 +30,13 @@ export class FileService {
         headers: {
           ...form.getHeaders(),
           Authorization: token,
+          ...correlationHeaders(),
         },
       },
     );
-    const res = await firstValueFrom(res$);
+    const res = await firstValueFrom(res$).catch((error: unknown) => {
+      throw storageError(error);
+    });
 
     // upsert db record
     const noteObjectId = new Types.ObjectId(noteId);
@@ -62,7 +67,7 @@ export class FileService {
     const response$ = this.httpService.get(
       `${fileStorageApi}files/${encodeURIComponent(noteId)}/${encodeURIComponent(filename)}`,
       {
-        headers: { Authorization: token },
+        headers: { Authorization: token, ...correlationHeaders() },
         responseType: 'stream',
       },
     );
@@ -82,7 +87,7 @@ export class FileService {
     }
 
     const res$ = this.httpService.delete(`${fileStorageApi}files/${noteId}`, {
-      headers: { Authorization: token },
+      headers: { Authorization: token, ...correlationHeaders() },
     });
     await firstValueFrom(res$);
 
@@ -95,7 +100,7 @@ export class FileService {
     const res$ = this.httpService.delete(
       `${fileStorageApi}files/${noteId}/files`,
       {
-        headers: { Authorization: token },
+        headers: { Authorization: token, ...correlationHeaders() },
         data: { filenames: files },
       },
     );
@@ -109,4 +114,20 @@ export class FileService {
     noteFiles.files = noteFiles.files.filter((f) => !files.includes(f));
     return await noteFiles.save();
   }
+}
+
+/** Storage's own message (quota full, file too large, ...) with its status. */
+function storageError(error: unknown): HttpException {
+  if (isAxiosError(error) && error.response) {
+    const data: unknown = error.response.data;
+    const message =
+      typeof data === 'string' && data.trim()
+        ? data
+        : 'The file could not be stored.';
+    return new HttpException(message, error.response.status);
+  }
+  return new HttpException(
+    'The file storage service is unavailable.',
+    HttpStatus.SERVICE_UNAVAILABLE,
+  );
 }

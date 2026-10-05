@@ -14,10 +14,11 @@ import json
 import logging
 import re
 import traceback
+from collections.abc import AsyncIterator
 from typing import Any
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from services import builtin_ai
@@ -252,11 +253,12 @@ def _chat_model(provider: str, api_key: str, model: str, temperature: float = 0.
             # prompts ask for direct answers.
             reasoning_effort="none",
             temperature=temperature,
+            stream_usage=True,
         )
     if provider == "gemini":
         return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, temperature=temperature)
     if provider == "openai":
-        return ChatOpenAI(model=model, api_key=api_key, temperature=temperature)
+        return ChatOpenAI(model=model, api_key=api_key, temperature=temperature, stream_usage=True)
     if provider == "openrouter":
         return ChatOpenAI(
             model=model,
@@ -264,6 +266,7 @@ def _chat_model(provider: str, api_key: str, model: str, temperature: float = 0.
             base_url=OPENROUTER_BASE_URL,
             default_headers=OPENROUTER_HEADERS,
             temperature=temperature,
+            stream_usage=True,
         )
     # The SDK's default output budget cuts long answers short.
     return ChatAnthropic(model=model, api_key=api_key, max_tokens=2048, temperature=temperature)
@@ -310,6 +313,71 @@ async def _call(
     }
 
 
+def _rag_setup(
+    query: str,
+    contexts: list[str],
+    api_key: str,
+    model: str,
+    user_id: str | None,
+    request_id: str | None,
+) -> dict:
+    """
+    What answering a question takes: either a ready `result` (nothing to
+    answer from, missing credentials, unknown model), or the provider, model
+    and messages to call.
+    """
+    if not contexts:
+        return {"result": {
+            "answer": "I couldn't find any relevant information in your notes.",
+            "tokens_used": 0,
+            "run_id": None,
+        }}
+
+    resolved_key = (api_key or "").strip()
+    resolved_model = model.strip()
+
+    if not has_credentials(resolved_key, resolved_model):
+        return {"result": {
+            "answer": "Add an active API key and model in profile settings to enable AI search.",
+            "error": True,
+            "tokens_used": 0,
+            "run_id": None,
+        }}
+
+    try:
+        provider = detect_provider(resolved_model)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return {"result": {
+            "answer": "Unsupported model. Please check your AI settings.",
+            "error": True,
+            "tokens_used": 0,
+            "run_id": None,
+        }}
+
+    # Numbered so the answer can cite them; the API maps [n] back to contexts[n-1].
+    sources = "\n\n---\n\n".join(f"[{i}] {context}" for i, context in enumerate(contexts, start=1))
+    user_prompt = f"Sources:\n\n{sources}\n\n---\n\nQuestion: {query}"
+
+    return {
+        "provider": provider,
+        "model": resolved_model,
+        "chat": _chat_model(provider, resolved_key, resolved_model),
+        "messages": [SystemMessage(content=_SYSTEM_INSTRUCTION), HumanMessage(content=user_prompt)],
+        "config": build_langchain_config(
+            run_name=f"rag:{request_id or 'unknown'}",
+            metadata={
+                "provider": provider,
+                "model_name": resolved_model,
+                "user_id": user_id or "anonymous",
+                "endpoint_name": "rag",
+                "request_id": request_id or "unknown",
+            },
+        ),
+        "failure": "I'm sorry, I encountered an error while formulating the answer.",
+    }
+
+
 async def generate_rag_answer(
     query: str,
     contexts: list[str],
@@ -321,75 +389,122 @@ async def generate_rag_answer(
     """
     Generate an answer from the provided context chunks.
     """
-    if not contexts:
-        return {
-            "answer": "I couldn't find any relevant information in your notes.",
-            "tokens_used": 0,
-            "run_id": None,
-        }
+    setup = _rag_setup(query, contexts, api_key, model, user_id, request_id)
+    if "result" in setup:
+        return setup["result"]
+    return await _answer(setup)
 
-    resolved_key = (api_key or "").strip()
-    resolved_model = model.strip()
 
-    if not has_credentials(resolved_key, resolved_model):
-        return {
-            "answer": "Add an active API key and model in profile settings to enable AI search.",
-            "error": True,
-            "tokens_used": 0,
-            "run_id": None,
-        }
+def stream_rag_answer(
+    query: str,
+    contexts: list[str],
+    api_key: str,
+    model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> AsyncIterator[dict]:
+    """generate_rag_answer, as events (see _stream_answer)."""
+    return _stream_answer(_rag_setup(query, contexts, api_key, model, user_id, request_id))
 
-    # Numbered so the answer can cite them; the API maps [n] back to contexts[n-1].
-    sources = "\n\n---\n\n".join(f"[{i}] {context}" for i, context in enumerate(contexts, start=1))
-    user_prompt = f"Sources:\n\n{sources}\n\n---\n\nQuestion: {query}"
 
+async def _answer(setup: dict) -> dict:
+    """One blocking call for a setup from _rag_setup / _chat_setup."""
+    provider, model, config = setup["provider"], setup["model"], setup["config"]
     try:
-        provider = detect_provider(resolved_model)
-    except ValueError as exc:
-        logger.error(str(exc))
-        return {
-            "answer": "Unsupported model. Please check your AI settings.",
-            "error": True,
-            "tokens_used": 0,
-            "run_id": None,
-        }
-
-    trace_config = build_langchain_config(
-        run_name=f"rag:{request_id or 'unknown'}",
-        metadata={
-            "provider": provider,
-            "model_name": resolved_model,
-            "user_id": user_id or "anonymous",
-            "endpoint_name": "rag",
-            "request_id": request_id or "unknown",
-        },
-    )
-
-    caller = _caller_for(provider)
-
-    try:
-        result = await caller(
-            resolved_key,
-            resolved_model,
-            _SYSTEM_INSTRUCTION,
-            user_prompt,
-            config=trace_config,
-        )
-        if not result["answer"]:
-            result["answer"] = "The model returned an empty response. Please try again."
-            result["error"] = True
-        return result
+        response = await _invoke(provider, setup["chat"], setup["messages"], config)
     except Exception as exc:
-        logger.error("LLM call failed [%s/%s]: %s", provider, resolved_model, exc)
+        logger.error("LLM call failed [%s/%s]: %s", provider, model, exc)
         return {
-            "answer": _failure_message(
-                provider, resolved_model, exc,
-                "I'm sorry, I encountered an error while formulating the answer.",
-            ),
+            "answer": _failure_message(provider, model, exc, setup["failure"]),
             "error": True,
             "tokens_used": 0,
             "run_id": None,
         }
+    answer = _extract_message_text(response.content)
+    return {
+        "answer": answer or "The model returned an empty response. Please try again.",
+        "error": not answer,
+        "tokens_used": _extract_tokens_used(response),
+        "run_id": _extract_run_id(config),
+    }
+
+
+async def _stream_answer(setup: dict) -> AsyncIterator[dict]:
+    """
+    Stream an answer as events: {"type": "token", "text"} for each piece, then
+    one {"type": "done", "answer", "error", "tokens_used", "run_id"} with the
+    whole answer (or the failure message, error true).
+    """
+    if "result" in setup:
+        yield {"type": "done", "error": False, **setup["result"]}
+        return
+
+    provider, model, config = setup["provider"], setup["model"], setup["config"]
+    parts: list[str] = []
+    final: Any = None
+    try:
+        async for chunk in _astream(provider, setup["chat"], setup["messages"], config):
+            final = chunk if final is None else final + chunk
+            text = _chunk_text(chunk.content)
+            if text:
+                parts.append(text)
+                yield {"type": "token", "text": text}
+    except Exception as exc:
+        logger.error("LLM stream failed [%s/%s]: %s", provider, model, exc)
+        yield {
+            "type": "done",
+            "answer": _failure_message(provider, model, exc, setup["failure"]),
+            "error": True,
+            "tokens_used": 0,
+            "run_id": None,
+        }
+        return
+
+    answer = "".join(parts).strip()
+    tokens = _extract_tokens_used(final) if final is not None else 0
+    if not tokens:
+        # Some providers don't report usage when streaming; count it here.
+        tokens = _estimate_tokens(setup["messages"], answer)
+    yield {
+        "type": "done",
+        "answer": answer or "The model returned an empty response. Please try again.",
+        "error": not answer,
+        "tokens_used": tokens,
+        "run_id": _extract_run_id(config),
+    }
+
+
+async def _astream(provider: str, chat: Any, messages: list, config: dict[str, Any] | None):
+    """Stream a chat model; built-in calls hold their slot until the answer ends."""
+    if provider != "builtin":
+        async for chunk in chat.astream(messages, config=config or {}):
+            yield chunk
+        return
+    async with builtin_ai.chat_gate.slot():
+        async for chunk in chat.astream(messages, config=config or {}):
+            yield chunk
+
+
+def _chunk_text(content: Any) -> str:
+    """Text of a streamed piece, spacing kept (pieces are joined as they are)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts)
+    return ""
+
+
+def _estimate_tokens(messages: list, answer: str) -> int:
+    from services.chunker import count_tokens
+
+    prompt = sum(count_tokens(_chunk_text(message.content)) for message in messages)
+    return prompt + count_tokens(answer)
 
 
 async def generate_note_summary(
@@ -624,7 +739,7 @@ async def test_llm_connection(
         return {"ok": False, "error": provider_error_message(exc)}
 
 
-async def generate_chat_rag_answer(
+def _chat_setup(
     query: str,
     chat_history: list[dict],
     current_chat_chunks: list[str],
@@ -632,19 +747,20 @@ async def generate_chat_rag_answer(
     similar_chat_chunks: list[str],
     api_key: str,
     model: str,
-    user_id: str | None = None,
-    request_id: str | None = None,
+    user_id: str | None,
+    request_id: str | None,
 ) -> dict:
+    """What answering a chat message takes (see _rag_setup)."""
     resolved_key = (api_key or "").strip()
     resolved_model = model.strip()
 
     if not has_credentials(resolved_key, resolved_model):
-        return {
+        return {"result": {
             "answer": "Add an active API key and model in profile settings to enable AI search.",
             "error": True,
             "tokens_used": 0,
             "run_id": None,
-        }
+        }}
 
     formatted_current = "\n\n".join(current_chat_chunks) if current_chat_chunks else "None"
     formatted_notes = (
@@ -664,29 +780,14 @@ async def generate_chat_rag_answer(
         provider = detect_provider(resolved_model)
     except ValueError as exc:
         logger.error(str(exc))
-        return {
+        return {"result": {
             "answer": "Unsupported model. Please check your AI settings.",
             "error": True,
             "tokens_used": 0,
             "run_id": None,
-        }
+        }}
 
-    trace_config = build_langchain_config(
-        run_name=f"chat_rag:{request_id or 'unknown'}",
-        metadata={
-            "provider": provider,
-            "model_name": resolved_model,
-            "user_id": user_id or "anonymous",
-            "endpoint_name": "chat_rag",
-            "request_id": request_id or "unknown",
-        },
-    )
-
-    llm = _chat_model(provider, resolved_key, resolved_model, temperature=0.3)
-
-    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
-    messages = [SystemMessage(content=system_content)]
+    messages: list = [SystemMessage(content=system_content)]
 
     # The caller saves the new user message before loading history, so drop it
     # here to avoid sending the same question twice.
@@ -699,29 +800,64 @@ async def generate_chat_rag_answer(
             messages.append(HumanMessage(content=msg["content"]))
         else:
             messages.append(AIMessage(content=msg["content"]))
-            
+
     messages.append(HumanMessage(content=query))
 
-    try:
-        response = await _invoke(provider, llm, messages, trace_config)
-        answer = _extract_message_text(response.content)
-        return {
-            "answer": answer or "The model returned an empty response. Please try again.",
-            "error": not answer,
-            "tokens_used": _extract_tokens_used(response),
-            "run_id": _extract_run_id(trace_config)
-        }
-    except Exception as exc:
-        logger.error("Chat RAG call failed [%s/%s]: %s", provider, resolved_model, exc)
-        return {
-            "answer": _failure_message(
-                provider, resolved_model, exc,
-                "I'm sorry, I encountered an error while formulating the response.",
-            ),
-            "error": True,
-            "tokens_used": 0,
-            "run_id": None,
-        }
+    return {
+        "provider": provider,
+        "model": resolved_model,
+        "chat": _chat_model(provider, resolved_key, resolved_model, temperature=0.3),
+        "messages": messages,
+        "config": build_langchain_config(
+            run_name=f"chat_rag:{request_id or 'unknown'}",
+            metadata={
+                "provider": provider,
+                "model_name": resolved_model,
+                "user_id": user_id or "anonymous",
+                "endpoint_name": "chat_rag",
+                "request_id": request_id or "unknown",
+            },
+        ),
+        "failure": "I'm sorry, I encountered an error while formulating the response.",
+    }
+
+
+async def generate_chat_rag_answer(
+    query: str,
+    chat_history: list[dict],
+    current_chat_chunks: list[str],
+    notes_chunks: list[str],
+    similar_chat_chunks: list[str],
+    api_key: str,
+    model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> dict:
+    setup = _chat_setup(
+        query, chat_history, current_chat_chunks, notes_chunks, similar_chat_chunks,
+        api_key, model, user_id, request_id,
+    )
+    if "result" in setup:
+        return setup["result"]
+    return await _answer(setup)
+
+
+def stream_chat_rag_answer(
+    query: str,
+    chat_history: list[dict],
+    current_chat_chunks: list[str],
+    notes_chunks: list[str],
+    similar_chat_chunks: list[str],
+    api_key: str,
+    model: str,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> AsyncIterator[dict]:
+    """generate_chat_rag_answer, as events (see _stream_answer)."""
+    return _stream_answer(_chat_setup(
+        query, chat_history, current_chat_chunks, notes_chunks, similar_chat_chunks,
+        api_key, model, user_id, request_id,
+    ))
 
 
 async def rewrite_search_query(

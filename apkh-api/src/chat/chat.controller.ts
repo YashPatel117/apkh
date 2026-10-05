@@ -6,7 +6,10 @@ import {
   Body,
   Param,
   UseGuards,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { sendSse } from 'src/common/utils/sse';
 import { ChatService } from './chat.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -69,5 +72,28 @@ export class ChatController {
       dto,
     );
     return new ApiResponseDto().ok(data);
+  }
+
+  /** SEND MESSAGE, streamed as server-sent events (see ChatService.sendMessageStream) */
+  @Post('session/:id/message/stream')
+  async sendMessageStream(
+    @JwtToken() token: string,
+    @JwtTokenUserId() userId: string,
+    @Param('id') sessionId: string,
+    @Body() dto: SendMessageDto,
+    @Res() res: Response,
+  ) {
+    const abort = new AbortController();
+    await sendSse(
+      res,
+      this.chatService.sendMessageStream(
+        token,
+        userId,
+        sessionId,
+        dto.message,
+        abort.signal,
+      ),
+      abort,
+    );
   }
 }

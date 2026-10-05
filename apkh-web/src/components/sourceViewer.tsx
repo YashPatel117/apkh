@@ -56,7 +56,7 @@ export function SourceViewerProvider({
 }
 
 function SourceBody({ source, onOpenNote }: { source: SourceRef; onOpenNote: (noteId: string) => void }) {
-  const note = useAppSelector((state) => state.note.notes.find((n) => n.id === source.noteId));
+  const note = useAppSelector((state) => (source.noteId ? state.note.byId[source.noteId] : undefined));
 
   if (!note) {
     return (

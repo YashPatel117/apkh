@@ -6,6 +6,8 @@ import { SEARCH_API } from 'src/common/constant/endpoint';
 import type { ChunkSourceType } from 'src/common/schema/chunk';
 import type { IndexedFileStatus } from 'src/common/schema/index-job';
 import type { NoteActions, SummaryMode } from 'src/common/schema/summary';
+import { correlationHeaders } from 'src/common/request-context';
+import { readSseJson } from 'src/common/utils/sse';
 import { decodeVector } from 'src/common/utils/vector';
 import { queuePriority } from 'src/users/plans';
 import type { ActiveLlmSettings } from 'src/users/users.service';
@@ -49,6 +51,16 @@ export interface TextChunk {
   source_page?: number | null;
 }
 
+/** A streamed answer: its pieces as they arrive, then the whole answer. */
+export type AnswerStreamEvent =
+  | { type: 'token'; text: string }
+  | {
+      type: 'done';
+      answer: string;
+      error: boolean;
+      tokens_used: number;
+    };
+
 export interface GeneratedText {
   text: string;
   /** apkh-search flags failures (unavailable model, provider error, ...) */
@@ -60,6 +72,7 @@ export interface GeneratedText {
 // take minutes for large attachments.
 const EXTRACT_TIMEOUT_MS = 10 * 60_000;
 const EMBED_TIMEOUT_MS = 2 * 60_000;
+const EMBED_BATCH_SIZE = 256;
 const ANSWER_TIMEOUT_MS = 90_000;
 // The built-in AI runs on the host's CPU and serves one call at a time, so
 // calls can wait behind other users' as well as run slower.
@@ -134,26 +147,27 @@ export class SearchApiClient {
     space: EmbeddingSpace,
     texts: string[],
   ): Promise<{ vectors: Float32Array[]; tokensUsed: number }> {
-    if (!texts.length) {
-      return { vectors: [], tokensUsed: 0 };
+    const vectors: Float32Array[] = [];
+    let tokensUsed = 0;
+    // apkh-search caps texts per request; large attachments go in batches.
+    for (let start = 0; start < texts.length; start += EMBED_BATCH_SIZE) {
+      const data = await this.post<{ vectors: string[]; tokens_used: number }>(
+        '/ingest/embed',
+        {
+          texts: texts.slice(start, start + EMBED_BATCH_SIZE),
+          api_key: llm.apiKey,
+          model: llm.model,
+          embedding_model: space.model,
+          dimensions: space.dimensions,
+        },
+        token,
+        timeoutFor(llm, EMBED_TIMEOUT_MS),
+        llm,
+      );
+      vectors.push(...data.vectors.map(decodeVector));
+      tokensUsed += data.tokens_used ?? 0;
     }
-    const data = await this.post<{ vectors: string[]; tokens_used: number }>(
-      '/ingest/embed',
-      {
-        texts,
-        api_key: llm.apiKey,
-        model: llm.model,
-        embedding_model: space.model,
-        dimensions: space.dimensions,
-      },
-      token,
-      timeoutFor(llm, EMBED_TIMEOUT_MS),
-      llm,
-    );
-    return {
-      vectors: data.vectors.map(decodeVector),
-      tokensUsed: data.tokens_used ?? 0,
-    };
+    return { vectors, tokensUsed };
   }
 
   async embedQuery(
@@ -239,6 +253,55 @@ export class SearchApiClient {
     };
   }
 
+  /** rag(), streamed: the answer's pieces as the model writes them. */
+  ragStream(
+    token: string,
+    llm: ActiveLlmSettings,
+    query: string,
+    contexts: string[],
+    signal: AbortSignal,
+  ): AsyncGenerator<AnswerStreamEvent> {
+    return this.stream(
+      '/ai-search/rag/stream',
+      { query, contexts, api_key: llm.apiKey, model: llm.model },
+      token,
+      timeoutFor(llm, ANSWER_TIMEOUT_MS),
+      llm,
+      signal,
+    );
+  }
+
+  /** chatRag(), streamed. */
+  chatRagStream(
+    token: string,
+    llm: ActiveLlmSettings,
+    params: {
+      query: string;
+      chatHistory: { role: string; content: string }[];
+      currentChatChunks: string[];
+      notesChunks: string[];
+      similarChatChunks: string[];
+    },
+    signal: AbortSignal,
+  ): AsyncGenerator<AnswerStreamEvent> {
+    return this.stream(
+      '/ai-search/chat-rag/stream',
+      {
+        query: params.query,
+        chat_history: params.chatHistory,
+        current_chat_chunks: params.currentChatChunks,
+        notes_chunks: params.notesChunks,
+        similar_chat_chunks: params.similarChatChunks,
+        api_key: llm.apiKey,
+        model: llm.model,
+      },
+      token,
+      timeoutFor(llm, ANSWER_TIMEOUT_MS),
+      llm,
+      signal,
+    );
+  }
+
   /**
    * A standalone search query (plus extra keywords) for a vague question or a
    * chat follow-up. `error` is set, and the original query returned, on failure.
@@ -320,6 +383,86 @@ export class SearchApiClient {
    * they carry a queue priority from the user's plan; the /ingest calls are
    * indexing, which waits behind questions.
    */
+  private headers(path: string, token: string, llm?: ActiveLlmSettings) {
+    const headers: Record<string, string> = {
+      Authorization: token,
+      ...correlationHeaders(),
+    };
+    if (llm?.provider === 'builtin') {
+      headers['X-AI-Priority'] = String(
+        queuePriority(llm.plan, path.startsWith('/ingest/')),
+      );
+    }
+    return headers;
+  }
+
+  /**
+   * POST to a streaming endpoint and yield its events. `idleTimeout` is the
+   * longest wait for the next event (the first may wait in the built-in AI's
+   * queue); `signal` stops the call, e.g. when the browser goes away.
+   */
+  private async *stream<T>(
+    path: string,
+    body: unknown,
+    token: string,
+    idleTimeout: number,
+    llm: ActiveLlmSettings,
+    signal: AbortSignal,
+  ): AsyncGenerator<T> {
+    const idle = new AbortController();
+    let timer = setTimeout(() => idle.abort(), idleTimeout);
+    const timedOut = () =>
+      new SearchApiError(
+        llm.provider === 'builtin'
+          ? BUILTIN_AI_BUSY
+          : 'The AI provider took too long to answer. Please try again.',
+        503,
+      );
+    try {
+      let response: globalThis.Response;
+      try {
+        response = await fetch(`${SEARCH_API}${path}`, {
+          method: 'POST',
+          headers: {
+            ...this.headers(path, token, llm),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.any([signal, idle.signal]),
+        });
+      } catch (error) {
+        if (idle.signal.aborted) throw timedOut();
+        throw new SearchApiError(
+          error instanceof Error ? error.message : String(error),
+          null,
+        );
+      }
+      if (!response.ok || !response.body) {
+        const data = (await response.json().catch(() => null)) as {
+          detail?: unknown;
+        } | null;
+        throw new SearchApiError(
+          typeof data?.detail === 'string'
+            ? data.detail
+            : `Search service error (HTTP ${response.status})`,
+          response.status,
+        );
+      }
+      try {
+        for await (const event of readSseJson<T>(response.body)) {
+          clearTimeout(timer);
+          timer = setTimeout(() => idle.abort(), idleTimeout);
+          yield event;
+        }
+      } catch (error) {
+        if (idle.signal.aborted) throw timedOut();
+        throw error;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async post<T>(
     path: string,
     body: unknown,
@@ -328,12 +471,7 @@ export class SearchApiClient {
     llm?: ActiveLlmSettings,
   ): Promise<T> {
     const builtin = llm?.provider === 'builtin';
-    const headers: Record<string, string> = { Authorization: token };
-    if (builtin) {
-      headers['X-AI-Priority'] = String(
-        queuePriority(llm.plan, path.startsWith('/ingest/')),
-      );
-    }
+    const headers = this.headers(path, token, llm);
     try {
       const response = await firstValueFrom(
         this.http.post<T>(`${SEARCH_API}${path}`, body, { headers, timeout }),

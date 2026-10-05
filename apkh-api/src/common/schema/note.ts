@@ -21,6 +21,10 @@ export class Note {
   @Prop({ required: true })
   category: string;
 
+  /** Folder (collection) the note is filed in; null at the top level */
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Folder', default: null })
+  folderId: Types.ObjectId | null;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -36,5 +40,6 @@ NoteSchema.pre('save', function (next) {
 
 // Create a text index
 NoteSchema.index({ title: 'text', category: 'text', contentPlain: 'text' });
-// Listing a user's notes and finding their latest change
-NoteSchema.index({ userId: 1, updatedAt: -1 });
+// Listing a user's notes (newest first, paged) and finding their latest change
+NoteSchema.index({ userId: 1, updatedAt: -1, _id: -1 });
+NoteSchema.index({ userId: 1, folderId: 1, updatedAt: -1 });

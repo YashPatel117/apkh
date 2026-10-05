@@ -1,6 +1,88 @@
-import { INote, INoteDto, IndexStatus } from "@/models/note";
+import { ICategoryCount, INote, INoteDto, INotesPage, INoteVersion, IndexStatus } from "@/models/note";
 import { webApi, storageApi } from "@/services/axios";
+import { streamPost } from "@/services/sse";
 
+export const NOTES_PAGE_SIZE = 50;
+
+export interface NotesQuery {
+  /** Words to find in the title, category or text */
+  q?: string;
+  category?: string | null;
+  /** A folder id, or "root" for notes in no folder */
+  folderId?: string | null;
+}
+
+/** One page of notes, newest change first; pass the previous page's nextCursor for the next. */
+export async function getNotesPage(query: NotesQuery = {}, cursor?: string | null, limit = NOTES_PAGE_SIZE, signal?: AbortSignal) {
+  const res = await webApi.get("/notes", {
+    params: {
+      limit,
+      cursor: cursor || undefined,
+      q: query.q?.trim() || undefined,
+      category: query.category || undefined,
+      folderId: query.folderId || undefined,
+    },
+    signal,
+  });
+  return res.data.data as INotesPage;
+}
+
+/** Every category in use with its note count, and the total number of notes. */
+export async function getCategories() {
+  const res = await webApi.get("/notes/categories");
+  return res.data.data as { categories: ICategoryCount[]; total: number };
+}
+
+/** Moves a note into a folder (null: out of every folder). */
+export async function moveNote(id: string, folderId: string | null) {
+  const res = await webApi.patch(`/notes/${id}/folder`, { folderId });
+  return res.data.data as INote;
+}
+
+export async function getNoteVersions(id: string) {
+  const res = await webApi.get(`/notes/${id}/versions`);
+  return res.data.data as INoteVersion[];
+}
+
+export async function getNoteVersion(id: string, versionId: string) {
+  const res = await webApi.get(`/notes/${id}/versions/${versionId}`);
+  return res.data.data as INoteVersion;
+}
+
+/** Brings back an earlier version (the current one is kept in the history). */
+export async function restoreNoteVersion(id: string, versionId: string) {
+  const res = await webApi.post(`/notes/${id}/versions/${versionId}/restore`);
+  return res.data.data as INote;
+}
+
+/** Saves a download from the API (it needs the auth header, so no plain link). */
+async function download(path: string, params: Record<string, string> = {}) {
+  const res = await webApi.get(path, { params, responseType: "blob" });
+  const disposition = String(res.headers["content-disposition"] ?? "");
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  const plain = /filename="([^"]+)"/i.exec(disposition)?.[1];
+  const name = utf8 ? decodeURIComponent(utf8) : plain || "export";
+  const url = URL.createObjectURL(res.data as Blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Downloads one note as Markdown, or a ZIP with its attachments. */
+export function exportNote(id: string, format: "md" | "zip") {
+  return download(`/notes/${id}/export`, { format });
+}
+
+/** Downloads every note (Markdown, attachments and a JSON copy) as a ZIP. */
+export function exportAllNotes() {
+  return download("/notes/export");
+}
+
+/** Every note at once (fine for small libraries; the app pages through notes instead). */
 export async function getAllNotes() {
   const res = await webApi.get("/notes");
   return (res.data.data as INote[]).sort((a, b) => {
@@ -24,6 +106,7 @@ export async function createNote(note: INoteDto) {
   formData.append("title", note.title);
   formData.append("content", note.content);
   formData.append("category", note.category);
+  if (note.folderId) formData.append("folderId", note.folderId);
 
   if (note.files && note.files.length > 0) {
     note.files.forEach((file) => {
@@ -109,6 +192,28 @@ export type AiSearchResponse = {
 export async function aiSearchNotes(searchQuery: string, referencedNoteIds?: string[]) {
   const res = await webApi.post(`/notes/ai-search`, { query: searchQuery, referencedNoteIds });
   return res.data as AiSearchResponse;
+}
+
+/** Streamed AI search: the passages found, the answer as it is written, then the full result. */
+export type AiSearchStreamEvent =
+  | {
+      type: "sources";
+      query: string;
+      references: AiSearchResponse["references"];
+      pendingNotes: number;
+      searchedFor?: string;
+    }
+  | { type: "token"; text: string }
+  | { type: "done"; result: AiSearchResponse }
+  | { type: "error"; message: string };
+
+export function aiSearchNotesStream(
+  searchQuery: string,
+  referencedNoteIds: string[] | undefined,
+  onEvent: (event: AiSearchStreamEvent) => void,
+  signal?: AbortSignal,
+) {
+  return streamPost<AiSearchStreamEvent>("/notes/ai-search/stream", { query: searchQuery, referencedNoteIds }, onEvent, signal);
 }
 
 /** brief: a compact summary · actions: action items first */

@@ -9,14 +9,15 @@ import { getValidToken, clearToken } from "@/services/session";
 import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { logout, setToken, setUser } from "@/store/slices/authSlice";
-import { addNote, markNoteIndexing, setNotes } from "@/store/slices/noteSlice";
+import { addNote, markNoteIndexing, setFirstPage } from "@/store/slices/noteSlice";
+import { refreshLibraryMeta } from "@/hooks/useAuth";
 import { useIndexStatusSync } from "@/hooks/useIndexStatusSync";
 import { addSession, setActiveSession, setSessions } from "@/store/slices/chatSlice";
 import {
   aiSearchNotes,
   AiSearchResponse,
   createNote,
-  getAllNotes,
+  getNotesPage,
   getNoteLastUpdatedTime,
   updateNote,
 } from "@/services/noteService";
@@ -55,7 +56,7 @@ let notesRequest: Promise<unknown> | null = null;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAppSelector((state) => state.auth);
-  const { notes, latestUpdatedAt } = useAppSelector((state) => state.note);
+  const { notes, latestUpdatedAt, byId } = useAppSelector((state) => state.note);
   const sessionsCount = useAppSelector((state) => state.chat.sessions.length);
   const dispatch = useAppDispatch();
   const router = useRouter();
@@ -99,7 +100,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       notesRequest ??= (async () => {
         const lastUpdated = await getNoteLastUpdatedTime();
         if (!lastUpdated || !latestUpdatedAt || lastUpdated > latestUpdatedAt) {
-          dispatch(setNotes(await getAllNotes()));
+          const [page] = await Promise.all([getNotesPage(), refreshLibraryMeta(dispatch)]);
+          dispatch(setFirstPage(page));
         }
       })().finally(() => (notesRequest = null));
       await notesRequest;
@@ -255,7 +257,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // ── Note editor ──────────────────────────────────────────────────────────
   const openNote = useCallback(
     (noteId: string) => {
-      const note = notes.find((n) => n.id === noteId);
+      const note = byId[noteId];
       if (!note) {
         toast("That note no longer exists.", "error");
         return;
@@ -263,7 +265,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setEditNote(note);
       setEditorOpen(true);
     },
-    [notes, toast],
+    [byId, toast],
   );
 
   const newNote = useCallback(() => {

@@ -7,6 +7,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { BuiltinUsage, User, UserDocument } from '../common/schema/user';
 import { Voucher, VoucherDocument } from '../common/schema/voucher';
+import {
+  UsageEvent,
+  UsageEventDocument,
+  type UsageKind,
+} from '../common/schema/usage-event';
+import { RealtimeService } from '../realtime/realtime.service';
 import { EncryptionService } from '../common/utils/encryption.service';
 import { planDetails, planOf, sessionHours, type PlanId } from './plans';
 
@@ -81,6 +87,9 @@ export class UsersService {
     private readonly encryption: EncryptionService,
     @InjectModel(Voucher.name)
     private readonly voucherModel: Model<VoucherDocument>,
+    @InjectModel(UsageEvent.name)
+    private readonly usageModel: Model<UsageEventDocument>,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /**
@@ -173,9 +182,20 @@ export class UsersService {
     userId: string,
     tokens: number,
     llm: ActiveLlmSettings,
-    options: { interactive: boolean },
+    options: { interactive: boolean; kind: UsageKind; query?: string },
   ): Promise<void> {
+    // Every request is recorded for the usage dashboard, even when the
+    // provider reported no tokens.
+    await this.usageModel.create({
+      userId: new Types.ObjectId(userId),
+      kind: options.kind,
+      provider: llm.provider,
+      model: llm.model,
+      tokens: Math.max(0, tokens),
+      query: options.query?.trim().slice(0, 200) || undefined,
+    });
     if (tokens <= 0) return;
+    if (options.interactive) this.realtime.emit(userId, 'profile:changed');
     if (llm.provider === 'builtin') {
       await this.addBuiltinUsage(userId, tokens, options.interactive);
       return;

@@ -13,16 +13,25 @@ import base64
 import logging
 import os
 import struct
-from typing import Literal
+from typing import Annotated, Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from services.chunker import chunk_document
 from services.embedder import EmbeddingError, embed_documents, estimate_tokens, resolve_space
 from services.file_extractor import ImageReader, extract_text_from_bytes
 from services.html_parser import parse_note_html
+from services.logging_config import correlation_headers
+from services.limits import (
+    MAX_EMBED_TEXT_CHARS,
+    MAX_EMBED_TEXTS,
+    MAX_FILE_BYTES,
+    MAX_FILES,
+    MAX_ID_CHARS,
+    MAX_TEXT_CHARS,
+)
 from services.vision import VisionUsage, build_image_reader
 
 logger = logging.getLogger(__name__)
@@ -34,16 +43,19 @@ STORAGE_BASE_URL = os.getenv("STORAGE_API_URL", "http://localhost:3001").rstrip(
 
 FileStatus = Literal["ok", "empty", "unsupported", "no_vision", "missing", "failed"]
 
+Id = Annotated[str, Field(max_length=MAX_ID_CHARS)]
+LongText = Annotated[str, Field(max_length=MAX_TEXT_CHARS)]
+
 
 # ── /ingest/extract ─────────────────────────────────────────────────────────
 
 
 class ExtractRequest(BaseModel):
-    note_id: str
-    user_id: str | None = None
-    files: list[str]
-    api_key: str
-    model: str
+    note_id: Id
+    user_id: Id | None = None
+    files: list[Id] = Field(max_length=MAX_FILES)
+    api_key: Id
+    model: Id
 
 
 class ExtractedFile(BaseModel):
@@ -107,7 +119,7 @@ async def _fetch_and_extract_files(
             try:
                 async with semaphore:
                     url = f"{STORAGE_BASE_URL}/files/{note_id}/{filename}"
-                    response = await client.get(url, headers={"Authorization": auth_header})
+                    response = await client.get(url, headers={"Authorization": auth_header, **correlation_headers()})
                     if response.status_code == 404:
                         return ExtractedFile(file_name=filename, status="missing", error="File not found in storage.")
                     if response.status_code != 200:
@@ -115,6 +127,12 @@ async def _fetch_and_extract_files(
                             file_name=filename,
                             status="failed",
                             error=f"Download failed (HTTP {response.status_code}).",
+                        )
+                    if len(response.content) > MAX_FILE_BYTES:
+                        return ExtractedFile(
+                            file_name=filename,
+                            status="unsupported",
+                            error=f"File is larger than {MAX_FILE_BYTES // (1024 * 1024)} MB.",
                         )
                     extraction = await extract_text_from_bytes(response.content, filename, read_image)
                     return _to_extracted_file(extraction, can_read_images=read_image is not None)
@@ -161,16 +179,16 @@ def _to_extracted_file(extraction: dict, can_read_images: bool) -> ExtractedFile
 
 
 class ChunkFileSource(BaseModel):
-    file_name: str
-    text: str
+    file_name: Id
+    text: LongText
 
 
 class ChunkRequest(BaseModel):
-    content: str = ""
+    content: LongText = ""
     # Notes are Quill HTML; chat transcripts are plain text.
     content_format: Literal["html", "text"] = "html"
     source_type: Literal["note", "chat"] = "note"
-    files: list[ChunkFileSource] = []
+    files: list[ChunkFileSource] = Field(default=[], max_length=MAX_FILES)
 
 
 class ChunkOut(BaseModel):
@@ -215,11 +233,11 @@ def chunk(body: ChunkRequest):
 
 
 class EmbedRequest(BaseModel):
-    texts: list[str]
-    api_key: str
-    model: str
-    embedding_model: str | None = None
-    dimensions: int | None = None
+    texts: list[Annotated[str, Field(max_length=MAX_EMBED_TEXT_CHARS)]] = Field(max_length=MAX_EMBED_TEXTS)
+    api_key: Id
+    model: Id
+    embedding_model: Id | None = None
+    dimensions: int | None = Field(default=None, gt=0, le=8192)
 
 
 class EmbedResponse(BaseModel):

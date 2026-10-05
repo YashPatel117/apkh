@@ -72,7 +72,10 @@ export class QueryRewriteService {
         history,
       );
       this.usersService
-        .addTokenUsage(userId, result.tokensUsed, llm, { interactive: true })
+        .addTokenUsage(userId, result.tokensUsed, llm, {
+          interactive: true,
+          kind: 'rewrite',
+        })
         .catch(() => undefined);
       const unchanged =
         normalize(result.query) === normalize(query) && !result.keywords.length;

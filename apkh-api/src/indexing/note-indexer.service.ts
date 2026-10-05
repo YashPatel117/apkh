@@ -177,7 +177,10 @@ export class NoteIndexerService {
     tokensUsed += stored.tokensUsed;
     // Indexing never counts toward the plan's session allowance.
     this.usersService
-      .addTokenUsage(userId, tokensUsed, llm, { interactive: false })
+      .addTokenUsage(userId, tokensUsed, llm, {
+        interactive: false,
+        kind: 'index',
+      })
       .catch((err) => {
         this.logger.error(
           `Failed to track indexing tokens: ${errorMessage(err)}`,

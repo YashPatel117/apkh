@@ -42,6 +42,9 @@ import { UserDocument } from 'src/common/schema/user';
 import { IndexingService } from 'src/indexing/indexing.service';
 
 import { SEARCH_API } from 'src/common/constant/endpoint';
+import { correlationHeaders } from 'src/common/request-context';
+import { RealtimeService } from 'src/realtime/realtime.service';
+import { isAdminEmail } from 'src/admin/admin.guard';
 
 class RedeemVoucherDto {
   @IsString()
@@ -97,6 +100,7 @@ export class UsersController {
     private readonly httpService: HttpService,
     @Inject(forwardRef(() => IndexingService))
     private readonly indexing: IndexingService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   @UseGuards(AuthGuard)
@@ -117,6 +121,7 @@ export class UsersController {
     @Body() body: RedeemVoucherDto,
   ) {
     const user = await this.usersService.redeemVoucher(userId, body.code);
+    this.realtime.emit(userId, 'profile:changed');
     return this.sanitizeUser(user);
   }
 
@@ -139,7 +144,7 @@ export class UsersController {
       }>(
         `${SEARCH_API}/ai-search/test`,
         { api_key: apiKey, model: body.model },
-        { headers: { Authorization: authHeader } },
+        { headers: { Authorization: authHeader, ...correlationHeaders() } },
       );
       const res = await firstValueFrom(res$);
       return res.data;
@@ -167,7 +172,10 @@ export class UsersController {
       }>(
         `${SEARCH_API}/ai-search/models`,
         { provider: body.provider, api_key: apiKey },
-        { headers: { Authorization: authHeader }, timeout: 30000 },
+        {
+          headers: { Authorization: authHeader, ...correlationHeaders() },
+          timeout: 30000,
+        },
       );
       const res = await firstValueFrom(res$);
       return res.data;
@@ -251,6 +259,8 @@ export class UsersController {
     userId: string,
     previousProvider: LlmProvider | null,
   ) {
+    // Every AI settings change ends here: other open tabs reload the profile.
+    this.realtime.emit(userId, 'profile:changed');
     const provider = await this.usersService.getActiveProvider(userId);
     if (provider && provider !== previousProvider) {
       await this.indexing.reconcileUser(userId, { force: true });
@@ -285,6 +295,7 @@ export class UsersController {
     const allowance = builtinAllowance(user.builtinUsage, plan);
     return {
       ...obj,
+      isAdmin: isAdminEmail(user.email),
       plan: planDetails(plan),
       plans: [planDetails('free'), planDetails('pro')],
       builtinAi: builtinAiEnabled()

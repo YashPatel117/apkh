@@ -40,7 +40,7 @@ export default function NotesPage() {
     selectedNotes,
     toggleSelect,
   } = useNotes();
-  const totalNotes = useAppSelector((state) => state.note.notes.length);
+  const totalNotes = useAppSelector((state) => state.note.totalNotes);
   const indexStatus = useAppSelector((state) => state.note.indexStatus);
   const indexByNote = useMemo(() => new Map(indexStatus?.notes.map((n) => [n.noteId, n])), [indexStatus]);
   const dispatch = useAppDispatch();
