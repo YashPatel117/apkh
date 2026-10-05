@@ -1,5 +1,8 @@
+import { HttpException, Logger } from '@nestjs/common';
 import type { Response } from 'express';
-import { errorMessage } from './http-error';
+import { errorMessage, toHttpException } from './http-error';
+
+const logger = new Logger('SSE');
 
 /** Parses a server-sent event stream into the JSON payloads of its `data:` lines. */
 export async function* readSseJson<T>(
@@ -26,7 +29,8 @@ export async function* readSseJson<T>(
 /**
  * Sends events to the browser as server-sent events. The first event is
  * awaited before any header is written, so a failure before the answer starts
- * (bad request, over the plan's limit) still becomes a normal HTTP error.
+ * (bad request, over the plan's limit) still becomes a normal HTTP error, with
+ * the same status and message the non-streamed endpoint would give.
  * Later failures are sent as an `error` event. `abort` fires if the browser
  * goes away, so the upstream model call can stop.
  */
@@ -35,7 +39,18 @@ export async function sendSse(
   events: AsyncIterator<unknown>,
   abort: AbortController,
 ): Promise<void> {
-  const first = await events.next();
+  let first: IteratorResult<unknown>;
+  try {
+    first = await events.next();
+  } catch (error: unknown) {
+    if (!(error instanceof HttpException)) {
+      logger.error(
+        `Stream failed before it started: ${errorMessage(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+    throw toHttpException(error);
+  }
 
   res.status(200);
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -45,7 +60,8 @@ export async function sendSse(
   res.flushHeaders();
   res.on('close', () => abort.abort());
 
-  const write = (event: unknown) => res.write(`data: ${JSON.stringify(event)}\n\n`);
+  const write = (event: unknown) =>
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
   try {
     if (!first.done) write(first.value);
     if (!first.done) {
@@ -57,6 +73,10 @@ export async function sendSse(
     }
   } catch (error) {
     if (!abort.signal.aborted) {
+      logger.error(
+        `Stream failed: ${errorMessage(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       write({ type: 'error', message: errorMessage(error) });
     }
   } finally {

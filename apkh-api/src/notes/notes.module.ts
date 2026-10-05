@@ -4,10 +4,7 @@ import { NotesController } from './notes.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Note, NoteSchema } from 'src/common/schema/note';
 import { Summary, SummarySchema } from 'src/common/schema/summary';
-import {
-  NoteVersion,
-  NoteVersionSchema,
-} from 'src/common/schema/note-version';
+import { NoteVersion, NoteVersionSchema } from 'src/common/schema/note-version';
 import { FoldersModule } from 'src/folders/folders.module';
 import { HttpModule } from '@nestjs/axios';
 import { FileModule } from 'src/file/file.module';

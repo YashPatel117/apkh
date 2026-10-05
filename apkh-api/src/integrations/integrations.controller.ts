@@ -156,7 +156,13 @@ export class IntegrationsController {
     const subject = field('subject', 'Subject');
     const from = field('from', 'From', 'sender', 'FromFull');
     const html = field('html', 'HtmlBody', 'body-html', 'stripped-html');
-    const text = field('text', 'TextBody', 'stripped-text', 'body-plain', 'plain');
+    const text = field(
+      'text',
+      'TextBody',
+      'stripped-text',
+      'body-plain',
+      'plain',
+    );
     if (!html && !text) throw new BadRequestException('The email has no body.');
 
     const created = await this.integrations.addNote(userId, {

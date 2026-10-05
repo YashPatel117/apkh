@@ -426,7 +426,7 @@ function extractTokens(value: string): string[] {
   const matches = value.match(/[A-Za-z0-9+#.-]+/g) ?? [];
 
   return matches
-    .map((token) => normalizeToken(token))
+    .map((token: string) => normalizeToken(token))
     .filter(
       (token) =>
         Boolean(token) &&

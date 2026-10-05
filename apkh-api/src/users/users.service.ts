@@ -397,7 +397,22 @@ export class UsersService {
     const config = user.llmConfigs?.find((c) => c.keyName === keyName);
     if (!config) throw new BadRequestException(`Config "${keyName}" not found`);
 
-    return this.encryption.decrypt(config.llmApiKey);
+    return this.decryptApiKey(config.keyName, config.llmApiKey);
+  }
+
+  /**
+   * A saved key can't be decrypted when it was saved under a different
+   * ENCRYPTION_SECRET (the secret changed, or another server shares the
+   * database): the user has to enter the key again.
+   */
+  private decryptApiKey(keyName: string, encrypted: string): string {
+    try {
+      return this.encryption.decrypt(encrypted);
+    } catch {
+      throw new BadRequestException(
+        `Your saved AI key "${keyName}" can't be read on this server. Enter the key again in Profile.`,
+      );
+    }
   }
 
   /**
@@ -453,7 +468,7 @@ export class UsersService {
 
     return {
       keyName: active.keyName,
-      apiKey: this.encryption.decrypt(active.llmApiKey),
+      apiKey: this.decryptApiKey(active.keyName, active.llmApiKey),
       model: active.llmModel,
       provider: this.detectProvider(active.llmModel),
       plan,

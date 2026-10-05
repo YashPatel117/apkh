@@ -55,7 +55,7 @@ export class AnalyticsService {
     timeZone: string,
   ): Promise<UsageDashboard> {
     const uid = new Types.ObjectId(userId);
-    const since = startOfRange(days, timeZone);
+    const since = startOfRange(days);
     const day = (field: string) => ({
       $dateToString: { format: '%Y-%m-%d', date: field, timezone: timeZone },
     });
@@ -86,7 +86,10 @@ export class AnalyticsService {
           ])
           .exec(),
         this.noteModel
-          .aggregate<{ _id: string; count: number }>([
+          .aggregate<{
+            _id: string;
+            count: number;
+          }>([
             ...inRange('createdAt'),
             { $group: { _id: '$day', count: { $sum: 1 } } },
           ])
@@ -223,6 +226,6 @@ function rangeDates(days: number, timeZone: string): string[] {
 }
 
 /** Early enough to include the whole first day of the range in any zone. */
-function startOfRange(days: number, _timeZone: string): Date {
+function startOfRange(days: number): Date {
   return new Date(Date.now() - (days * 86_400_000 + 14 * 3_600_000));
 }

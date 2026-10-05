@@ -2,7 +2,7 @@ import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { Connection } from 'mongoose';
+import { Connection, ConnectionStates } from 'mongoose';
 import { fileStorageApi, SEARCH_API } from 'src/common/constant/endpoint';
 
 const DEPENDENCY_TIMEOUT_MS = 3_000;
@@ -36,7 +36,7 @@ export class HealthController {
    */
   @Get('ready')
   async ready(@Res({ passthrough: true }) res: Response) {
-    const database = this.connection.readyState === 1;
+    const database = this.connection.readyState === ConnectionStates.connected;
     const [storage, search] = await Promise.all([
       reachable(`${fileStorageApi.replace(/\/$/, '')}/health`),
       reachable(`${SEARCH_API.replace(/\/$/, '')}/health`),

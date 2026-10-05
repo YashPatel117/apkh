@@ -114,7 +114,8 @@ export class IndexWorkerService
 
   private async process(job: ClaimedJob) {
     // Open tabs refresh the index status instead of polling for it.
-    const notify = () => this.realtime.emit(String(job.userId), 'index:changed');
+    const notify = () =>
+      this.realtime.emit(String(job.userId), 'index:changed');
     notify();
     const heartbeat = setInterval(() => {
       this.queue.heartbeat(job._id, this.workerId).catch(() => undefined);

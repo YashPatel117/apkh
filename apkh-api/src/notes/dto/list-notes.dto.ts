@@ -28,7 +28,9 @@ export class ListNotesDto {
   @MaxLength(200)
   cursor?: string;
 
-  @ApiPropertyOptional({ description: 'Words to find in title, category or text' })
+  @ApiPropertyOptional({
+    description: 'Words to find in title, category or text',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)
@@ -40,7 +42,9 @@ export class ListNotesDto {
   @MaxLength(200)
   category?: string;
 
-  @ApiPropertyOptional({ description: 'A folder id, or "root" for unfiled notes' })
+  @ApiPropertyOptional({
+    description: 'A folder id, or "root" for unfiled notes',
+  })
   @IsOptional()
   @ValidateIf((_, value) => value !== 'root')
   @IsMongoId()

@@ -10,7 +10,12 @@ export type IntegrationTokenDocument = IntegrationToken & Document;
  */
 @Schema({ timestamps: true, collection: 'integration_tokens' })
 export class IntegrationToken {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   userId: Types.ObjectId;
 
   @Prop({ required: true, maxlength: 60 })

@@ -53,7 +53,7 @@ export class IntegrationsService {
       tokens: tokens
         .filter((t) => t.kind === 'token')
         .map((t) => ({
-          id: String(t._id),
+          id: (t._id as Types.ObjectId).toHexString(),
           name: t.name,
           prefix: t.prefix,
           createdAt: t.createdAt,
@@ -155,16 +155,23 @@ export class IntegrationsService {
     let content = toNoteHtml(note.content, note.format);
     if (note.url) content += sourceLine(note.url);
     if (!content.trim()) content = textToHtml(note.title || 'Empty note');
-    return this.notes.create('', userId, {
-      title: note.title?.trim().slice(0, 300),
-      category: note.category?.trim().slice(0, 100),
-      content,
-    }, []);
+    return this.notes.create(
+      '',
+      userId,
+      {
+        title: note.title?.trim().slice(0, 300),
+        category: note.category?.trim().slice(0, 100),
+        content,
+      },
+      [],
+    );
   }
 
   private inboxView(key: string) {
     const domain = process.env.INBOUND_EMAIL_DOMAIN?.trim();
-    const apiUrl = (process.env.PUBLIC_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+    const apiUrl = (
+      process.env.PUBLIC_API_URL ?? 'http://localhost:3000'
+    ).replace(/\/$/, '');
     return {
       address: domain ? `${key}@${domain}` : null,
       // Point the email provider's inbound webhook here.

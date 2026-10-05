@@ -34,7 +34,10 @@ export class FoldersService {
     const [folders, counts] = await Promise.all([
       this.folderModel.find({ userId: uid }).sort({ name: 1 }).lean().exec(),
       this.noteModel
-        .aggregate<{ _id: Types.ObjectId | null; count: number }>([
+        .aggregate<{
+          _id: Types.ObjectId | null;
+          count: number;
+        }>([
           { $match: { userId: uid } },
           { $group: { _id: '$folderId', count: { $sum: 1 } } },
         ])
@@ -42,10 +45,10 @@ export class FoldersService {
     ]);
     const countBy = new Map(counts.map((c) => [String(c._id), c.count]));
     return folders.map((f) => ({
-      id: String(f._id),
+      id: (f._id as Types.ObjectId).toHexString(),
       name: f.name,
       parentId: f.parentId ? String(f.parentId) : null,
-      noteCount: countBy.get(String(f._id)) ?? 0,
+      noteCount: countBy.get((f._id as Types.ObjectId).toHexString()) ?? 0,
     }));
   }
 

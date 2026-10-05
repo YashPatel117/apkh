@@ -11,7 +11,10 @@ import { randomInt } from 'node:crypto';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { fileStorageApi } from 'src/common/constant/endpoint';
-import { ChatSession, ChatSessionDocument } from 'src/common/schema/chat-session';
+import {
+  ChatSession,
+  ChatSessionDocument,
+} from 'src/common/schema/chat-session';
 import { IndexJob, IndexJobDocument } from 'src/common/schema/index-job';
 import { Note, NoteDocument } from 'src/common/schema/note';
 import { UsageEvent, UsageEventDocument } from 'src/common/schema/usage-event';
@@ -63,16 +66,25 @@ export class AdminService {
       storage,
     ] = await Promise.all([
       this.userModel
-        .aggregate<{ _id: string; count: number }>([
-          { $group: { _id: { $toLower: { $ifNull: ['$type', 'free'] } }, count: { $sum: 1 } } },
+        .aggregate<{
+          _id: string;
+          count: number;
+        }>([
+          {
+            $group: {
+              _id: { $toLower: { $ifNull: ['$type', 'free'] } },
+              count: { $sum: 1 },
+            },
+          },
         ])
         .exec(),
       this.noteModel.estimatedDocumentCount().exec(),
       this.sessionModel.estimatedDocumentCount().exec(),
       this.jobModel
-        .aggregate<{ _id: string; count: number }>([
-          { $group: { _id: '$status', count: { $sum: 1 } } },
-        ])
+        .aggregate<{
+          _id: string;
+          count: number;
+        }>([{ $group: { _id: '$status', count: { $sum: 1 } } }])
         .exec(),
       this.jobModel.countDocuments({ indexedAt: { $gte: hourAgo } }).exec(),
       this.jobModel.countDocuments({ indexedAt: { $gte: dayAgo } }).exec(),
@@ -172,7 +184,10 @@ export class AdminService {
     ]);
     const ids = users.map((u) => u._id);
     const notes = await this.noteModel
-      .aggregate<{ _id: Types.ObjectId; count: number }>([
+      .aggregate<{
+        _id: Types.ObjectId;
+        count: number;
+      }>([
         { $match: { userId: { $in: ids } } },
         { $group: { _id: '$userId', count: { $sum: 1 } } },
       ])
@@ -186,14 +201,15 @@ export class AdminService {
       pageSize: USERS_PAGE,
       total,
       users: users.map((u) => ({
-        id: String(u._id),
+        id: (u._id as Types.ObjectId).toHexString(),
         name: u.name,
         email: u.email,
         plan: planOf(u.type),
         ownKey: Boolean(u.llmConfigs?.some((c) => c.isActive)),
         totalTokensUsed: u.totalTokensUsed ?? 0,
-        notes: notesBy.get(String(u._id)) ?? 0,
-        storageBytes: storageBy.get(String(u._id)) ?? 0,
+        notes: notesBy.get((u._id as Types.ObjectId).toHexString()) ?? 0,
+        storageBytes:
+          storageBy.get((u._id as Types.ObjectId).toHexString()) ?? 0,
         createdAt: (u as { createdAt?: Date }).createdAt ?? null,
       })),
     };
@@ -274,7 +290,10 @@ export class AdminService {
           users: { userId: string; usedBytes: number }[];
           quotaBytes: number;
         }>(`${fileStorageApi}admin/usage`, {
-          headers: { Authorization: `Bearer ${token}`, ...correlationHeaders() },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ...correlationHeaders(),
+          },
           timeout: 15_000,
         }),
       );

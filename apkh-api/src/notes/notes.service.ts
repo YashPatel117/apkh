@@ -206,7 +206,10 @@ export class NotesService {
   /** Every category in use, with how many notes are in it. */
   async categories(userId: string) {
     const rows = await this.noteModel
-      .aggregate<{ _id: string; count: number }>([
+      .aggregate<{
+        _id: string;
+        count: number;
+      }>([
         { $match: { userId: new Types.ObjectId(userId) } },
         { $group: { _id: '$category', count: { $sum: 1 } } },
         { $sort: { count: -1, _id: 1 } },
@@ -387,7 +390,7 @@ export class NotesService {
       .exec();
     return new ApiResponseDto().ok(
       versions.map((v) => ({
-        id: String(v._id),
+        id: (v._id as Types.ObjectId).toHexString(),
         title: v.title,
         category: v.category,
         savedAt: v.savedAt,
@@ -401,7 +404,7 @@ export class NotesService {
   async getVersion(userId: string, _id: string, versionId: string) {
     const version = await this.requireVersion(userId, _id, versionId);
     return new ApiResponseDto().ok({
-      id: String(version._id),
+      id: (version._id as Types.ObjectId).toHexString(),
       title: version.title,
       category: version.category,
       content: version.content,
@@ -527,7 +530,10 @@ export class NotesService {
         ? paths.get(String(note.folderId))
         : undefined;
       const dir = folderPath
-        ? folderPath.split(' / ').map((part) => safeFileName(part)).join('/')
+        ? folderPath
+            .split(' / ')
+            .map((part) => safeFileName(part))
+            .join('/')
         : '';
       // Two notes with one title get "Title (2)".
       let base = `${dir ? `${dir}/` : ''}${safeFileName(note.title)}`;
@@ -565,9 +571,12 @@ export class NotesService {
       });
     }
 
-    archive.append(JSON.stringify({ exportedAt: new Date(), notes: manifest }, null, 2), {
-      name: 'notes.json',
-    });
+    archive.append(
+      JSON.stringify({ exportedAt: new Date(), notes: manifest }, null, 2),
+      {
+        name: 'notes.json',
+      },
+    );
     await archive.finalize();
   }
 

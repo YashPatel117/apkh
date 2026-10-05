@@ -9,6 +9,7 @@ export function displayFileName(id: string): string {
 /** A name that is safe as a file or folder name on every OS. */
 export function safeFileName(name: string, fallback = 'Untitled note'): string {
   const cleaned = name
+    // eslint-disable-next-line no-control-regex -- control characters aren't valid in file names
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -26,10 +27,9 @@ const turndown = new TurndownService({
 // Attachment chips become links to the attachment, which exports keep next to the note.
 turndown.addRule('fileToken', {
   filter: (node) =>
-    node.nodeName === 'SPAN' &&
-    (node as HTMLElement).classList?.contains('file-token'),
+    node.nodeName === 'SPAN' && node.classList?.contains('file-token'),
   replacement: (_content, node) => {
-    const id = (node as HTMLElement).getAttribute('data-id') ?? '';
+    const id = node.getAttribute('data-id') ?? '';
     const name = displayFileName(id);
     return `[📎 ${name}](${encodeURI(`attachments/${id}`)})`;
   },
@@ -40,7 +40,7 @@ turndown.addRule('fileToken', {
 turndown.addRule('quillListItem', {
   filter: 'li',
   replacement: (content, node) => {
-    const item = node as HTMLElement;
+    const item = node;
     const kind =
       item.getAttribute('data-list') ??
       (item.parentNode?.nodeName === 'UL' ? 'bullet' : 'ordered');
@@ -50,7 +50,11 @@ turndown.addRule('quillListItem', {
     else if (kind === 'unchecked') marker = '- [ ]';
     else if (kind === 'ordered') {
       let n = 1;
-      for (let s = item.previousElementSibling; s; s = s.previousElementSibling) {
+      for (
+        let s = item.previousElementSibling;
+        s;
+        s = s.previousElementSibling
+      ) {
         const sKind = s.getAttribute('data-list') ?? 'ordered';
         const sDepth = Number(/ql-indent-(\d+)/.exec(s.className)?.[1] ?? 0);
         if (sDepth < depth) break;

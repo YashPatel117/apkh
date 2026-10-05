@@ -23,11 +23,7 @@ import { UpdateNoteDto } from './dto/update-note.dto';
 import { AiSearchDto } from './dto/ai-search.dto';
 import { ReindexDto } from './dto/reindex.dto';
 import { SummaryQueryDto } from './dto/summary-query.dto';
-import {
-  ExportNoteDto,
-  ListNotesDto,
-  MoveNoteDto,
-} from './dto/list-notes.dto';
+import { ExportNoteDto, ListNotesDto, MoveNoteDto } from './dto/list-notes.dto';
 import { IndexingService } from 'src/indexing/indexing.service';
 import { SearchService } from 'src/search/search.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';

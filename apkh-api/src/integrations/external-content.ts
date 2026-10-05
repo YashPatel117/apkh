@@ -8,8 +8,24 @@ import sanitizeHtml from 'sanitize-html';
 export function sanitizeNoteHtml(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: [
-      'p', 'br', 'h1', 'h2', 'h3', 'strong', 'b', 'em', 'i', 'u', 's',
-      'a', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code',
+      'p',
+      'br',
+      'h1',
+      'h2',
+      'h3',
+      'strong',
+      'b',
+      'em',
+      'i',
+      'u',
+      's',
+      'a',
+      'ul',
+      'ol',
+      'li',
+      'blockquote',
+      'pre',
+      'code',
     ],
     allowedAttributes: { a: ['href', 'target', 'rel'] },
     allowedSchemes: ['http', 'https', 'mailto'],
@@ -51,9 +67,7 @@ export type ExternalFormat = 'html' | 'markdown' | 'text';
 export function toNoteHtml(content: string, format: ExternalFormat): string {
   if (format === 'text') return textToHtml(content);
   const html =
-    format === 'markdown'
-      ? (marked.parse(content, { async: false }) as string)
-      : content;
+    format === 'markdown' ? marked.parse(content, { async: false }) : content;
   return sanitizeNoteHtml(html);
 }
 
