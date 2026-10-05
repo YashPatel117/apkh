@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { CalendarClock, Gavel, ListChecks, RefreshCw, Sparkles, Square, SquareCheck, Users } from "lucide-react";
-import { NoteSummaryResponse, SummaryMode, summarizeNote } from "@/services/noteService";
+import { CalendarClock, CalendarPlus, Gavel, ListChecks, RefreshCw, Sparkles, Square, SquareCheck, Users } from "lucide-react";
+import { NoteActions, NoteSummaryResponse, SummaryMode, summarizeNote } from "@/services/noteService";
 import { getErrorMessage } from "@/services/axios";
 import { cn } from "@/lib/cn";
+import { buildIcs, CalendarItem, downloadText, parseDueDate } from "@/lib/ics";
+import { safeFileName } from "@/lib/fileName";
+import { MessageKey, Translate, useT } from "@/i18n";
 
-const MODES: { id: SummaryMode; label: string }[] = [
-  { id: "brief", label: "Brief" },
-  { id: "actions", label: "Action items" },
+const MODES: { id: SummaryMode; label: MessageKey }[] = [
+  { id: "brief", label: "summary.brief" },
+  { id: "actions", label: "summary.actions" },
 ];
 
 const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -23,8 +26,9 @@ interface ModeState {
 const idle: ModeState = { loading: false, error: "", data: null };
 
 /** AI summary of a note, as a brief summary or as action items (tasks, decisions, deadlines, people). */
-export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; updatedAt: string }) {
+export function NoteSummaryPanel({ noteId, noteTitle = "", updatedAt }: { noteId: string; noteTitle?: string; updatedAt: string }) {
   const [mode, setMode] = useState<SummaryMode>("brief");
+  const t = useT();
   const [states, setStates] = useState<Record<SummaryMode, ModeState>>({ brief: idle, actions: idle });
   const inFlight = useRef<Record<SummaryMode, boolean>>({ brief: false, actions: false });
   // Bumped when the note changes, so answers about the old version are dropped.
@@ -57,10 +61,10 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
       try {
         settle({ loading: false, error: "", data: await summarizeNote(noteId, target) });
       } catch (error) {
-        settle({ loading: false, error: getErrorMessage(error, "Couldn't generate the summary right now."), data: null });
+        settle({ loading: false, error: getErrorMessage(error, t("summary.failed")), data: null });
       }
     },
-    [noteId],
+    [noteId, t],
   );
 
   const current = states[mode];
@@ -75,10 +79,10 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-fg">
-          <Sparkles className="size-3.5" /> AI summary
+          <Sparkles className="size-3.5" /> {t("card.summary")}
         </span>
         <div className="flex items-center gap-1">
-          <div role="tablist" aria-label="Summary type" className="flex rounded-lg bg-surface/70 p-0.5">
+          <div role="tablist" aria-label={t("summary.type")} className="flex rounded-lg bg-surface/70 p-0.5">
             {MODES.map((option) => (
               <button
                 key={option.id}
@@ -91,7 +95,7 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
                   mode === option.id ? "bg-surface text-fg shadow-xs" : "text-fg-subtle hover:text-fg",
                 )}
               >
-                {option.label}
+                {t(option.label)}
               </button>
             ))}
           </div>
@@ -100,7 +104,7 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
               type="button"
               onClick={() => void load(mode)}
               className="flex size-6 cursor-pointer items-center justify-center rounded-md text-fg-subtle hover:bg-surface/70 hover:text-fg"
-              aria-label="Refresh summary"
+              aria-label={t("summary.refresh")}
             >
               <RefreshCw className="size-3" />
             </button>
@@ -110,7 +114,7 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
 
       <div className="mt-2 text-sm leading-relaxed">
         {current.loading && (
-          <div className="space-y-2" aria-live="polite" aria-label="Generating summary">
+          <div className="space-y-2" aria-live="polite" aria-label={t("summary.generating")}>
             {[100, 90, 70].map((w) => (
               <div key={w} className="h-3 animate-pulse rounded-full bg-indigo-200/50 dark:bg-indigo-400/15" style={{ width: `${w}%` }} />
             ))}
@@ -119,7 +123,7 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
         {!current.loading && current.error && <p className="text-rose-600 dark:text-rose-400">{current.error}</p>}
         {!current.loading && current.data && (
           mode === "actions" && current.data.actions ? (
-            <ActionItems summary={current.data.summary} actions={current.data.actions} />
+            <ActionItems summary={current.data.summary} actions={current.data.actions} noteTitle={noteTitle} t={t} />
           ) : (
             <div className="rich-content text-sm text-fg">
               <ReactMarkdown>{current.data.summary}</ReactMarkdown>
@@ -130,7 +134,7 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
 
       {current.data && !current.loading && current.data.model && (
         <p className="mt-3 text-[0.7rem] text-fg-subtle">
-          {current.data.cached ? "Cached" : "Fresh"}
+          {current.data.cached ? t("summary.cached") : t("summary.fresh")}
           {` · ${current.data.model}`}
           {current.data.generatedAt ? ` · ${dateFormat.format(new Date(current.data.generatedAt))}` : ""}
         </p>
@@ -139,15 +143,33 @@ export function NoteSummaryPanel({ noteId, updatedAt }: { noteId: string; update
   );
 }
 
-function ActionItems({ summary, actions }: { summary: string; actions: NonNullable<NoteSummaryResponse["actions"]> }) {
+/** Open tasks with a due date and deadlines, as calendar events (only ones with a real date). */
+function calendarItems(actions: NoteActions, noteTitle: string, t: Translate): CalendarItem[] {
+  const source = noteTitle ? t("summary.fromNote", { title: noteTitle }) : undefined;
+  const items: CalendarItem[] = [];
+  for (const task of actions.tasks) {
+    const date = !task.done && task.due ? parseDueDate(task.due) : null;
+    if (date) items.push({ title: task.owner ? `${task.task} (${task.owner})` : task.task, date, description: source });
+  }
+  for (const deadline of actions.deadlines) {
+    const date = parseDueDate(deadline.when);
+    if (date) items.push({ title: deadline.what, date, description: source });
+  }
+  return items;
+}
+
+function ActionItems({ summary, actions, noteTitle, t }: { summary: string; actions: NoteActions; noteTitle: string; t: Translate }) {
   const empty = !actions.tasks.length && !actions.decisions.length && !actions.deadlines.length && !actions.people.length;
+  const events = calendarItems(actions, noteTitle, t);
+  const saveCalendar = () =>
+    downloadText(buildIcs(events, noteTitle || t("summary.actions")), `${safeFileName(noteTitle || "action-items")}.ics`, "text/calendar");
   return (
     <div className="space-y-3">
       {summary && <p className="text-fg">{summary}</p>}
-      {empty && <p className="text-fg-muted">No tasks, decisions or deadlines in this note.</p>}
+      {empty && <p className="text-fg-muted">{t("summary.nothing")}</p>}
 
       {actions.tasks.length > 0 && (
-        <Group icon={<ListChecks />} title="Tasks">
+        <Group icon={<ListChecks />} title={t("summary.tasks")}>
           {actions.tasks.map((task, i) => (
             <li key={i} className="flex items-start gap-2">
               {task.done ? (
@@ -166,7 +188,7 @@ function ActionItems({ summary, actions }: { summary: string; actions: NonNullab
       )}
 
       {actions.decisions.length > 0 && (
-        <Group icon={<Gavel />} title="Decisions">
+        <Group icon={<Gavel />} title={t("summary.decisions")}>
           {actions.decisions.map((decision, i) => (
             <li key={i} className="text-fg">
               {decision}
@@ -176,7 +198,7 @@ function ActionItems({ summary, actions }: { summary: string; actions: NonNullab
       )}
 
       {actions.deadlines.length > 0 && (
-        <Group icon={<CalendarClock />} title="Deadlines">
+        <Group icon={<CalendarClock />} title={t("summary.deadlines")}>
           {actions.deadlines.map((deadline, i) => (
             <li key={i} className="text-fg">
               <span className="font-medium">{deadline.when}</span> — {deadline.what}
@@ -186,7 +208,7 @@ function ActionItems({ summary, actions }: { summary: string; actions: NonNullab
       )}
 
       {actions.people.length > 0 && (
-        <Group icon={<Users />} title="People">
+        <Group icon={<Users />} title={t("summary.people")}>
           {actions.people.map((person, i) => (
             <li key={i} className="text-fg">
               <span className="font-medium">{person.name}</span>
@@ -194,6 +216,17 @@ function ActionItems({ summary, actions }: { summary: string; actions: NonNullab
             </li>
           ))}
         </Group>
+      )}
+
+      {events.length > 0 && (
+        <button
+          type="button"
+          onClick={saveCalendar}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-surface/70 px-2.5 py-1 text-xs font-semibold text-accent-fg transition-colors hover:bg-surface"
+        >
+          <CalendarPlus className="size-3.5" />
+          {t("summary.calendar", { count: events.length })}
+        </button>
       )}
     </div>
   );

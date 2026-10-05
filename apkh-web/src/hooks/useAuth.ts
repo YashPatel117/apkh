@@ -13,6 +13,7 @@ import { logout, setToken, setUser } from "@/store/slices/authSlice";
 import { setCategories, setFirstPage, setFolders } from "@/store/slices/noteSlice";
 import { setSessions } from "@/store/slices/chatSlice";
 import { clearCachedLibrary, readCachedLibrary, saveCachedLibrary } from "@/lib/offlineCache";
+import { useT } from "@/i18n";
 
 // Module-level so a remount (route change) doesn't refire the same request.
 let profileRequest: Promise<unknown> | null = null;
@@ -36,6 +37,7 @@ export function useAuth() {
   const dispatch = useAppDispatch();
   const router = useRouter();
   const [loadError, setLoadError] = useState<string | null>(null);
+  const t = useT();
   const [notesLoaded, setNotesLoaded] = useState(loaded);
 
   const loadData = useCallback(async () => {
@@ -70,7 +72,7 @@ export function useAuth() {
         return;
       }
       // 401s are handled globally by the axios interceptor (redirect to login).
-      setLoadError(getErrorMessage(error, "We couldn't load your workspace."));
+      setLoadError(getErrorMessage(error, t("shell.loadFailed")));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);

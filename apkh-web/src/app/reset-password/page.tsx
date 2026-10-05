@@ -10,6 +10,7 @@ import { getErrorMessage } from "@/services/axios";
 import { AuthShell, FormAlert } from "@/components/authShell";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { useT } from "@/i18n";
 
 const MIN_PASSWORD = 6;
 
@@ -21,17 +22,18 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const t = useT();
 
   const mismatch = confirm.length > 0 && confirm !== password;
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password.length < MIN_PASSWORD) {
-      setError(`Password must be at least ${MIN_PASSWORD} characters.`);
+      setError(t("auth.tooShort", { count: MIN_PASSWORD }));
       return;
     }
     if (password !== confirm) {
-      setError("Passwords don't match.");
+      setError(t("auth.mismatch"));
       return;
     }
     setIsLoading(true);
@@ -42,8 +44,8 @@ export default function ResetPasswordPage() {
     } catch (err) {
       setError(
         axios.isAxiosError(err) && err.response?.status === 401
-          ? "Email or current password is incorrect."
-          : getErrorMessage(err, "Password reset failed. Please try again."),
+          ? t("auth.resetWrong")
+          : getErrorMessage(err, t("auth.resetFailed")),
       );
       setIsLoading(false);
     }
@@ -51,13 +53,13 @@ export default function ResetPasswordPage() {
 
   return (
     <AuthShell
-      title="Reset your password"
-      subtitle="Confirm your current password, then choose a new one."
+      title={t("auth.resetTitle")}
+      subtitle={t("auth.resetText")}
       footer={
         <>
-          Remembered it?{" "}
+          {t("auth.remembered")}{" "}
           <Link href="/login" className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">
-            Back to sign in
+            {t("auth.backToSignIn")}
           </Link>
         </>
       }
@@ -65,7 +67,7 @@ export default function ResetPasswordPage() {
       <form onSubmit={handleReset} className="flex flex-col gap-4">
         {error && <FormAlert>{error}</FormAlert>}
         <Input
-          label="Email"
+          label={t("auth.email")}
           type="email"
           autoComplete="email"
           placeholder="you@example.com"
@@ -76,38 +78,38 @@ export default function ResetPasswordPage() {
           autoFocus
         />
         <Input
-          label="Current password"
+          label={t("auth.currentPassword")}
           type="password"
           autoComplete="current-password"
-          placeholder="Your current password"
+          placeholder={t("auth.currentPh")}
           icon={<Lock />}
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
           required
         />
         <Input
-          label="New password"
+          label={t("auth.newPassword")}
           type="password"
           autoComplete="new-password"
-          placeholder="At least 6 characters"
+          placeholder={t("auth.atLeastSix", { count: MIN_PASSWORD })}
           icon={<Lock />}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
         />
         <Input
-          label="Confirm new password"
+          label={t("auth.confirmPassword")}
           type="password"
           autoComplete="new-password"
-          placeholder="Repeat the new password"
+          placeholder={t("auth.repeatPh")}
           icon={<Lock />}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          error={mismatch ? "Passwords don't match." : null}
+          error={mismatch ? t("auth.mismatch") : null}
           required
         />
         <Button type="submit" size="lg" loading={isLoading} className="mt-2 w-full">
-          {isLoading ? "Updating…" : "Update password"}
+          {isLoading ? t("auth.updating") : t("auth.update")}
         </Button>
       </form>
     </AuthShell>

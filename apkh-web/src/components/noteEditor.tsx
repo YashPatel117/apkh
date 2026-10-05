@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import "@/lib/fileTokenBlot";
@@ -10,11 +10,13 @@ import FileDisplay from "@/components/fileDisplay";
 import { CategoryInput } from "@/components/categoryInput";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "@/lib/noteLinkUtils";
 import { displayFileName } from "@/lib/fileName";
-import { getErrorMessage } from "@/services/axios";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { FormAlert } from "@/components/authShell";
+import { useSlashCommands } from "@/components/slashCommands";
+import { useT } from "@/i18n";
+import { errorText } from "@/lib/localizedError";
 
 export type FileItem = {
   id: string;
@@ -49,6 +51,7 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
   const [files, setFiles] = useState<FileItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ file?: File; fileName: string } | null>(null);
+  const t = useT();
   const filesRef = useRef<FileItem[]>(files);
   const quillRef = useRef<ReactQuill | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +62,9 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
 
   // Stable reference — a new object each render makes Quill re-initialise.
   const modules = useMemo(() => ({ toolbar: TOOLBAR }), []);
+
+  const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
+  const slash = useSlashCommands(quillRef, openFilePicker);
 
   const plainText = note.content.replace(/<[^>]+>/g, "").trim();
   const hasTokens = note.content.includes("file-token");
@@ -108,7 +114,7 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
         initialNote?.id,
       );
     } catch (err) {
-      setError(getErrorMessage(err, "Couldn't save the note. Please try again."));
+      setError(errorText(t, err, "editor.saveFailed"));
     }
   };
 
@@ -145,10 +151,10 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
         )}
         <div className="grid gap-4 sm:grid-cols-[1.4fr_1fr]">
           <Input
-            label="Title"
+            label={t("editor.title")}
             icon={<Type />}
             value={note.title}
-            placeholder="Auto-generated if left blank"
+            placeholder={t("editor.titlePlaceholder")}
             onChange={(e) => setNote((prev) => ({ ...prev, title: e.target.value }))}
             data-autofocus
           />
@@ -156,37 +162,38 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
             value={note.category}
             onChange={(category) => setNote((prev) => ({ ...prev, category }))}
             options={categoryOptions}
-            placeholder="Auto-matched if left blank"
+            placeholder={t("editor.categoryPlaceholder")}
           />
         </div>
 
-        <div className="mt-4">
+        <div className="mt-4" onKeyDownCapture={slash.onKeyDownCapture}>
           <ReactQuill
             ref={quillRef}
             className="note-editor"
             theme="snow"
             value={note.content}
             onChange={(content) => setNote((prev) => ({ ...prev, content }))}
-            placeholder="Write your note, paste links, or attach files…"
+            placeholder={t("editor.placeholder")}
             modules={modules}
           />
+          {slash.menu}
         </div>
         <input type="file" multiple ref={fileInputRef} className="hidden" onChange={handleFileChange} />
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-5 py-4 sm:px-6">
         <Button variant="secondary" onClick={() => fileInputRef.current?.click()} icon={<Paperclip className="size-4" />} disabled={saving}>
-          Attach files
+          {t("editor.attach")}
         </Button>
         <span className="hidden text-xs text-fg-subtle md:inline">
-          <kbd className="rounded border border-line px-1 font-mono">Ctrl</kbd> + <kbd className="rounded border border-line px-1 font-mono">Enter</kbd> to save
+          <kbd className="rounded border border-line px-1 font-mono">Ctrl</kbd> + <kbd className="rounded border border-line px-1 font-mono">Enter</kbd> {t("editor.toSave")}
         </span>
         <div className="ml-auto flex gap-2">
           <Button variant="ghost" onClick={onCancel} disabled={saving}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={() => void save()} loading={saving} disabled={isEmpty}>
-            {saving ? "Saving…" : initialNote ? "Save changes" : "Create note"}
+            {saving ? t("editor.saving") : initialNote ? t("editor.saveChanges") : t("editor.create")}
           </Button>
         </div>
       </div>

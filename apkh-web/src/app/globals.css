@@ -15,6 +15,13 @@
   --accent: #4f46e5;
   --accent-soft: #eef0ff;
   --accent-fg: #4338ca;
+  /* Chart series, in fixed order (validated for colour-vision deficiency; see /analytics) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --chart-grid: #e2e7f0;
   color-scheme: light;
 }
 
@@ -29,6 +36,12 @@
   --accent: #818cf8;
   --accent-soft: rgba(99, 102, 241, 0.14);
   --accent-fg: #a5b4fc;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --chart-grid: #1b233f;
   color-scheme: dark;
 }
 
@@ -144,6 +157,19 @@
   .rich-content ol > li,
   .rich-content li[data-list="ordered"] { @apply list-decimal; }
   .rich-content ol > li[data-list="bullet"] { @apply list-disc; }
+  /* Checklists and code blocks (slash commands): Quill 2 writes them as list items / divs */
+  .rich-content li[data-list="checked"],
+  .rich-content li[data-list="unchecked"] { @apply relative list-none; }
+  .rich-content li[data-list="checked"]::before,
+  .rich-content li[data-list="unchecked"]::before {
+    @apply absolute -left-5 text-accent;
+    content: "☐";
+  }
+  .rich-content li[data-list="checked"]::before { content: "☑"; }
+  .rich-content li[data-list="checked"] { @apply text-fg-subtle line-through; }
+  .rich-content .ql-code-block-container {
+    @apply my-3 overflow-x-auto rounded-xl bg-slate-900 p-4 font-mono text-[0.85em] whitespace-pre text-slate-100 dark:bg-black/40;
+  }
   .rich-content li.ql-indent-1 { @apply ml-6; }
   .rich-content li.ql-indent-2 { @apply ml-12; }
   .rich-content li.ql-indent-3 { @apply ml-18; }

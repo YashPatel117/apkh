@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hook";
 import {
   createEmptyChat,
   getChatMessages,
-  sendChatMessage,
+  sendChatMessageStream,
   deleteChatSession,
   IChatMessage,
   IChatSession,
@@ -29,6 +29,8 @@ import { Avatar } from "@/components/sidebar";
 import { CitedMarkdown } from "@/components/citedMarkdown";
 import { useSourceViewer } from "@/components/sourceViewer";
 import { useSaveAnswerAsNote } from "@/hooks/useSaveAnswerAsNote";
+import { CHAT_UPDATED_EVENT } from "@/hooks/useRealtime";
+import { SourceRef } from "@/components/sources";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { LogoMark } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
@@ -36,6 +38,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n";
 
 const dayFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
@@ -46,9 +49,13 @@ export default function ChatPage() {
   const aiOn = Boolean(activeAi(user));
   const { focusSearch } = useNotes();
   const toast = useToast();
+  const t = useT();
 
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  // The reply being written: shown as it streams in, until it is saved.
+  const [streaming, setStreaming] = useState<{ sessionId: string; content: string; sources: SourceRef[] } | null>(null);
+  const sendingRef = useRef(false);
   const [fetchingMessages, setFetchingMessages] = useState(false);
   const [mobileShowList, setMobileShowList] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<IChatSession | null>(null);
@@ -78,16 +85,29 @@ export default function ChatPage() {
     dispatch(setMessages([]));
     getChatMessages(activeSessionId)
       .then((fetched) => mounted && dispatch(setMessages(fetched)))
-      .catch((err) => mounted && toast(getErrorMessage(err, "Couldn't load this conversation."), "error"))
+      .catch((err) => mounted && toast(getErrorMessage(err, t("chat.loadFailed")), "error"))
       .finally(() => mounted && setFetchingMessages(false));
     return () => {
       mounted = false;
     };
-  }, [activeSessionId, dispatch, toast]);
+  }, [activeSessionId, dispatch, toast, t]);
+
+  // A conversation changed elsewhere (another tab or device): reload it if it's open.
+  useEffect(() => {
+    const onUpdated = (event: Event) => {
+      const { sessionId, deleted } = (event as CustomEvent<{ sessionId: string; deleted?: boolean }>).detail;
+      if (deleted || sessionId !== activeRef.current || sendingRef.current) return;
+      getChatMessages(sessionId)
+        .then((fetched) => activeRef.current === sessionId && !sendingRef.current && dispatch(setMessages(fetched)))
+        .catch(() => {});
+    };
+    window.addEventListener(CHAT_UPDATED_EVENT, onUpdated);
+    return () => window.removeEventListener(CHAT_UPDATED_EVENT, onUpdated);
+  }, [dispatch]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, isSending]);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: streaming?.content ? "auto" : "smooth" });
+  }, [messages, isSending, streaming?.content]);
 
   // Auto-grow the composer.
   useEffect(() => {
@@ -107,29 +127,47 @@ export default function ChatPage() {
     dispatch(addMessage({ id: tempId, sessionId, role: "user", content, createdAt: new Date().toISOString() }));
 
     setIsSending(true);
+    sendingRef.current = true;
+    let text = "";
+    let failure: string | null = null;
+    let saved = false;
     try {
-      const response = await sendChatMessage(sessionId, content);
-      dispatch(updateSessionTime(sessionId));
-      if (response.title) dispatch(renameSession({ id: sessionId, title: response.title }));
-      // Only append if the user is still looking at this conversation.
-      if (activeRef.current === sessionId) {
-        dispatch(
-          addMessage({
-            id: `ai-${Date.now()}`,
-            sessionId,
-            role: "assistant",
-            content: response.answer,
-            createdAt: new Date().toISOString(),
-            sources: response.sources,
-          }),
-        );
-      }
+      await sendChatMessageStream(sessionId, content, (event) => {
+        if (event.type === "sources") {
+          setStreaming({ sessionId, content: "", sources: event.sources });
+        } else if (event.type === "token") {
+          text += event.text;
+          setStreaming((prev) => (prev ? { ...prev, content: text } : { sessionId, content: text, sources: [] }));
+        } else if (event.type === "error") {
+          failure = event.message;
+        } else if (event.type === "done") {
+          saved = true;
+          dispatch(updateSessionTime(sessionId));
+          if (event.title) dispatch(renameSession({ id: sessionId, title: event.title }));
+          // Only append if the user is still looking at this conversation.
+          if (activeRef.current === sessionId) {
+            dispatch(
+              addMessage({
+                id: `ai-${Date.now()}`,
+                sessionId,
+                role: "assistant",
+                content: event.answer,
+                createdAt: new Date().toISOString(),
+                sources: event.sources,
+              }),
+            );
+          }
+        }
+      });
+      if (!saved) throw new Error(failure ?? t("chat.interrupted"));
     } catch (err) {
       dispatch(removeMessage(tempId));
       setInputValue((v) => v || content);
-      toast(getErrorMessage(err, "Message failed to send."), "error");
+      toast(getErrorMessage(err, t("chat.sendFailed")), "error");
     } finally {
+      setStreaming(null);
       setIsSending(false);
+      sendingRef.current = false;
       textareaRef.current?.focus();
     }
   };
@@ -139,9 +177,9 @@ export default function ChatPage() {
     try {
       await deleteChatSession(pendingDelete.id);
       dispatch(removeSession(pendingDelete.id));
-      toast("Conversation deleted.", "success");
+      toast(t("chat.deleted"), "success");
     } catch (err) {
-      toast(getErrorMessage(err, "Couldn't delete the conversation."), "error");
+      toast(getErrorMessage(err, t("chat.deleteFailed")), "error");
       throw err;
     }
   };
@@ -155,11 +193,21 @@ export default function ChatPage() {
       setMobileShowList(false);
       requestAnimationFrame(() => textareaRef.current?.focus());
     } catch (error) {
-      toast(getErrorMessage(error, "Couldn't start a new chat."), "error");
+      toast(getErrorMessage(error, t("chat.newFailed")), "error");
     } finally {
       setCreating(false);
     }
   };
+
+  // /chat?new=1 (from the command palette) starts a new conversation.
+  const startedFromLink = useRef(false);
+  useEffect(() => {
+    if (startedFromLink.current || !aiOn || new URLSearchParams(window.location.search).get("new") !== "1") return;
+    startedFromLink.current = true;
+    window.history.replaceState(null, "", "/chat");
+    void startNewChat();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiOn]);
 
   const selectSession = (id: string) => {
     dispatch(setActiveSession(id));
@@ -173,17 +221,14 @@ export default function ChatPage() {
           <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent-soft text-accent">
             <MessagesSquare className="size-6" />
           </span>
-          <h1 className="mt-5 text-xl font-bold tracking-tight text-fg">No conversations yet</h1>
-          <p className="mt-2 text-sm leading-relaxed text-fg-muted">
-            Start a chat grounded in your notes, or ask AI from the search bar and choose{" "}
-            <span className="font-semibold text-fg">Continue this conversation</span>.
-          </p>
+          <h1 className="mt-5 text-xl font-bold tracking-tight text-fg">{t("chat.noConversations")}</h1>
+          <p className="mt-2 text-sm leading-relaxed text-fg-muted">{t("chat.noConversationsText")}</p>
           <div className="mt-6 flex justify-center gap-2">
             <Button onClick={() => void startNewChat()} loading={creating} disabled={!aiOn} icon={<Plus className="size-4" />}>
-              New chat
+              {t("chat.new")}
             </Button>
             <Button variant="secondary" onClick={focusSearch} disabled={!aiOn} icon={<Search className="size-4" />}>
-              Ask AI
+              {t("ai.ask")}
             </Button>
           </div>
           {!aiOn && <AiOffNote className="mt-4" />}
@@ -203,7 +248,7 @@ export default function ChatPage() {
       >
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 px-4">
           <h2 className="text-sm font-semibold text-fg">
-            Conversations <span className="ml-1 text-xs font-normal text-fg-subtle tabular-nums">{sessions.length}</span>
+            {t("chat.conversations")} <span className="ml-1 text-xs font-normal text-fg-subtle tabular-nums">{sessions.length}</span>
           </h2>
           <Button
             size="sm"
@@ -213,7 +258,7 @@ export default function ChatPage() {
             disabled={!aiOn}
             icon={<Plus className="size-3.5" />}
           >
-            New chat
+            {t("chat.new")}
           </Button>
         </div>
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
@@ -231,17 +276,17 @@ export default function ChatPage() {
                   )}
                 >
                   <span className={cn("truncate text-sm font-medium", active ? "text-accent-fg" : "text-fg")}>
-                    {session.title || "New chat"}
+                    {session.title || t("chat.untitled")}
                   </span>
                   <span className="mt-0.5 text-xs text-fg-subtle">
-                    {dayFormat.format(new Date(session.updatedAt))} · {session.messageCount} messages
+                    {dayFormat.format(new Date(session.updatedAt))} · {t("chat.messages", { count: session.messageCount })}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setPendingDelete(session)}
                   className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-fg-subtle opacity-100 transition hover:bg-rose-50 hover:text-rose-600 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
-                  aria-label={`Delete conversation ${session.title}`}
+                  aria-label={`${t("chat.delete")}: ${session.title || t("chat.untitled")}`}
                 >
                   <Trash2 className="size-3.5" />
                 </button>
@@ -258,16 +303,16 @@ export default function ChatPage() {
             type="button"
             onClick={() => setMobileShowList(true)}
             className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-fg-muted hover:bg-surface-2 md:hidden"
-            aria-label="Back to conversations"
+            aria-label={t("chat.back")}
           >
             <ArrowLeft className="size-5" />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-semibold text-fg">{currentSession?.title || "Conversation"}</h1>
-            <p className="text-xs text-fg-subtle">{messages.length} messages · grounded in your notes</p>
+            <h1 className="truncate text-sm font-semibold text-fg">{currentSession?.title || t("chat.conversation")}</h1>
+            <p className="text-xs text-fg-subtle">{t("chat.grounded", { count: messages.length })}</p>
           </div>
           {currentSession && (
-            <Button size="icon-sm" variant="ghost" onClick={() => setPendingDelete(currentSession)} aria-label="Delete conversation">
+            <Button size="icon-sm" variant="ghost" onClick={() => setPendingDelete(currentSession)} aria-label={t("chat.delete")}>
               <Trash2 className="size-4" />
             </Button>
           )}
@@ -289,10 +334,23 @@ export default function ChatPage() {
                 />
               ))
             )}
-            {isSending && (
+            {isSending && streaming?.content && streaming.sessionId === activeSessionId ? (
+              <AssistantBubble
+                message={{
+                  id: "streaming",
+                  sessionId: streaming.sessionId,
+                  role: "assistant",
+                  content: streaming.content,
+                  createdAt: "",
+                  sources: streaming.sources,
+                }}
+                question=""
+                streaming
+              />
+            ) : isSending && (
               <div className="flex items-start gap-3">
                 <LogoMark size={32} className="mt-0.5 rounded-full" />
-                <div className="flex gap-1.5 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3.5" aria-label="Assistant is typing">
+                <div className="flex gap-1.5 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3.5" aria-label={t("chat.typing")}>
                   {[0, 150, 300].map((d) => (
                     <span key={d} className="size-2 animate-bounce rounded-full bg-fg-subtle" style={{ animationDelay: `${d}ms` }} />
                   ))}
@@ -321,31 +379,26 @@ export default function ChatPage() {
                   void handleSendMessage();
                 }
               }}
-              placeholder={aiOn ? "Ask a follow-up question…" : "AI answers are off"}
+              placeholder={aiOn ? t("chat.placeholder") : t("chat.placeholderOff")}
               disabled={!aiOn}
               rows={1}
-              aria-label="Message"
+              aria-label={t("chat.message")}
               className="max-h-44 min-h-10 flex-1 resize-none bg-transparent py-2 text-[0.95rem] text-fg outline-none placeholder:text-fg-subtle focus-visible:outline-none disabled:cursor-not-allowed"
             />
-            <Button type="submit" size="icon" disabled={!aiOn || !inputValue.trim() || isSending} aria-label="Send message">
+            <Button type="submit" size="icon" disabled={!aiOn || !inputValue.trim() || isSending} aria-label={t("chat.send")}>
               <ArrowUp className="size-5" />
             </Button>
           </form>
           <p className="mt-2 text-center text-[0.7rem] text-fg-subtle">
-            Enter to send · Shift + Enter for a new line
+            {t("chat.hint")}
           </p>
         </div>
       </section>
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}
-        title="Delete this conversation?"
-        message={
-          <>
-            <span className="font-semibold text-fg">“{pendingDelete?.title || "New chat"}”</span> and all its messages will be
-            permanently removed.
-          </>
-        }
+        title={t("chat.deleteTitle")}
+        message={t("chat.deleteMessage", { title: pendingDelete?.title || t("chat.untitled") })}
         onConfirm={confirmDelete}
         onClose={() => setPendingDelete(null)}
       />
@@ -373,10 +426,11 @@ function MessageBubble({ message, userName, question }: { message: IChatMessage;
 }
 
 /** An answer, with its [n] citations and the note passages behind them. */
-function AssistantBubble({ message, question }: { message: IChatMessage; question: string }) {
+function AssistantBubble({ message, question, streaming = false }: { message: IChatMessage; question: string; streaming?: boolean }) {
   const openSource = useSourceViewer();
   const saveAnswerAsNote = useSaveAnswerAsNote();
   const toast = useToast();
+  const t = useT();
   const [showAllSources, setShowAllSources] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
 
@@ -385,10 +439,10 @@ function AssistantBubble({ message, question }: { message: IChatMessage; questio
     try {
       await saveAnswerAsNote(question, message.content, message.sources ?? []);
       setSaveState("saved");
-      toast("Saved as a note in AI Insights.", "success");
+      toast(t("ai.savedToast"), "success");
     } catch (error) {
       setSaveState("idle");
-      toast(getErrorMessage(error, "Couldn't save the answer."), "error");
+      toast(getErrorMessage(error, t("ai.saveFailed")), "error");
     }
   };
   const sources = (message.sources ?? []).map((source, i) => ({ source, number: i + 1 }));
@@ -400,20 +454,22 @@ function AssistantBubble({ message, question }: { message: IChatMessage; questio
         <LogoMark size={32} className="rounded-full" />
       </span>
       <div className="relative min-w-0 max-w-full flex-1 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 sm:max-w-[85%] sm:flex-none">
-        <div className="absolute -top-3 right-3 opacity-0 transition-opacity group-hover/answer:opacity-100 focus-within:opacity-100">
-          <Tooltip label={saveState === "saved" ? "Saved to AI Insights" : "Save as note"}>
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={saveState !== "idle"}
-              className="flex size-7 cursor-pointer items-center justify-center rounded-lg border border-line bg-surface text-fg-subtle shadow-xs transition-colors hover:text-fg disabled:cursor-default"
-              aria-label="Save answer as note"
-            >
-              {saveState === "saved" ? <Check className="size-3.5" /> : saveState === "saving" ? <Spinner className="size-3.5" /> : <BookmarkPlus className="size-3.5" />}
-            </button>
-          </Tooltip>
-        </div>
-        <div className="rich-content text-fg">
+        {!streaming && (
+          <div className="absolute -top-3 right-3 opacity-0 transition-opacity group-hover/answer:opacity-100 focus-within:opacity-100">
+            <Tooltip label={saveState === "saved" ? t("chat.savedToInsights") : t("ai.saveAsNote")}>
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saveState !== "idle"}
+                className="flex size-7 cursor-pointer items-center justify-center rounded-lg border border-line bg-surface text-fg-subtle shadow-xs transition-colors hover:text-fg disabled:cursor-default"
+                aria-label={t("chat.saveAnswer")}
+              >
+                {saveState === "saved" ? <Check className="size-3.5" /> : saveState === "saving" ? <Spinner className="size-3.5" /> : <BookmarkPlus className="size-3.5" />}
+              </button>
+            </Tooltip>
+          </div>
+        )}
+        <div className="rich-content text-fg" aria-busy={streaming}>
           <CitedMarkdown
             text={message.content}
             sourceCount={sources.length}
@@ -430,7 +486,7 @@ function AssistantBubble({ message, question }: { message: IChatMessage; questio
                 className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-1 text-xs text-fg-muted transition-colors hover:text-fg"
               >
                 <span className="font-bold text-accent-fg">{number}</span>
-                <span className="truncate">{source.noteTitle || "Untitled note"}</span>
+                <span className="truncate">{source.noteTitle || t("ai.untitled")}</span>
                 {source.sourceType === "file" && <Paperclip className="size-3 shrink-0" />}
               </button>
             ))}
@@ -440,7 +496,7 @@ function AssistantBubble({ message, question }: { message: IChatMessage; questio
                 onClick={() => setShowAllSources(true)}
                 className="cursor-pointer px-1 text-xs font-medium text-fg-subtle transition-colors hover:text-fg"
               >
-                {shown.length ? `+${sources.length - shown.length} more` : `${sources.length} source${sources.length === 1 ? "" : "s"}`}
+                {shown.length ? t("chat.moreSources", { count: sources.length - shown.length }) : t("ai.sourceCount", { count: sources.length })}
               </button>
             )}
           </div>
@@ -451,13 +507,14 @@ function AssistantBubble({ message, question }: { message: IChatMessage; questio
 }
 
 function AiOffNote({ className }: { className?: string }) {
+  const t = useT();
   return (
     <p className={cn("text-center text-xs text-amber-700 dark:text-amber-300", className)}>
-      AI answers are off.{" "}
+      {t("chat.aiOff")}{" "}
       <Link href="/profile" className="font-semibold underline underline-offset-2">
-        Add an AI key in Profile
+        {t("chat.aiOffLink")}
       </Link>{" "}
-      to chat.
+      {t("chat.aiOffEnd")}
     </p>
   );
 }

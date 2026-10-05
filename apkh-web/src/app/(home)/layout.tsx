@@ -3,33 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu as MenuIcon, RefreshCw, Sparkles, WifiOff } from "lucide-react";
-import { profile } from "@/services/authService";
-import { getValidToken, clearToken } from "@/services/session";
-import { getErrorMessage } from "@/services/axios";
-import { useAppDispatch, useAppSelector } from "@/store/hook";
-import { logout, setToken, setUser } from "@/store/slices/authSlice";
-import { addNote, markNoteIndexing, setFirstPage } from "@/store/slices/noteSlice";
-import { refreshLibraryMeta } from "@/hooks/useAuth";
+import { CloudOff, Menu as MenuIcon, RefreshCw, Sparkles, WifiOff } from "lucide-react";
+import { useAppSelector } from "@/store/hook";
+import { useAuth } from "@/hooks/useAuth";
+import { useAiSearch } from "@/hooks/useAiSearch";
+import { useNotesFilter } from "@/hooks/useNotesFilter";
+import { useNoteEditor } from "@/hooks/useNoteEditor";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { useRealtime } from "@/hooks/useRealtime";
 import { useIndexStatusSync } from "@/hooks/useIndexStatusSync";
-import { addSession, setActiveSession, setSessions } from "@/store/slices/chatSlice";
-import {
-  aiSearchNotes,
-  AiSearchResponse,
-  createNote,
-  getNotesPage,
-  getNoteLastUpdatedTime,
-  updateNote,
-} from "@/services/noteService";
-import { createChatSession, getChatSessions } from "@/services/chatService";
-import { INote, INoteDto } from "@/models/note";
 import { activeAi } from "@/models/user";
 import { NotesContext, SelectedNote } from "@/context/notesContext";
-import { cleanAiErrorMessage, htmlToText, isAiErrorResponse } from "@/lib/aiResponse";
 import MentionTextField from "@/components/mentionTextField";
 import { AiAnswerPanel } from "@/components/aiAnswerPanel";
 import { SourceViewerProvider } from "@/components/sourceViewer";
-import { fromAiReference } from "@/components/sources";
 import { Sidebar } from "@/components/sidebar";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -37,6 +24,10 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { ThemeToggle } from "@/components/ui/theme";
 import { useToast } from "@/components/ui/Toast";
 import { Spinner } from "@/components/ui/Spinner";
+import { useT } from "@/i18n";
+import { ErrorBoundary } from "@/components/errorBoundary";
+import { CommandPalette, CommandPaletteActions } from "@/components/commandPalette";
+import { ShortcutsDialog } from "@/components/shortcutsDialog";
 import HomeLoading from "./loading";
 
 const NoteEditor = dynamic(() => import("@/components/noteEditor"), {
@@ -50,83 +41,40 @@ const NoteEditor = dynamic(() => import("@/components/noteEditor"), {
 
 const MIN_AI_QUERY = 4;
 
-// Module-level so a remount (route change) doesn't refire the same request.
-let profileRequest: Promise<unknown> | null = null;
-let notesRequest: Promise<unknown> | null = null;
+/** Keys typed into a field belong to the field, not to the app's shortcuts. */
+function isTyping(target: EventTarget | null) {
+  const el = target as HTMLElement | null;
+  return Boolean(el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)));
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user } = useAppSelector((state) => state.auth);
-  const { notes, latestUpdatedAt, byId } = useAppSelector((state) => state.note);
+  const { user, loadError, notesLoaded, loadData, signOut } = useAuth();
+  const { categories, totalNotes } = useAppSelector((state) => state.note);
   const sessionsCount = useAppSelector((state) => state.chat.sessions.length);
-  const dispatch = useAppDispatch();
   const router = useRouter();
   const pathname = usePathname();
   const toast = useToast();
+  const t = useT();
 
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [notesLoaded, setNotesLoaded] = useState(notes.length > 0);
   const [drawerOpen, setDrawerOpen] = useState(false);
-
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [selectedNotes, setSelectedNotes] = useState<SelectedNote[]>([]);
-
-  const [aiAnswer, setAiAnswer] = useState<AiSearchResponse | null>(null);
-  const [aiQuery, setAiQuery] = useState("");
-  const [isAiSearching, setIsAiSearching] = useState(false);
-  const [answerOpen, setAnswerOpen] = useState(false);
-  const [continuing, setContinuing] = useState(false);
-  const aiRequestId = useRef(0);
-
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editNote, setEditNote] = useState<INote | null>(null);
-  const [saving, setSaving] = useState(false);
-
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const aiSearch = useAiSearch();
+  const filter = useNotesFilter(search, aiSearch.answer, aiSearch.failed);
+  const editor = useNoteEditor();
+
+  const ready = Boolean(user) && notesLoaded;
+  const { online, pending: pendingSaves } = useOfflineSync(ready, (count) => toast(t("offline.synced", { count }), "success"));
+  const { connected } = useRealtime(ready);
+  useIndexStatusSync(ready, connected);
+
   const ai = activeAi(user);
   const indexCounts = useAppSelector((state) => state.note.indexStatus?.counts);
   const pendingIndex = indexCounts ? indexCounts.queued + indexCounts.processing : 0;
-
-  useIndexStatusSync(Boolean(user) && notesLoaded);
-
-  // ── Auth + initial data ──────────────────────────────────────────────────
-  const loadData = useCallback(async () => {
-    setLoadError(null);
-    try {
-      if (!user) {
-        profileRequest ??= profile().finally(() => (profileRequest = null));
-        dispatch(setUser((await profileRequest) as never));
-      }
-      notesRequest ??= (async () => {
-        const lastUpdated = await getNoteLastUpdatedTime();
-        if (!lastUpdated || !latestUpdatedAt || lastUpdated > latestUpdatedAt) {
-          const [page] = await Promise.all([getNotesPage(), refreshLibraryMeta(dispatch)]);
-          dispatch(setFirstPage(page));
-        }
-      })().finally(() => (notesRequest = null));
-      await notesRequest;
-      setNotesLoaded(true);
-      // Sidebar/profile show conversation counts on every page; failures here are non-fatal.
-      getChatSessions()
-        .then((sessions) => dispatch(setSessions(sessions)))
-        .catch(() => {});
-    } catch (error) {
-      // 401s are handled globally by the axios interceptor (redirect to login).
-      setLoadError(getErrorMessage(error, "We couldn't load your workspace."));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch]);
-
-  useEffect(() => {
-    const token = getValidToken();
-    if (!token) {
-      dispatch(logout());
-      router.replace("/login");
-      return;
-    }
-    dispatch(setToken(token));
-    void loadData();
-  }, [dispatch, router, loadData]);
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   const focusSearch = useCallback(() => {
@@ -134,41 +82,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     searchRef.current?.select();
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        focusSearch();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [focusSearch]);
 
   useEffect(() => setDrawerOpen(false), [pathname]);
-
-  // ── Filtering ────────────────────────────────────────────────────────────
-  const searchableText = useMemo(
-    () => new Map(notes.map((n) => [n.id, `${n.title} ${n.category} ${htmlToText(n.content)}`.toLowerCase()])),
-    [notes],
-  );
-
-  // An in-progress "@mention" is a note picker, not search text.
-  const textQuery = search.replace(/(^|\s)@\S*/g, " ").replace(/\s+/g, " ").trim();
-  const aiFailed = isAiErrorResponse(aiAnswer);
-  const aiErrorMessage = aiFailed && aiAnswer?.answer ? cleanAiErrorMessage(aiAnswer.answer) : null;
-
-  const filteredNotes = useMemo(() => {
-    let list = notes;
-    if (aiAnswer && !aiFailed && aiAnswer.references.length) {
-      const ids = new Set(aiAnswer.references.map((r) => r.note_id));
-      return list.filter((n) => ids.has(n.id));
-    }
-    if (activeCategory) list = list.filter((n) => n.category?.trim() === activeCategory);
-    const q = textQuery.toLowerCase();
-    if (q) list = list.filter((n) => searchableText.get(n.id)?.includes(q));
-    return list;
-  }, [notes, aiAnswer, aiFailed, activeCategory, textQuery, searchableText]);
 
   // ── Search / AI ──────────────────────────────────────────────────────────
   const handleSearchChange = (value: string) => {
@@ -178,74 +93,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     setSearch(value);
     // A new question invalidates the previous answer (but not while it's loading).
-    if (aiAnswer) setAiAnswer(null);
+    aiSearch.resetAnswer();
   };
 
+  const { clear: clearAnswer } = aiSearch;
   const clearSearch = useCallback(() => {
-    aiRequestId.current += 1;
     setSearch("");
-    setAiAnswer(null);
-    setIsAiSearching(false);
-    setAnswerOpen(false);
-  }, []);
+    clearAnswer();
+  }, [clearAnswer]);
 
   const trimmedSearch = search.trim();
-  const canAsk = trimmedSearch.length >= MIN_AI_QUERY && !isAiSearching;
+  const canAsk = trimmedSearch.length >= MIN_AI_QUERY && !aiSearch.isSearching;
 
-  async function handleAiSearch() {
+  function handleAiSearch() {
     if (!ai) {
-      toast("AI answers are off. Add an AI key in Profile to enable them.", "info");
+      toast(t("ai.off"), "info");
+      return;
+    }
+    if (!online) {
+      toast(t("ai.needsConnection"), "info");
       return;
     }
     if (trimmedSearch.length < MIN_AI_QUERY) {
-      toast(`Type at least ${MIN_AI_QUERY} characters to ask AI.`, "info");
+      toast(t("ai.tooShort", { count: MIN_AI_QUERY }), "info");
       return;
     }
-
-    const requestId = ++aiRequestId.current;
-    setAiQuery(trimmedSearch);
-    setAiAnswer(null);
-    setIsAiSearching(true);
-    setAnswerOpen(true);
-    try {
-      const res = await aiSearchNotes(trimmedSearch, selectedNotes.map((n) => n.noteId));
-      if (requestId !== aiRequestId.current) return;
-      setAiAnswer(res);
-      if (!isAiErrorResponse(res)) {
-        profile()
-          .then((updatedUser) => dispatch(setUser(updatedUser)))
-          .catch(() => {});
-      }
-    } catch (error) {
-      if (requestId !== aiRequestId.current) return;
-      setAiAnswer({
-        query: trimmedSearch,
-        answer: getErrorMessage(error, "AI search failed. Please try again."),
-        confidence: "not_found",
-        isError: true,
-        references: [],
-      });
-    } finally {
-      if (requestId === aiRequestId.current) setIsAiSearching(false);
-    }
+    void aiSearch.ask(trimmedSearch, selectedNotes.map((n) => n.noteId));
   }
 
   const handleContinueConversation = async () => {
-    if (!aiAnswer) return;
-    setContinuing(true);
-    try {
-      // The answer's sources carry over, so its [n] citations keep working in the chat.
-      const session = await createChatSession(aiAnswer.query || aiQuery, aiAnswer.answer, aiAnswer.references.map(fromAiReference));
-      dispatch(addSession(session));
-      dispatch(setActiveSession(session.id));
-      setAnswerOpen(false);
-      clearSearch();
-      router.push(`/chat?session=${session.id}`);
-    } catch (error) {
-      toast(getErrorMessage(error, "Couldn't start the conversation."), "error");
-    } finally {
-      setContinuing(false);
-    }
+    if (await aiSearch.continueConversation()) clearSearch();
   };
 
   const toggleSelect = useCallback((noteId: string, title: string) => {
@@ -255,44 +132,79 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, []);
 
   // ── Note editor ──────────────────────────────────────────────────────────
-  const openNote = useCallback(
-    (noteId: string) => {
-      const note = byId[noteId];
-      if (!note) {
-        toast("That note no longer exists.", "error");
-        return;
-      }
-      setEditNote(note);
-      setEditorOpen(true);
-    },
-    [byId, toast],
+  const { openNote: openEditor, newNote: newEditorNote } = editor;
+  const openNote = useCallback((noteId: string) => void openEditor(noteId), [openEditor]);
+  // A note created while a folder is open is filed in it.
+  const { activeFolder, setActiveFolder } = filter;
+  // A folder that's gone (deleted here or elsewhere) stops being the filter.
+  const folders = useAppSelector((state) => state.note.folders);
+  useEffect(() => {
+    if (activeFolder && activeFolder !== "root" && notesLoaded && !folders.some((f) => f.id === activeFolder)) setActiveFolder(null);
+  }, [activeFolder, folders, notesLoaded, setActiveFolder]);
+  const newNote = useCallback(
+    () => newEditorNote(activeFolder && activeFolder !== "root" ? activeFolder : null),
+    [newEditorNote, activeFolder],
   );
 
-  const newNote = useCallback(() => {
-    setEditNote(null);
-    setEditorOpen(true);
-  }, []);
-
-  const saveNote = async (data: INoteDto, id?: string) => {
-    setSaving(true);
-    try {
-      const res = id ? await updateNote(id, data) : await createNote(data);
-      if (res) {
-        dispatch(addNote(res));
-        dispatch(markNoteIndexing(res.id));
+  // ── Keyboard shortcuts (see ShortcutsDialog) ─────────────────────────────
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && !e.shiftKey && !e.altKey && key === "k") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
       }
-      setEditorOpen(false);
-      toast(id ? "Note updated." : "Note created. Indexing for AI search…", "success");
-    } finally {
-      setSaving(false);
-    }
-  };
+      if (mod && e.shiftKey && key === "f") {
+        e.preventDefault();
+        focusSearch();
+        return;
+      }
+      // Alt+N everywhere (e.code: on a Mac, Option+N types "˜"). Ctrl/⌘+N only reaches
+      // the page in the installed app; in a browser tab it opens a window.
+      if ((e.altKey && !mod && e.code === "KeyN") || (mod && !e.shiftKey && !e.altKey && key === "n")) {
+        e.preventDefault();
+        newNote();
+        return;
+      }
+      if (mod || e.altKey || isTyping(e.target) || document.querySelector("[data-modal-root]")) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        focusSearch();
+      } else if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusSearch, newNote]);
 
-  const handleLogout = () => {
-    clearToken();
-    dispatch(logout());
-    router.replace("/login");
-  };
+  const { ask: askAi, resetAnswer } = aiSearch;
+  const paletteActions = useMemo<CommandPaletteActions>(
+    () => ({
+      newNote,
+      openNote,
+      search: (text) => {
+        setSearch(text);
+        resetAnswer();
+        if (pathname !== "/notes") router.push("/notes");
+      },
+      ask: (text) => {
+        setSearch(text);
+        void askAi(text, selectedNotes.map((n) => n.noteId));
+      },
+      openFolder: (folder) => {
+        setActiveFolder(folder);
+        if (pathname !== "/notes") router.push("/notes");
+      },
+      showShortcuts: () => setShortcutsOpen(true),
+      signOut,
+      canAsk: Boolean(ai) && online,
+    }),
+    [newNote, openNote, resetAnswer, askAi, selectedNotes, setActiveFolder, pathname, router, signOut, ai, online],
+  );
 
   // ── Render ───────────────────────────────────────────────────────────────
   if (loadError && !user) {
@@ -302,14 +214,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">
             <WifiOff className="size-6" />
           </span>
-          <h1 className="mt-5 text-lg font-semibold text-fg">Workspace unavailable</h1>
+          <h1 className="mt-5 text-lg font-semibold text-fg">{t("shell.unavailable")}</h1>
           <p className="mt-1.5 text-sm text-fg-muted">{loadError}</p>
           <div className="mt-6 flex justify-center gap-2">
-            <Button variant="secondary" onClick={handleLogout}>
-              Sign out
+            <Button variant="secondary" onClick={signOut}>
+              {t("shell.signOut")}
             </Button>
             <Button onClick={() => void loadData()} icon={<RefreshCw className="size-4" />}>
-              Retry
+              {t("shell.retry")}
             </Button>
           </div>
         </div>
@@ -322,30 +234,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const sidebar = (onNavigate?: () => void) => (
     <Sidebar
       user={user}
-      notes={notes}
+      categories={categories}
+      totalNotes={totalNotes}
       sessionsCount={sessionsCount}
-      activeCategory={activeCategory}
-      onCategory={setActiveCategory}
+      activeCategory={filter.activeCategory}
+      onCategory={filter.setActiveCategory}
+      activeFolder={filter.activeFolder}
+      onFolder={filter.setActiveFolder}
       onNewNote={newNote}
       onNavigate={onNavigate}
-      onLogout={handleLogout}
+      onLogout={signOut}
     />
   );
 
   return (
     <NotesContext.Provider
       value={{
-        filteredNotes,
+        filteredNotes: filter.filteredNotes,
+        filteredTotal: filter.total,
         notesLoaded,
-        query: textQuery,
-        activeCategory,
-        setActiveCategory,
+        resultsLoading: filter.loading,
+        hasMore: filter.hasMore,
+        loadMore: filter.loadMore,
+        loadingMore: filter.loadingMore,
+        query: filter.textQuery,
+        activeCategory: filter.activeCategory,
+        setActiveCategory: filter.setActiveCategory,
+        activeFolder: filter.activeFolder,
+        setActiveFolder: filter.setActiveFolder,
         openNote,
         newNote,
-        aiAnswer,
-        aiFailed,
-        isAiSearching,
-        openAnswer: () => setAnswerOpen(true),
+        aiAnswer: aiSearch.answer,
+        aiFailed: aiSearch.failed,
+        isAiSearching: aiSearch.isSearching,
+        openAnswer: () => aiSearch.setAnswerOpen(true),
         clearSearch,
         selectedNotes,
         toggleSelect,
@@ -376,7 +298,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 type="button"
                 onClick={() => setDrawerOpen(true)}
                 className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg lg:hidden"
-                aria-label="Open navigation"
+                aria-label={t("shell.openNav")}
               >
                 <MenuIcon className="size-5" />
               </button>
@@ -388,28 +310,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   onChange={handleSearchChange}
                   selectedNotes={selectedNotes}
                   onSelectedNotesChange={setSelectedNotes}
-                  onSubmit={() => void handleAiSearch()}
-                  placeholder="Search notes or ask AI…"
+                  onSubmit={handleAiSearch}
+                  placeholder={t("shell.searchPlaceholder")}
                 />
                 <Tooltip
                   label={
                     !ai
-                      ? "Set up an AI key in Profile first"
-                      : !canAsk && !isAiSearching
-                        ? `Type at least ${MIN_AI_QUERY} characters`
-                        : undefined
+                      ? t("ai.tooltipSetup")
+                      : !online
+                        ? t("ai.tooltipOffline")
+                        : !canAsk && !aiSearch.isSearching
+                          ? t("ai.tooltipShort", { count: MIN_AI_QUERY })
+                          : undefined
                   }
                   side="bottom"
                 >
                   <Button
-                    onClick={() => void handleAiSearch()}
-                    disabled={!ai || !canAsk}
-                    loading={isAiSearching}
-                    icon={!isAiSearching && <Sparkles className="size-4" />}
+                    onClick={handleAiSearch}
+                    disabled={!ai || !online || !canAsk}
+                    loading={aiSearch.isSearching}
+                    icon={!aiSearch.isSearching && <Sparkles className="size-4" />}
                     size="toolbar"
-                    aria-label="Ask AI"
+                    aria-label={t("ai.ask")}
                   >
-                    <span className="hidden sm:inline">{isAiSearching ? "Thinking…" : "Ask AI"}</span>
+                    <span className="hidden sm:inline">{aiSearch.isSearching ? t("ai.thinking") : t("ai.ask")}</span>
                   </Button>
                 </Tooltip>
               </div>
@@ -417,16 +341,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {/* The one appearance control in the app (light / dark / system). */}
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 {pendingIndex > 0 && (
-                  <Tooltip label="New and edited notes become searchable by AI once indexed" side="bottom">
+                  <Tooltip label={t("shell.indexingHint")} side="bottom">
                     <span className="hidden items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs font-medium text-fg-muted md:inline-flex">
                       <Spinner className="size-3.5" />
-                      Indexing {pendingIndex} note{pendingIndex === 1 ? "" : "s"}
+                      {t("shell.indexing", { count: pendingIndex })}
                     </span>
                   </Tooltip>
                 )}
                 <ThemeToggle />
               </div>
             </header>
+
+            {(!online || pendingSaves > 0) && (
+              <div
+                role="status"
+                className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800 sm:px-5 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+              >
+                {online ? <Spinner className="size-3.5" /> : <CloudOff className="size-4 shrink-0" />}
+                <span className="min-w-0">
+                  {online
+                    ? t("offline.syncing", { count: pendingSaves })
+                    : pendingSaves
+                      ? t("offline.bannerPending", { count: pendingSaves })
+                      : t("offline.banner")}
+                </span>
+              </div>
+            )}
 
             <main id="main" className="min-h-0 flex-1 overflow-y-auto">
               {children}
@@ -436,46 +376,53 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* AI answer sheet */}
         <Modal
-          open={answerOpen}
-          onClose={() => setAnswerOpen(false)}
+          open={aiSearch.answerOpen}
+          onClose={() => aiSearch.setAnswerOpen(false)}
           placement="right"
           title={
             <span className="flex items-center gap-2">
               <span className="flex size-8 items-center justify-center rounded-xl bg-linear-to-br from-blue-500 via-indigo-500 to-violet-500 text-white">
                 <Sparkles className="size-4" />
               </span>
-              AI answer
+              {t("ai.answerTitle")}
             </span>
           }
           description={ai ? `${ai.name} · ${ai.model}` : undefined}
         >
-          <AiAnswerPanel
-            query={aiQuery}
-            answer={aiAnswer}
-            isSearching={isAiSearching}
-            errorMessage={aiErrorMessage}
-            onContinue={() => void handleContinueConversation()}
-            continuing={continuing}
-          />
+          <ErrorBoundary area="answer" resetKeys={[aiSearch.query, aiSearch.isSearching]}>
+            <AiAnswerPanel
+              query={aiSearch.query}
+              answer={aiSearch.answer}
+              isSearching={aiSearch.isSearching}
+              errorMessage={aiSearch.errorMessage}
+              onContinue={() => void handleContinueConversation()}
+              continuing={aiSearch.continuing}
+            />
+          </ErrorBoundary>
         </Modal>
+
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} actions={paletteActions} />
+        <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
         {/* Note editor */}
         <Modal
-          open={editorOpen}
-          onClose={() => setEditorOpen(false)}
-          locked={saving}
-          title={editNote ? "Edit note" : "New note"}
-          description={editNote ? undefined : "Leave the title or category blank and they'll be filled in from your note."}
+          open={editor.editorOpen}
+          onClose={editor.closeEditor}
+          locked={editor.saving}
+          title={editor.editNote ? t("editor.titleEdit") : t("editor.titleNew")}
+          description={editor.editNote ? undefined : t("editor.newHint")}
           size="lg"
         >
-          <NoteEditor
-            key={editNote?.id ?? "new-note"}
-            initialNote={editNote}
-            saving={saving}
-            onSave={saveNote}
-            onCancel={() => setEditorOpen(false)}
-            categoryOptions={Array.from(new Set(notes.map((n) => n.category?.trim()).filter(Boolean)))}
-          />
+          <ErrorBoundary area="editor" resetKeys={[editor.editNote?.id, editor.editorOpen]}>
+            <NoteEditor
+              key={editor.editNote?.id ?? "new-note"}
+              initialNote={editor.editNote}
+              saving={editor.saving}
+              onSave={editor.saveNote}
+              onCancel={editor.closeEditor}
+              categoryOptions={categories.map((c) => c.name)}
+            />
+          </ErrorBoundary>
         </Modal>
       </SourceViewerProvider>
     </NotesContext.Provider>

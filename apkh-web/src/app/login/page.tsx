@@ -14,6 +14,7 @@ import { AuthShell, FormAlert } from "@/components/authShell";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { GoogleSignIn } from "@/components/googleSignIn";
+import { useT } from "@/i18n";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -23,6 +24,7 @@ export default function LoginPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const dispatch = useAppDispatch();
   const router = useRouter();
+  const t = useT();
 
   useEffect(() => {
     if (getValidToken()) {
@@ -30,9 +32,9 @@ export default function LoginPage() {
       return;
     }
     const params = new URLSearchParams(window.location.search);
-    if (params.get("expired")) setNotice("Your session has expired. Please sign in again.");
-    if (params.get("reset")) setNotice("Password updated. Sign in with your new password.");
-  }, [router]);
+    if (params.get("expired")) setNotice(t("auth.expired"));
+    if (params.get("reset")) setNotice(t("auth.passwordUpdated"));
+  }, [router, t]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,8 +47,8 @@ export default function LoginPage() {
     } catch (err) {
       setError(
         axios.isAxiosError(err) && err.response?.status === 401
-          ? "Incorrect email or password."
-          : getErrorMessage(err, "Couldn't sign you in. Please try again."),
+          ? t("auth.wrong")
+          : getErrorMessage(err, t("auth.signInFailed")),
       );
       setIsLoading(false);
     }
@@ -54,13 +56,13 @@ export default function LoginPage() {
 
   return (
     <AuthShell
-      title="Welcome back"
-      subtitle="Sign in to pick up where your knowledge left off."
+      title={t("auth.welcome")}
+      subtitle={t("auth.welcomeText")}
       footer={
         <>
-          New to Knowledge Hub?{" "}
+          {t("auth.newHere")}{" "}
           <Link href="/register" className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">
-            Create an account
+            {t("auth.createAccount")}
           </Link>
         </>
       }
@@ -69,7 +71,7 @@ export default function LoginPage() {
         {notice && !error && <FormAlert tone="info">{notice}</FormAlert>}
         {error && <FormAlert>{error}</FormAlert>}
         <Input
-          label="Email"
+          label={t("auth.email")}
           type="email"
           autoComplete="email"
           placeholder="you@example.com"
@@ -81,7 +83,7 @@ export default function LoginPage() {
         />
         <div className="flex flex-col gap-1.5">
           <Input
-            label="Password"
+            label={t("auth.password")}
             type="password"
             autoComplete="current-password"
             placeholder="••••••••"
@@ -94,11 +96,11 @@ export default function LoginPage() {
             href="/reset-password"
             className="self-end text-xs font-medium text-indigo-700 hover:underline dark:text-indigo-300"
           >
-            Reset password?
+            {t("auth.resetLink")}
           </Link>
         </div>
         <Button type="submit" size="lg" loading={isLoading} className="mt-2 w-full">
-          {isLoading ? "Signing in…" : "Sign in"}
+          {isLoading ? t("auth.signingIn") : t("auth.signIn")}
           {!isLoading && <ArrowRight className="size-4" />}
         </Button>
       </form>

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Knowledge Hub Clipper options</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="options">
+    <h1>Knowledge Hub Clipper</h1>
+    <p class="muted">In Knowledge Hub, open <strong>Profile → Integrations</strong>, create a token named “Web clipper”, and paste it here with your server's API address.</p>
+    <form id="form">
+      <label>API address <input id="apiUrl" type="url" placeholder="http://localhost:3000" required /></label>
+      <label>Token <input id="token" type="password" placeholder="apkh_…" required autocomplete="off" /></label>
+      <button type="submit" class="primary">Save and test</button>
+      <p id="status" role="status" class="muted"></p>
+    </form>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

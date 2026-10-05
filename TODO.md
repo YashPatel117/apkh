@@ -1,6 +1,6 @@
 # TODO
 
-Legend: [x] done · [~] backend done, web UI still to do · [ ] not started
+Legend: [x] done · [~] backend done, web UI still to do · [ ] not started — everything below is done
 
 ## 🔴 P0 — Fix First
 
@@ -13,35 +13,35 @@ Legend: [x] done · [~] backend done, web UI still to do · [ ] not started
 
 ## 🟡 P1 — Performance & Reliability
 
-- [~] Stream AI answers via SSE — search: `/ai-search/rag/stream`, `/ai-search/chat-rag/stream`; API: `POST /notes/ai-search/stream`, `POST /chat/session/:id/message/stream`. Web: `hooks/useAiSearch.ts` + `services/sse.ts` written, **not wired** into `(home)/layout.tsx` / `AiAnswerPanel` / chat page yet
-- [~] Export notes: API `GET /notes/:id/export?format=md|zip`; web `exportNote()` in noteService — **no UI button yet**; PDF = add print view in web
-- [~] Bulk export → ZIP: API `GET /notes/export`; web `exportAllNotes()` — **no UI button yet** (put in Profile)
-- [~] Paginate notes: API `GET /notes?limit&cursor&q&category&folderId`; store (`noteSlice`: setFirstPage/appendPage/byId/totalNotes) done; layout loads first 50 only. **Still to do:** infinite scroll on notes page (`useNotesFilter.loadMore`)
-- [~] Debounce filter + server `?q=`: `hooks/useNotesFilter.ts` written, **not wired** (layout still filters loaded notes client-side)
-- [~] Split `(home)/layout.tsx` into hooks: `useAuth`, `useNoteEditor`, `useAiSearch`, `useNotesFilter` written in `src/hooks/`, **layout not yet rewritten to use them**
+- [x] Stream AI answers via SSE — search: `/ai-search/rag/stream`, `/ai-search/chat-rag/stream`; API: `POST /notes/ai-search/stream`, `POST /chat/session/:id/message/stream`. Web: `useAiSearch` in layout, `AiAnswerPanel` shows text as it streams, chat page streams replies (`sendChatMessageStream`)
+- [x] Export notes: note card ⋯ menu → Markdown / ZIP with attachments / Print or save as PDF (`/print/[id]`, always light)
+- [x] Bulk export → ZIP: "Your data" card in Profile (also in the command palette)
+- [x] Paginate notes: API `GET /notes?limit&cursor&q&category&folderId`; store (`noteSlice`); infinite scroll on notes page (IntersectionObserver + Load more fallback). Sidebar counts come from server `categories` / `totalNotes`
+- [x] Debounce filter + server `?q=`: `useNotesFilter` wired into the layout
+- [x] Split `(home)/layout.tsx` into hooks: `useAuth`, `useNoteEditor`, `useAiSearch`, `useNotesFilter`, `useOfflineSync`, `useRealtime`
 - [x] ETag / If-None-Match (global `RevalidateInterceptor`, verified 304)
 - [x] `/health` and `/ready` on API, storage, search
-- [ ] Add React error boundaries (editor, AI answer, PDF viewer, chat)
+- [x] React error boundaries: `components/errorBoundary.tsx` around the editor, AI answer and every file preview (`FileDisplay`); route `error.tsx` for (home), chat and notes
 - [x] Configure MongoDB connection pool
 - [x] Graceful shutdown: storage (SIGTERM/SIGINT), search (`timeout_graceful_shutdown`), API `enableShutdownHooks()`
 
 ## 🔵 P2 — Architecture & UX
 
 - [x] Structured logging + correlation IDs (API nestjs-pino, storage pino, search structlog; `X-Request-Id` forwarded)
-- [~] Collections / nested folders: API `/folders` CRUD + `PATCH /notes/:id/folder`; `services/folderService.ts`; store has `folders`. **Still to do:** sidebar tree, drag-and-drop, breadcrumbs, folder filter
-- [ ] Keyboard shortcuts (Ctrl+N — Chrome reserves it, use Alt+N too; Ctrl+Enter exists; Ctrl+Shift+F; arrow navigation)
-- [ ] Command palette on Ctrl+K
-- [ ] Slash commands in editor (Quill)
-- [~] Offline: `lib/offlineQueue.ts`, `lib/offlineCache.ts`, `hooks/useOfflineSync.ts`, offline save in `useNoteEditor` written. **Still to do:** wire into layout, offline banner, extend `public/sw.js` to cache app shell (network-first navigations)
+- [x] Collections / nested folders: sidebar tree (create / rename / delete / nest), drag note cards onto folders and folders into folders, "Not in a folder", breadcrumbs + subfolders on the notes page, "Move to folder…" in the card menu; new notes go into the open folder
+- [x] Keyboard shortcuts: Alt+N (Ctrl/⌘+N in the installed app), / and Ctrl+Shift+F search, arrows / J K between note cards, X pins, ? shows them all (`ShortcutsDialog`)
+- [x] Command palette on Ctrl/⌘+K: notes (server search), ask AI, actions, pages, folders, theme, language, export, sign out
+- [x] Slash commands in the editor: text, H1–H3, lists, checklist, quote, code block, today's date, attach file (`components/slashCommands.tsx`)
+- [x] Offline: `offlineQueue`/`offlineCache`/`useOfflineSync` wired into the layout, offline/syncing banner, Ask AI disabled offline; `public/sw.js` v2 keeps pages network-first and serves the kept shell offline (SW only registers in production builds — test with a prod build)
 
 ## 🟣 P3 — New Features
 
-- [~] Usage analytics: API `GET /analytics?days&tz` (+ `UsageEvent` recorded on every AI call); `services/analyticsService.ts`. **Still to do:** `/analytics` page with charts
-- [~] Real-time sync: API socket.io gateway `/realtime` (events: note:saved, note:deleted, notes:refresh, folders:changed, index:changed, chat:updated, profile:changed). `hooks/useRealtime.ts` written (not wired). **Still to do:** call it from the layout, make `useIndexStatusSync` slow-poll (60s) when connected
-- [~] Note version history: API `GET /notes/:id/versions`, `GET …/versions/:vid`, `POST …/restore`; noteService functions. **Still to do:** UI (diff with `diff` package, already installed)
-- [~] Admin panel: API `/admin/*` (ADMIN_EMAILS env), profile returns `isAdmin`; `services/adminService.ts`. **Still to do:** `/admin` page
-- [~] Integrations: API tokens + `POST /integrations/notes` (webhook/Zapier), `POST /integrations/email/:key` (email-to-note), HTML sanitized. `services/integrationService.ts`. **Still to do:** Integrations card in Profile, browser clipper extension (MV3, posts to `/integrations/notes` with token), calendar `.ics` from action items in `noteSummaryPanel`
-- [~] i18n: `src/i18n/index.tsx` (provider, `useT`, en/es/hi). **Still to do:** add `I18nProvider` to `app/providers.tsx`, move strings into `messages/en.ts`, translate es/hi, language switcher
+- [x] Usage analytics: `/analytics` ("Usage" in the sidebar): totals, tokens per day by use (stacked, with table view), notes per day, most asked, per-model cost; 7/30/90 days
+- [x] Real-time sync: API socket.io gateway `/realtime` (events: note:saved, note:deleted, notes:refresh, folders:changed, index:changed, chat:updated, profile:changed). `useRealtime` runs from the layout; `useIndexStatusSync` polls every 60s while connected; chat page reloads the open conversation on `chat:updated` from elsewhere
+- [x] Note version history: card ⋯ menu → Version history (word diff against the current note, restore)
+- [x] Admin panel: `/admin` (sidebar link for ADMIN_EMAILS only): overview, indexing queue + recent failures, AI last day, users with plan switch, Pro vouchers
+- [x] Integrations: Integrations card in Profile (tokens, email inbox, curl example); `apkh-clipper/` MV3 extension (popup + right-click, see its README); "Add to calendar (.ics)" for dated tasks/deadlines in the Action items summary
+- [x] i18n: English, Spanish and Hindi for the whole web app (673 messages in `src/i18n/messages/`), Language card in Profile and in the command palette; first visit follows the browser's language. Server error messages stay as the API sends them
 
 ## Notes for the next session
 
@@ -49,4 +49,7 @@ Legend: [x] done · [~] backend done, web UI still to do · [ ] not started
 - Everything type-checks: `apkh-api` (`npx tsc --noEmit -p tsconfig.json`) and `apkh-web` (`npx tsc --noEmit`). 
 - New deps were installed: storage (express-rate-limit, pino, pino-http), API (archiver@7, turndown, marked, sanitize-html, nestjs-pino, socket.io, @nestjs/websockets), web (socket.io-client, diff), search venv (structlog — run `pip install -r requirements.txt`).
 - New env vars are in each `.env.example` (ADMIN_EMAILS, PUBLIC_API_URL, INBOUND_EMAIL_DOMAIN, USER_QUOTA_MB, LOG_LEVEL…).
-- Suggested next step: rewrite `apkh-web/src/app/(home)/layout.tsx` to use the hooks in `src/hooks/` (streaming, server filter, infinite scroll, offline, realtime), then build the remaining UI items above.
+- The layout rewrite is done (2026-10-05): type-check + lint clean, routes compile in `next dev`; **not yet clicked through against a live API** (streaming, realtime, offline sync).
+- `NotesContext` now exposes `activeFolder` / `setActiveFolder` (and `newNote` files into the open folder), ready for the folder sidebar tree.
+- 2026-10-05 (later): all remaining UI + the not-started items done. Checked in Chrome against a mocked API (Playwright): folders, palette, shortcuts, arrows, history, slash commands, analytics (light/dark), admin, profile, Spanish, print. **Not yet tried against the live API** (moves, restores, exports, tokens) and the clipper hasn't been loaded in Chrome.
+- 2026-10-05: i18n finished; branch merged to `master`.

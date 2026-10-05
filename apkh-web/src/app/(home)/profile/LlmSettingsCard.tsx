@@ -25,6 +25,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/cn";
 import { exchangeOpenrouterCode, startOpenrouterConnect, takeOpenrouterCallback } from "@/lib/openrouterConnect";
+import { useT } from "@/i18n";
 
 // ── Provider catalogue ───────────────────────────────────────────────────────
 // Models are not listed here: they are fetched live from the provider with the
@@ -67,9 +68,10 @@ function RadioDot({ checked, busy }: { checked: boolean; busy: boolean }) {
 }
 
 function ActiveBadge() {
+  const t = useT();
   return (
     <span className="rounded-md bg-indigo-600 px-1.5 py-0.5 text-[0.62rem] font-bold tracking-wider text-white uppercase dark:bg-indigo-500">
-      Active
+      {t("llm.active")}
     </span>
   );
 }
@@ -87,6 +89,7 @@ function BuiltinAiRow({
   onActivate: () => Promise<void>;
 }) {
   const [activating, setActivating] = useState(false);
+  const t = useT();
   const share = usage.sessionLimit > 0 ? Math.min(1, usage.sessionTokens / usage.sessionLimit) : 0;
   const exhausted = usage.sessionTokens >= usage.sessionLimit;
 
@@ -113,7 +116,7 @@ function BuiltinAiRow({
         aria-checked={active}
         onClick={handleActivate}
         disabled={active || activating}
-        aria-label={active ? `${BUILTIN_AI_LABEL} is active` : `Use ${BUILTIN_AI_LABEL}`}
+        aria-label={t(active ? "llm.isActive" : "llm.use", { name: BUILTIN_AI_LABEL })}
         className={cn(
           "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-default",
           !active && "hover:bg-surface-2",
@@ -127,19 +130,19 @@ function BuiltinAiRow({
           <p className="truncate text-sm font-semibold text-fg">{BUILTIN_AI_LABEL}</p>
           {plan && (
             <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[0.62rem] font-bold tracking-wider text-fg-muted uppercase">
-              {plan.label} plan
+              {t("nav.plan", { plan: plan.label })}
             </span>
           )}
           {active && <ActiveBadge />}
         </div>
-        <p className="mt-0.5 text-xs text-fg-subtle">Open-source models on this app&apos;s server · no key needed · slower than a paid model</p>
+        <p className="mt-0.5 text-xs text-fg-subtle">{t("llm.builtinHint")}</p>
 
         {/* This session's allowance */}
         <div className="mt-2.5">
           <div
             className="h-1.5 overflow-hidden rounded-full bg-surface-2"
             role="progressbar"
-            aria-label="Built-in AI tokens used this session"
+            aria-label={t("llm.builtinUsedLabel")}
             aria-valuemin={0}
             aria-valuemax={usage.sessionLimit}
             aria-valuenow={usage.sessionTokens}
@@ -150,11 +153,11 @@ function BuiltinAiRow({
             />
           </div>
           <p className={cn("mt-1 text-xs tabular-nums", exhausted ? "text-rose-600 dark:text-rose-400" : "text-fg-subtle")}>
-            {usage.sessionTokens.toLocaleString()} of {usage.sessionLimit.toLocaleString()} tokens this session
+            {t("llm.sessionUsage", { used: usage.sessionTokens, limit: usage.sessionLimit })}
             {usage.sessionResetsAt
-              ? ` · resets in ${timeUntil(usage.sessionResetsAt)}`
+              ? ` · ${t("llm.resetsIn", { time: timeUntil(usage.sessionResetsAt) })}`
               : plan
-                ? ` · a session lasts ${plan.sessionHours} h from your first question`
+                ? ` · ${t("llm.sessionLasts", { hours: plan.sessionHours })}`
                 : ""}
           </p>
         </div>
@@ -162,7 +165,7 @@ function BuiltinAiRow({
 
       <span
         className="hidden items-center gap-1 self-start rounded-lg bg-surface-2 px-2 py-1 text-xs font-medium text-fg-muted tabular-nums sm:inline-flex"
-        title="Built-in AI tokens used in total"
+        title={t("llm.totalTokens")}
       >
         <Coins className="size-3" />
         {usage.totalTokens.toLocaleString()}
@@ -186,6 +189,7 @@ function ConfigRow({
   onDelete: (config: ILlmConfig) => void;
 }) {
   const [activating, setActivating] = useState(false);
+  const t = useT();
   const provider = detectProvider(config.llmModel);
 
   async function handleActivate() {
@@ -211,7 +215,7 @@ function ConfigRow({
         aria-checked={config.isActive}
         onClick={handleActivate}
         disabled={config.isActive || activating}
-        aria-label={config.isActive ? `${config.keyName} is active` : `Use ${config.keyName}`}
+        aria-label={t(config.isActive ? "llm.isActive" : "llm.use", { name: config.keyName })}
         className={cn(
           "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-default",
           !config.isActive && "hover:bg-surface-2",
@@ -231,15 +235,15 @@ function ConfigRow({
         </p>
       </div>
 
-      <span className="hidden items-center gap-1 rounded-lg bg-surface-2 px-2 py-1 text-xs font-medium text-fg-muted tabular-nums sm:inline-flex" title="Tokens used">
+      <span className="hidden items-center gap-1 rounded-lg bg-surface-2 px-2 py-1 text-xs font-medium text-fg-muted tabular-nums sm:inline-flex" title={t("llm.tokensUsed")}>
         <Coins className="size-3" />
         {config.tokensUsed.toLocaleString()}
       </span>
 
-      <Button size="icon-sm" variant="ghost" onClick={() => onEdit(config)} aria-label={`Change model for ${config.keyName}`} title="Change model">
+      <Button size="icon-sm" variant="ghost" onClick={() => onEdit(config)} aria-label={t("llm.changeModelFor", { name: config.keyName })} title={t("llm.changeModel")}>
         <Pencil className="size-4" />
       </Button>
-      <Button size="icon-sm" variant="ghost-danger" onClick={() => onDelete(config)} aria-label={`Remove ${config.keyName}`}>
+      <Button size="icon-sm" variant="ghost-danger" onClick={() => onDelete(config)} aria-label={t("llm.removeName", { name: config.keyName })}>
         <Trash2 className="size-4" />
       </Button>
     </div>
@@ -250,6 +254,7 @@ function ConfigRow({
 export default function LlmSettingsCard({ user }: { user: IUser }) {
   const dispatch = useAppDispatch();
   const toast = useToast();
+  const t = useT();
   const configs: ILlmConfig[] = user.llmConfigs ?? [];
   const builtinAi = builtinAiOf(user);
   // Any saved OpenRouter key, connected or pasted, makes "Connect OpenRouter" redundant
@@ -294,14 +299,14 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           if (!cancelled) setLoaded({ request: modelRequest, ok: res.ok, items: res.models ?? [], error: res.error });
         })
         .catch((err) => {
-          if (!cancelled) setLoaded({ request: modelRequest, ok: false, items: [], error: getErrorMessage(err, "Couldn't load models.") });
+          if (!cancelled) setLoaded({ request: modelRequest, ok: false, items: [], error: getErrorMessage(err, t("llm.loadModelsFailed")) });
         });
     }, 500);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [modelRequest]);
+  }, [modelRequest, t]);
 
   const current = loaded && loaded.request === modelRequest ? loaded : null;
   const modelsStatus = !modelRequest ? "idle" : !current ? "loading" : current.ok ? "ok" : "error";
@@ -348,10 +353,10 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     try {
       const result = await testLlmSettings({ ...keySource, model: activeModel });
       setTestStatus(result.ok ? "ok" : "error");
-      if (!result.ok) setTestError(result.error ?? "Connection failed.");
+      if (!result.ok) setTestError(result.error ?? t("llm.connectionFailed"));
     } catch (err) {
       setTestStatus("error");
-      setTestError(getErrorMessage(err, "Could not reach the server."));
+      setTestError(getErrorMessage(err, t("llm.unreachable")));
     }
   }
 
@@ -361,10 +366,10 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
       const name = keyName.trim();
       const updatedUser = await addLlmConfig({ keyName: name, apiKey: trimmedKey || undefined, model: activeModel, setActive: true });
       dispatch(setUser({ ...user, ...updatedUser }));
-      toast(editing ? `“${name}” now uses ${activeModel}.` : `“${name}” saved and set as active.`, "success");
+      toast(editing ? t("llm.updated", { name, model: activeModel }) : t("llm.saved", { name }), "success");
       resetForm();
     } catch (err) {
-      setTestError(getErrorMessage(err, "Save failed. Please try again."));
+      setTestError(getErrorMessage(err, t("llm.saveFailed")));
       setTestStatus("error");
     } finally {
       setSaving(false);
@@ -381,7 +386,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
       try {
         const key = await exchangeOpenrouterCode(callback.code, callback.verifier);
         const listed = await listLlmModels({ provider: "openrouter", apiKey: key });
-        if (!listed.ok || !listed.models.length) throw new Error(listed.error ?? "OpenRouter has no free models right now.");
+        if (!listed.ok || !listed.models.length) throw new Error(listed.error ?? t("llm.noFreeModels"));
 
         let chosen: string | null = null;
         for (const candidate of listed.models.slice(0, OPENROUTER_MODELS_TO_TRY)) {
@@ -390,13 +395,13 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
             break;
           }
         }
-        if (!chosen) throw new Error("Connected, but none of OpenRouter's free models answered. Try again in a few minutes.");
+        if (!chosen) throw new Error(t("llm.noneAnswered"));
 
         const updatedUser = await addLlmConfig({ keyName: OPENROUTER_CONNECT_NAME, apiKey: key, model: chosen, setActive: true });
         dispatch(setUser({ ...user, ...updatedUser }));
-        toast(`OpenRouter connected. Now using ${chosen}.`, "success");
+        toast(t("llm.orConnected", { model: chosen }), "success");
       } catch (err) {
-        toast(getErrorMessage(err, "Couldn't connect OpenRouter. Please try again."), "error");
+        toast(getErrorMessage(err, t("llm.orFailed")), "error");
       } finally {
         setConnect("idle");
       }
@@ -411,7 +416,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
       await startOpenrouterConnect();
     } catch {
       setConnect("idle");
-      toast("Couldn't start the OpenRouter sign-in.", "error");
+      toast(t("llm.orStartFailed"), "error");
     }
   }
 
@@ -419,9 +424,9 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     try {
       const updatedUser = await activateLlmConfig(name);
       dispatch(setUser({ ...user, ...updatedUser }));
-      toast(`Now using “${name}”.`, "success");
+      toast(t("llm.nowUsing", { name }), "success");
     } catch (err) {
-      toast(getErrorMessage(err, "Couldn't switch configs."), "error");
+      toast(getErrorMessage(err, t("llm.switchFailed")), "error");
     }
   }
 
@@ -429,9 +434,9 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     try {
       const updatedUser = await switchToBuiltinAi();
       dispatch(setUser({ ...user, ...updatedUser }));
-      toast(`Now using the ${BUILTIN_AI_LABEL}.`, "success");
+      toast(t("llm.nowBuiltin", { name: BUILTIN_AI_LABEL }), "success");
     } catch (err) {
-      toast(getErrorMessage(err, "Couldn't switch to the built-in AI."), "error");
+      toast(getErrorMessage(err, t("llm.builtinFailed")), "error");
     }
   }
 
@@ -440,29 +445,27 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     try {
       const updatedUser = await deleteLlmConfig(pendingDelete.keyName);
       dispatch(setUser({ ...user, ...updatedUser }));
-      toast("Config removed.", "success");
+      toast(t("llm.removed"), "success");
     } catch (err) {
-      toast(getErrorMessage(err, "Couldn't remove the config."), "error");
+      toast(getErrorMessage(err, t("llm.removeFailed")), "error");
       throw err;
     }
   }
 
   const modelPlaceholder = {
-    idle: "Enter your API key to load models",
-    loading: "Loading models…",
-    error: "Couldn't load models",
-    ok: models.length > 0 ? "Choose a model" : "No chat models available for this key",
+    idle: t("llm.phIdle"),
+    loading: t("llm.phLoading"),
+    error: t("llm.phError"),
+    ok: models.length > 0 ? t("llm.phChoose") : t("llm.phNone"),
   }[modelsStatus];
 
   return (
     <section id="ai" className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="font-semibold text-fg">AI models</h2>
+          <h2 className="font-semibold text-fg">{t("llm.title")}</h2>
           <p className="mt-1 text-sm text-fg-muted">
-            {builtinAi
-              ? "The built-in AI works without a key, within your plan. Add your own key for faster, stronger models with no limit."
-              : "Bring your own key. The active config powers search, summaries and chat."}
+            {builtinAi ? t("llm.introBuiltin") : t("llm.introKey")}
           </p>
         </div>
         {(!hasOpenrouter || !showForm) && (
@@ -475,12 +478,12 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
                 loading={connect !== "idle"}
                 icon={<Link2 className="size-3.5" />}
               >
-                Connect OpenRouter
+                {t("llm.connectOr")}
               </Button>
             )}
             {!showForm && (
               <Button size="sm" variant="soft" onClick={() => setShowForm(true)} icon={<Plus className="size-3.5" />}>
-                Add key
+                {t("llm.addKey")}
               </Button>
             )}
           </div>
@@ -490,12 +493,12 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
       {connect === "saving" && (
         <div className="mt-5 flex items-center gap-3 rounded-2xl bg-accent-soft p-4 text-sm text-accent-fg" aria-live="polite">
           <Spinner className="size-4" />
-          Connecting OpenRouter and picking a free model that works…
+          {t("llm.connecting")}
         </div>
       )}
 
       {(configs.length > 0 || builtinAi) && (
-        <div role="radiogroup" aria-label="AI configs" className="mt-5 space-y-2">
+        <div role="radiogroup" aria-label={t("llm.configs")} className="mt-5 space-y-2">
           {builtinAi && <BuiltinAiRow active={builtinAiActive} usage={builtinAi} plan={user.plan} onActivate={handleUseBuiltinAi} />}
           {configs.map((cfg) => (
             <ConfigRow key={cfg.keyName} config={cfg} onActivate={handleActivate} onEdit={startEdit} onDelete={setPendingDelete} />
@@ -505,12 +508,12 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
 
       {showForm && (
         <div className={cn("space-y-4", configs.length > 0 || builtinAi ? "mt-5 border-t border-line pt-5" : "mt-5")}>
-          <h3 className="text-sm font-semibold text-fg">{editing ? `Change model for “${editing.keyName}”` : "New config"}</h3>
+          <h3 className="text-sm font-semibold text-fg">{editing ? t("llm.changeModelTitle", { name: editing.keyName }) : t("llm.newConfig")}</h3>
 
           <Input
-            label="Name"
+            label={t("llm.name")}
             icon={<Tag />}
-            placeholder="e.g. Work Gemini"
+            placeholder={t("llm.namePh")}
             value={keyName}
             disabled={Boolean(editing)}
             onChange={(e) => {
@@ -520,8 +523,8 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           />
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-fg">Provider</span>
-            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Provider">
+            <span className="text-sm font-medium text-fg">{t("llm.provider")}</span>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("llm.provider")}>
               {PROVIDER_GROUPS.map((pg) => {
                 const selected = providerId === pg.id;
                 return (
@@ -548,10 +551,10 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           </div>
 
           <Input
-            label="API key"
+            label={t("llm.apiKey")}
             type="password"
             icon={<KeyRound />}
-            placeholder={editing ? "Leave blank to keep the saved key" : "Paste your API key"}
+            placeholder={editing ? t("llm.keyPhKeep") : t("llm.keyPh")}
             autoComplete="off"
             value={apiKey}
             onChange={(e) => {
@@ -560,14 +563,14 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
             }}
             hint={
               <a href={group.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-                Get a {group.label} API key <ExternalLink className="size-3" />
+                {t("llm.getKey", { provider: group.label })} <ExternalLink className="size-3" />
               </a>
             }
           />
 
           <div className="flex flex-col gap-1.5">
             <label htmlFor="llm-model" className="text-sm font-medium text-fg">
-              Model
+              {t("llm.model")}
             </label>
             <div className="relative">
               <select
@@ -601,25 +604,22 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
               </p>
             ) : savedModelRetired && editing ? (
               <p className="text-xs text-amber-700 dark:text-amber-300">
-                “{editing.llmModel}” is no longer offered to this key. Pick a current model.
+                {t("llm.retired", { model: editing.llmModel })}
               </p>
             ) : modelsStatus === "ok" && models.length > 0 ? (
               <p className="text-xs text-fg-subtle">
-                {group.id === "openrouter" ? "Free models on OpenRouter" : `Live list from ${group.label}`}, newest first.
+                {group.id === "openrouter" ? t("llm.freeList") : t("llm.liveList", { provider: group.label })}
               </p>
             ) : null}
           </div>
 
           {group.id === "openrouter" && (
-            <p className="text-xs text-fg-subtle">
-              Answers use the free model you pick. Search by meaning embeds your notes with openai/text-embedding-3-small through
-              OpenRouter, which needs a little credit on the key; without it, search matches keywords instead.
-            </p>
+            <p className="text-xs text-fg-subtle">{t("llm.orNote")}</p>
           )}
 
           {testStatus === "ok" && (
             <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" role="status">
-              <CircleCheck className="size-4 shrink-0" /> Connection works — you can save now.
+              <CircleCheck className="size-4 shrink-0" /> {t("llm.works")}
             </p>
           )}
           {testStatus === "error" && testError && (
@@ -632,16 +632,16 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           <div className="flex flex-wrap gap-2 pt-1">
             {testStatus === "ok" ? (
               <Button onClick={handleSave} disabled={!canSave} loading={saving}>
-                {saving ? "Saving…" : "Save & activate"}
+                {saving ? t("editor.saving") : t("llm.saveActivate")}
               </Button>
             ) : (
               <Button onClick={handleTest} disabled={!canTest} loading={testStatus === "testing"} icon={<PlugZap className="size-4" />}>
-                {testStatus === "testing" ? "Testing…" : "Test connection"}
+                {testStatus === "testing" ? t("llm.testing") : t("llm.test")}
               </Button>
             )}
             {(configs.length > 0 || builtinAi || editing) && (
               <Button variant="ghost" onClick={resetForm} disabled={saving}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             )}
           </div>
@@ -650,19 +650,21 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}
-        title="Remove this AI config?"
+        title={t("llm.removeTitle")}
         message={
           <>
-            The key <span className="font-semibold text-fg">“{pendingDelete?.keyName}”</span> will be deleted.
+            {t("llm.removeMsg", { name: pendingDelete?.keyName ?? "" })}
             {pendingDelete?.isActive &&
-              (configs.length > 1
-                ? ` “${configs.find((c) => c !== pendingDelete)?.keyName}” becomes active.`
-                : builtinAi
-                  ? ` The ${BUILTIN_AI_LABEL} takes over.`
-                  : " AI features will be off until you add another key.")}
+              ` ${
+                configs.length > 1
+                  ? t("llm.removeNext", { name: configs.find((c) => c !== pendingDelete)?.keyName ?? "" })
+                  : builtinAi
+                    ? t("llm.removeBuiltin", { name: BUILTIN_AI_LABEL })
+                    : t("llm.removeOff")
+              }`}
           </>
         }
-        confirmLabel="Remove"
+        confirmLabel={t("llm.removeConfirm")}
         onConfirm={confirmDelete}
         onClose={() => setPendingDelete(null)}
       />

@@ -4,11 +4,12 @@ import Link from "next/link";
 import { FileSearch, MessagesSquare, Sparkles } from "lucide-react";
 import { LogoWithText } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ui/theme";
+import { MessageKey, useT } from "@/i18n";
 
-const highlights = [
-  { Icon: Sparkles, title: "Grounded AI answers", text: "Ask anything and get replies cited back to your own notes." },
-  { Icon: FileSearch, title: "Files understood", text: "PDFs, images and docs are read, OCR'd and indexed for you." },
-  { Icon: MessagesSquare, title: "Keep the thread", text: "Turn any answer into a conversation that remembers context." },
+const highlights: { Icon: typeof Sparkles; title: MessageKey; text: MessageKey }[] = [
+  { Icon: Sparkles, title: "auth.h1Title", text: "auth.h1Text" },
+  { Icon: FileSearch, title: "auth.h2Title", text: "auth.h2Text" },
+  { Icon: MessagesSquare, title: "auth.h3Title", text: "auth.h3Text" },
 ];
 
 export function AuthShell({
@@ -22,6 +23,7 @@ export function AuthShell({
   children: React.ReactNode;
   footer: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <main className="relative isolate min-h-dvh overflow-hidden">
       <div
@@ -37,12 +39,12 @@ export function AuthShell({
       <div className="mx-auto grid min-h-dvh max-w-6xl items-center gap-12 px-4 py-16 lg:grid-cols-[1.1fr_1fr] lg:px-8">
         <section className="hidden animate-rise lg:block">
           <p className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/50 px-3 py-1 text-xs font-semibold text-indigo-700 backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-indigo-200">
-            <Sparkles className="size-3.5" /> AI-powered personal knowledge
+            <Sparkles className="size-3.5" /> {t("auth.badge")}
           </p>
           <h2 className="mt-5 max-w-lg text-4xl leading-[1.1] font-bold tracking-tight text-slate-900 xl:text-5xl dark:text-white">
-            Your notes, finally{" "}
+            {t("auth.headline")}{" "}
             <span className="bg-linear-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent dark:from-blue-400 dark:via-indigo-300 dark:to-violet-400">
-              answering back.
+              {t("auth.headlineAccent")}
             </span>
           </h2>
           <ul className="mt-10 space-y-5">
@@ -52,8 +54,8 @@ export function AuthShell({
                   <Icon className="size-5" />
                 </span>
                 <span>
-                  <span className="block font-semibold text-slate-900 dark:text-white">{title}</span>
-                  <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">{text}</span>
+                  <span className="block font-semibold text-slate-900 dark:text-white">{t(title)}</span>
+                  <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">{t(text)}</span>
                 </span>
               </li>
             ))}
@@ -62,7 +64,7 @@ export function AuthShell({
 
         <section className="mx-auto w-full max-w-md animate-rise">
           <div className="rounded-3xl border border-white/70 bg-surface/85 p-6 shadow-2xl shadow-indigo-900/10 backdrop-blur-xl sm:p-8 dark:border-white/10">
-            <Link href="/" className="inline-flex" aria-label="Knowledge Hub home">
+            <Link href="/" className="inline-flex" aria-label={t("auth.homeLink")}>
               <LogoWithText className="w-44" />
             </Link>
             <h1 className="mt-6 text-2xl font-bold tracking-tight text-fg">{title}</h1>

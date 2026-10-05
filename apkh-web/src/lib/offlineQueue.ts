@@ -1,4 +1,5 @@
 import type { INoteDto } from "@/models/note";
+import { localized } from "@/lib/localizedError";
 
 const KEY = "offline-queue";
 export const OFFLINE_ID_PREFIX = "offline-";
@@ -32,7 +33,7 @@ function writeQueue(queue: QueuedSave[]) {
     localStorage.setItem(KEY, JSON.stringify(queue));
   } catch {
     // Storage full: the save is lost; callers check the result of enqueueSave.
-    throw new Error("There's no room to keep this change offline.");
+    throw localized("There's no room to keep this change offline.", "offline.noRoom");
   }
   window.dispatchEvent(new Event("offline-queue-changed"));
 }

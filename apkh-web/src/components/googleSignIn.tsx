@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginWithGoogle } from "@/services/authService";
-import { getErrorMessage } from "@/services/axios";
 import { GOOGLE_SIGN_IN_ENABLED, googleIdToken } from "@/lib/firebase";
 import { useAppDispatch } from "@/store/hook";
 import { setToken } from "@/store/slices/authSlice";
 import { Button } from "@/components/ui/Button";
+import { useT } from "@/i18n";
+import { errorText } from "@/lib/localizedError";
 
 function GoogleLogo() {
   return (
@@ -23,6 +24,7 @@ function GoogleLogo() {
 /** "or" divider and a "Continue with Google" button; renders nothing without the Firebase config. */
 export function GoogleSignIn({ disabled, onError }: { disabled?: boolean; onError: (message: string | null) => void }) {
   const [loading, setLoading] = useState(false);
+  const t = useT();
   const dispatch = useAppDispatch();
   const router = useRouter();
 
@@ -41,7 +43,7 @@ export function GoogleSignIn({ disabled, onError }: { disabled?: boolean; onErro
       dispatch(setToken(res.data));
       router.replace("/notes");
     } catch (err) {
-      onError(getErrorMessage(err, "Google sign-in failed. Please try again."));
+      onError(errorText(t, err, "auth.googleFailed"));
       setLoading(false);
     }
   }
@@ -50,7 +52,7 @@ export function GoogleSignIn({ disabled, onError }: { disabled?: boolean; onErro
     <>
       <div className="my-5 flex items-center gap-3 text-xs text-fg-subtle">
         <span className="h-px flex-1 bg-line" />
-        or
+        {t("auth.or")}
         <span className="h-px flex-1 bg-line" />
       </div>
       <Button
@@ -62,7 +64,7 @@ export function GoogleSignIn({ disabled, onError }: { disabled?: boolean; onErro
         icon={!loading && <GoogleLogo />}
         onClick={() => void handleClick()}
       >
-        Continue with Google
+        {t("auth.google")}
       </Button>
     </>
   );

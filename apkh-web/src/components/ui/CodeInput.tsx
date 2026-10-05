@@ -2,6 +2,7 @@
 
 import { Fragment, useRef } from "react";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n";
 
 /** Letters and digits only, upper-cased. */
 export function normalizeCode(text: string) {
@@ -32,6 +33,7 @@ interface CodeInputProps {
  */
 export function CodeInput({ value, onChange, onComplete, length = 8, group = 4, disabled, invalid }: CodeInputProps) {
   const boxes = useRef<(HTMLInputElement | null)[]>([]);
+  const t = useT();
   const chars = Array.from({ length }, (_, i) => (value[i] ?? " ").trim());
 
   const focus = (index: number) => {
@@ -77,7 +79,7 @@ export function CodeInput({ value, onChange, onComplete, length = 8, group = 4, 
             autoCapitalize="characters"
             autoComplete="off"
             spellCheck={false}
-            aria-label={`Character ${i + 1} of ${length}`}
+            aria-label={t("common.codeChar", { n: i + 1, length })}
             aria-invalid={invalid || undefined}
             onFocus={(e) => e.target.select()}
             onChange={(e) => {

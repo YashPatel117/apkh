@@ -6,6 +6,7 @@ import { BUILTIN_AI_ENABLED, BUILTIN_AI_LABEL, IPlan, IUser } from "@/models/use
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import UpgradeModal from "./UpgradeModal";
+import { useT } from "@/i18n";
 
 function Feature({ Icon, children }: { Icon: typeof Check; children: React.ReactNode }) {
   return (
@@ -27,6 +28,7 @@ function PlanColumn({
   disabled: boolean;
   onUpgrade?: () => void;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -41,21 +43,20 @@ function PlanColumn({
         </p>
         {current && (
           <span className="rounded-md bg-indigo-600 px-1.5 py-0.5 text-[0.62rem] font-bold tracking-wider text-white uppercase dark:bg-indigo-500">
-            Your plan
+            {t("plan.yours")}
           </span>
         )}
       </div>
       <ul className="mt-3 flex-1 space-y-2 text-xs text-fg-muted">
         <Feature Icon={Sparkles}>
-          {BUILTIN_AI_LABEL}: <span className="font-semibold text-fg tabular-nums">{plan.sessionTokens.toLocaleString()}</span> tokens per{" "}
-          {plan.sessionHours}-hour session
+          {t("plan.tokens", { name: BUILTIN_AI_LABEL, tokens: plan.sessionTokens, hours: plan.sessionHours })}
         </Feature>
-        <Feature Icon={ListOrdered}>{plan.priority ? "Priority in the queue: answered first" : "Standard place in the queue"}</Feature>
-        <Feature Icon={KeyRound}>Your own AI keys, with no limit</Feature>
+        <Feature Icon={ListOrdered}>{plan.priority ? t("plan.priority") : t("plan.standard")}</Feature>
+        <Feature Icon={KeyRound}>{t("plan.ownKeys")}</Feature>
       </ul>
       {onUpgrade && (
         <Button size="sm" className="mt-4 w-full" onClick={onUpgrade} disabled={disabled} icon={<Crown className="size-3.5" />}>
-          Upgrade
+          {t("plan.upgrade")}
         </Button>
       )}
     </div>
@@ -68,6 +69,7 @@ function PlanColumn({
  */
 export default function PlanCard({ user }: { user: IUser }) {
   const [upgrading, setUpgrading] = useState(false);
+  const t = useT();
   const plans = user.plans ?? (user.plan ? [user.plan] : []);
   if (!user.plan || !plans.length) return null;
   const isPro = user.plan.id === "pro";
@@ -79,11 +81,8 @@ export default function PlanCard({ user }: { user: IUser }) {
       aria-disabled={!BUILTIN_AI_ENABLED || undefined}
       className={cn("rounded-3xl border border-line bg-surface p-5 sm:p-6", !BUILTIN_AI_ENABLED && "opacity-60 select-none")}
     >
-      <h2 className="font-semibold text-fg">Plan</h2>
-      <p className="mt-1 text-sm text-fg-muted">
-        Your plan sets how much of the {BUILTIN_AI_LABEL} you get. A session starts with your first question; questions, chat
-        and summaries count, indexing your notes doesn&apos;t.
-      </p>
+      <h2 className="font-semibold text-fg">{t("plan.title")}</h2>
+      <p className="mt-1 text-sm text-fg-muted">{t("plan.intro", { name: BUILTIN_AI_LABEL })}</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
         {plans.map((plan) => (
           <PlanColumn
@@ -97,10 +96,10 @@ export default function PlanCard({ user }: { user: IUser }) {
       </div>
       <p className="mt-3 text-xs text-fg-subtle">
         {!BUILTIN_AI_ENABLED
-          ? `The ${BUILTIN_AI_LABEL} isn't available here, so plans don't apply.`
+          ? t("plan.unavailable", { name: BUILTIN_AI_LABEL })
           : isPro
-            ? "You're on Pro: your questions go first when the built-in AI is busy."
-            : "Have a Pro code? Choose Upgrade to redeem it."}
+            ? t("plan.onPro")
+            : t("plan.haveCode")}
       </p>
 
       {BUILTIN_AI_ENABLED && pro && !isPro && <UpgradeModal open={upgrading} onClose={() => setUpgrading(false)} user={user} pro={pro} free={free} />}

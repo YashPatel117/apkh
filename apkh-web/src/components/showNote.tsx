@@ -1,11 +1,20 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AtSign, ChevronDown, Clock, Layers, Paperclip, Sparkles, Trash2 } from "lucide-react";
+import { AtSign, ChevronDown, Clock, FileArchive, FileDown, FolderInput, History, Layers, MoreHorizontal, Paperclip, Printer, Sparkles, Trash2 } from "lucide-react";
 import { INote, NoteIndexState } from "@/models/note";
 import { IndexBadge } from "@/components/indexBadge";
 import { NoteSummaryPanel } from "@/components/noteSummaryPanel";
 import { SimilarNotesModal } from "@/components/similarNotes";
+import { NoteHistoryModal } from "@/components/noteHistory";
+import { MoveNoteModal } from "@/components/moveNoteModal";
+import { Menu, MenuItem } from "@/components/ui/Menu";
+import { useToast } from "@/components/ui/Toast";
+import { exportNote } from "@/services/noteService";
+import { getErrorMessage } from "@/services/axios";
+import { isOfflineId } from "@/lib/offlineQueue";
+import { DRAG_NOTE } from "@/lib/folders";
+import { useT } from "@/i18n";
 import { useNotes } from "@/context/notesContext";
 import FileDisplay from "@/components/fileDisplay";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "@/lib/noteLinkUtils";
@@ -81,10 +90,24 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [similarOpen, setSimilarOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const { openNote } = useNotes();
+  const toast = useToast();
+  const t = useT();
+  // A note saved offline exists only in this browser until it syncs.
+  const synced = !isOfflineId(note.id);
+
+  const download = async (format: "md" | "zip") => {
+    try {
+      await exportNote(note.id, format);
+    } catch (error) {
+      toast(getErrorMessage(error, t("card.exportFailed")), "error");
+    }
+  };
 
   const contentRef = useRef<HTMLDivElement>(null);
-  const categoryLabel = note.category?.trim() || "Uncategorized";
+  const categoryLabel = note.category?.trim() || t("card.uncategorized");
   const attachmentCount = note.files.length;
   const normalizedContent = useMemo(
     () => normalizeNoteLinksInHtml(stripLegacyFileTokenStyles(note.content)),
@@ -131,18 +154,28 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
     <>
       <article
         className={cn(
-          "group relative mb-4 animate-rise cursor-pointer break-inside-avoid rounded-3xl border bg-surface p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/5",
+          // focus-within lifts the card (and its open menu) above the cards after it.
+          "group relative mb-4 animate-rise cursor-pointer break-inside-avoid rounded-3xl border bg-surface p-5 transition-all duration-200 focus-within:z-10 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/5",
           selected
             ? "border-indigo-300 ring-4 ring-indigo-500/15 dark:border-indigo-400/50"
             : "border-line hover:border-indigo-200 dark:hover:border-indigo-400/30",
         )}
         style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
         onClick={handleCardClick}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && e.target === e.currentTarget) onEdit?.();
+        draggable={synced}
+        onDragStart={(e) => {
+          e.dataTransfer.setData(DRAG_NOTE, note.id);
+          e.dataTransfer.setData("text/plain", note.title || "Untitled note");
+          e.dataTransfer.effectAllowed = "move";
         }}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
+          if (e.key === "Enter") onEdit?.();
+          else if (e.key.toLowerCase() === "x" && (aiOn || selected)) onToggleSelect?.();
+        }}
+        data-note-card
         tabIndex={0}
-        aria-label={`Open note ${note.title || "Untitled note"}`}
+        aria-label={t("card.open", { title: note.title || t("ai.untitled") })}
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
@@ -165,7 +198,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
             )}
           >
             <IconAction
-              label={!aiOn ? "AI answers are off" : selected ? "Unpin from AI question" : "Pin for AI question"}
+              label={!aiOn ? t("card.aiOff") : selected ? t("card.unpin") : t("card.pin")}
               active={selected}
               disabled={!aiOn && !selected}
               onClick={() => onToggleSelect?.()}
@@ -173,24 +206,64 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
               <AtSign />
             </IconAction>
             <IconAction
-              label={!aiOn ? "AI answers are off" : summaryOpen ? "Hide AI summary" : "AI summary"}
+              label={!aiOn ? t("card.aiOff") : summaryOpen ? t("card.hideSummary") : t("card.summary")}
               active={aiOn && summaryOpen}
               disabled={!aiOn}
               onClick={() => setSummaryOpen((open) => !open)}
             >
               <Sparkles />
             </IconAction>
-            <IconAction label="Similar notes" onClick={() => setSimilarOpen(true)}>
+            <IconAction label={t("card.similar")} onClick={() => setSimilarOpen(true)}>
               <Layers />
             </IconAction>
-            <IconAction label="Delete note" danger onClick={() => onDelete?.()}>
+            <IconAction label={t("card.delete")} danger onClick={() => onDelete?.()}>
               <Trash2 />
             </IconAction>
+            {synced && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <Menu
+                  trigger={({ toggle, open }) => (
+                    <IconAction label={t("card.more")} active={open} onClick={toggle}>
+                      <MoreHorizontal />
+                    </IconAction>
+                  )}
+                >
+                  {(close) => {
+                    const then = (action: () => void) => () => {
+                      close();
+                      action();
+                    };
+                    return (
+                      <>
+                        <MenuItem icon={<FolderInput />} onClick={then(() => setMoveOpen(true))}>
+                          {t("card.move")}
+                        </MenuItem>
+                        <MenuItem icon={<History />} onClick={then(() => setHistoryOpen(true))}>
+                          {t("card.history")}
+                        </MenuItem>
+                        <div className="my-1 h-px bg-line" />
+                        <MenuItem icon={<FileDown />} onClick={then(() => void download("md"))}>
+                          {t("card.exportMd")}
+                        </MenuItem>
+                        {attachmentCount > 0 && (
+                          <MenuItem icon={<FileArchive />} onClick={then(() => void download("zip"))}>
+                            {t("card.exportZip")}
+                          </MenuItem>
+                        )}
+                        <MenuItem icon={<Printer />} onClick={then(() => window.open(`/print/${note.id}`, "_blank", "noopener"))}>
+                          {t("card.print")}
+                        </MenuItem>
+                      </>
+                    );
+                  }}
+                </Menu>
+              </div>
+            )}
           </div>
         </div>
 
         <h2 className="mt-3 text-[1.05rem] leading-snug font-semibold tracking-tight break-words text-fg">
-          {note.title || "Untitled note"}
+          {note.title || t("ai.untitled")}
         </h2>
 
         {/* Content preview */}
@@ -210,7 +283,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
         )}
 
         {/* AI summary */}
-        {aiOn && summaryOpen && <NoteSummaryPanel noteId={note.id} updatedAt={note.updatedAt} />}
+        {aiOn && summaryOpen && <NoteSummaryPanel noteId={note.id} noteTitle={note.title} updatedAt={note.updatedAt} />}
 
         {/* Footer */}
         <div className="mt-4 flex items-center justify-between gap-3">
@@ -228,12 +301,15 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
               aria-expanded={expanded}
               className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft"
             >
-              {expanded ? "Show less" : "Show more"}
+              {expanded ? t("card.showLess") : t("card.showMore")}
               <ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
             </button>
           )}
         </div>
       </article>
+
+      {historyOpen && <NoteHistoryModal note={note} open onClose={() => setHistoryOpen(false)} />}
+      {moveOpen && <MoveNoteModal note={note} open onClose={() => setMoveOpen(false)} />}
 
       <SimilarNotesModal
         noteId={note.id}

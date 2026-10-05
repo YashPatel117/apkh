@@ -2,15 +2,19 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { Coins, Cpu, FolderOpen, Mail, MessagesSquare, NotebookText, Paperclip, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Coins, Cpu, FolderOpen, Folders, Mail, MessagesSquare, NotebookText, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
 import { profile } from "@/services/authService";
 import { Avatar } from "@/components/sidebar";
-import { activeAi, BUILTIN_AI_ENABLED, supportsSemanticSearch } from "@/models/user";
+import { activeAi, supportsSemanticSearch } from "@/models/user";
 import LlmSettingsCard from "./LlmSettingsCard";
 import PlanCard from "./PlanCard";
 import SearchIndexCard from "./SearchIndexCard";
+import DataCard from "./DataCard";
+import IntegrationsCard from "./IntegrationsCard";
+import LanguageCard from "./LanguageCard";
+import { useT } from "@/i18n";
 
 function Stat({ Icon, label, value, href }: { Icon: typeof Coins; label: string; value: string | number; href?: string }) {
   const body = (
@@ -34,9 +38,10 @@ function Stat({ Icon, label, value, href }: { Icon: typeof Coins; label: string;
 
 export default function ProfilePage() {
   const { user } = useAppSelector((state) => state.auth);
-  const { notes } = useAppSelector((state) => state.note);
+  const { totalNotes, categories, folders } = useAppSelector((state) => state.note);
   const sessionsCount = useAppSelector((state) => state.chat.sessions.length);
   const dispatch = useAppDispatch();
+  const t = useT();
 
   // Token counts and the session allowance change with every question; show current ones.
   useEffect(() => {
@@ -48,8 +53,6 @@ export default function ProfilePage() {
   if (!user) return null; // the (home) layout renders the loading state
 
   const ai = activeAi(user);
-  const categories = new Set(notes.map((n) => n.category?.trim()).filter(Boolean)).size;
-  const attachments = notes.reduce((t, n) => t + n.files.length, 0);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pt-6 pb-12 sm:px-6 lg:px-8 lg:pt-8">
@@ -65,61 +68,59 @@ export default function ProfilePage() {
             </p>
           </div>
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-xs font-bold tracking-wider text-accent-fg uppercase">
-            <ShieldCheck className="size-3.5" /> {user.plan?.label ?? user.type} plan
+            <ShieldCheck className="size-3.5" /> {t("nav.plan", { plan: user.plan?.label ?? user.type })}
           </span>
         </div>
       </section>
 
       {/* Stats */}
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" aria-label="Workspace stats">
-        <Stat Icon={NotebookText} label="Notes" value={notes.length} href="/notes" />
-        <Stat Icon={MessagesSquare} label="Conversations" value={sessionsCount} href="/chat" />
-        <Stat Icon={Paperclip} label={`Attachments · ${categories} categories`} value={attachments} />
-        <Stat Icon={Coins} label="AI tokens used" value={(user.totalTokensUsed ?? 0).toLocaleString()} />
+      <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" aria-label={t("profile.stats")}>
+        <Stat Icon={NotebookText} label={t("profile.notes")} value={totalNotes.toLocaleString()} href="/notes" />
+        <Stat Icon={MessagesSquare} label={t("profile.conversations")} value={sessionsCount} href="/chat" />
+        <Stat Icon={Folders} label={t("profile.categories", { count: folders.length })} value={categories.length} />
+        <Stat Icon={Coins} label={t("profile.tokens")} value={(user.totalTokensUsed ?? 0).toLocaleString()} />
       </section>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <LlmSettingsCard user={user} />
 
         <div className="space-y-6">
           <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
-            <h2 className="font-semibold text-fg">AI search status</h2>
+            <h2 className="font-semibold text-fg">{t("profile.searchStatus")}</h2>
             {ai && (ai.kind === "builtin" || supportsSemanticSearch(ai.model)) ? (
               <div className="mt-4 flex items-start gap-3 rounded-2xl bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
                 <Cpu className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 text-sm">
-                  <p className="font-semibold">Ready for grounded answers</p>
-                  <p className="mt-0.5 truncate opacity-90">
-                    Using <span className="font-medium">{ai.name}</span> · {ai.model}
-                  </p>
+                  <p className="font-semibold">{t("profile.ready")}</p>
+                  <p className="mt-0.5 truncate opacity-90">{t("profile.using", { name: ai.name, model: ai.model })}</p>
                 </div>
               </div>
             ) : ai ? (
               <div className="mt-4 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 text-sm">
-                  <p className="font-semibold">Keyword matching only</p>
-                  <p className="mt-0.5 opacity-90">
-                    {ai.model} can answer and summarize, but Claude has no embedding model, so notes and attachments are
-                    found by keywords rather than meaning. Use {BUILTIN_AI_ENABLED ? "the built-in AI or " : ""}a Gemini or OpenAI key for semantic search.
-                  </p>
+                  <p className="font-semibold">{t("profile.keywordOnly")}</p>
+                  <p className="mt-0.5 opacity-90">{t("profile.keywordOnlyText", { model: ai.model })}</p>
                 </div>
               </div>
             ) : (
               <div className="mt-4 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" />
                 <div className="text-sm">
-                  <p className="font-semibold">AI answers are off</p>
-                  <p className="mt-0.5 opacity-90">Add an API key and test the connection to enable Ask AI, summaries and chat.</p>
+                  <p className="font-semibold">{t("card.aiOff")}</p>
+                  <p className="mt-0.5 opacity-90">{t("profile.aiOffText")}</p>
                 </div>
               </div>
             )}
             <div className="mt-4 flex items-center gap-2 text-xs text-fg-subtle">
-              <FolderOpen className="size-3.5" /> {notes.length} notes available as source material
+              <FolderOpen className="size-3.5" /> {t("profile.sourceNotes", { count: totalNotes })}
             </div>
           </section>
           <PlanCard user={user} />
+          <LanguageCard />
           <SearchIndexCard />
+          <DataCard />
+          <IntegrationsCard />
         </div>
       </div>
     </div>

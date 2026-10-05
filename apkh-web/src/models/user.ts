@@ -90,6 +90,8 @@ export interface IUser {
   plans?: IPlan[];
   /** null when the server doesn't offer the built-in AI */
   builtinAi?: IBuiltinAiUsage | null;
+  /** Listed in the server's ADMIN_EMAILS: can open /admin */
+  isAdmin?: boolean;
 }
 
 /** "2 h 15 min" until a moment. */

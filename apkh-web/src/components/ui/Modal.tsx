@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n";
 
 type Placement = "center" | "right" | "left";
 
@@ -48,6 +49,7 @@ export function Modal({
   hideClose = false,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const t = useT();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const lockedRef = useRef(locked);
@@ -122,7 +124,7 @@ export function Modal({
                 onClick={onClose}
                 disabled={locked}
                 className="ml-auto flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-40"
-                aria-label="Close"
+                aria-label={t("common.close")}
               >
                 <X className="size-5" />
               </button>

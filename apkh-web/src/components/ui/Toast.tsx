@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useState } from "react";
 import { CircleAlert, CircleCheck, Info, X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n";
 
 type Tone = "success" | "error" | "info";
 type Toast = { id: number; tone: Tone; message: string };
@@ -22,6 +23,8 @@ let nextId = 1;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // `t` names a toast below
+  const translate = useT();
 
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
 
@@ -55,7 +58,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => dismiss(t.id)}
                 className="-mr-1 cursor-pointer rounded-md p-0.5 text-fg-subtle hover:text-fg"
-                aria-label="Dismiss"
+                aria-label={translate("common.dismiss")}
               >
                 <X className="size-4" />
               </button>

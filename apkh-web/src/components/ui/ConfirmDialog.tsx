@@ -4,6 +4,7 @@ import { useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { useT } from "@/i18n";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -16,6 +17,7 @@ interface ConfirmDialogProps {
 
 export function ConfirmDialog({ open, title, message, confirmLabel = "Delete", onConfirm, onClose }: ConfirmDialogProps) {
   const [busy, setBusy] = useState(false);
+  const t = useT();
 
   const confirm = async () => {
     setBusy(true);
@@ -39,7 +41,7 @@ export function ConfirmDialog({ open, title, message, confirmLabel = "Delete", o
         <div className="mt-1.5 text-sm leading-relaxed text-fg-muted">{message}</div>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={onClose} disabled={busy} data-autofocus>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button variant="danger" onClick={confirm} loading={busy}>
             {confirmLabel}

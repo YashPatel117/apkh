@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="popup">
+    <h1>Save to Knowledge Hub</h1>
+    <div id="setup" hidden>
+      <p class="muted">Connect the clipper to your Knowledge Hub first.</p>
+      <button id="open-options" class="primary">Open options</button>
+    </div>
+    <form id="form" hidden>
+      <label>Title <input id="title" maxlength="300" required /></label>
+      <label>Category <input id="category" maxlength="100" placeholder="Web clips" /></label>
+      <fieldset>
+        <label class="inline"><input type="radio" name="mode" value="selection" id="mode-selection" /> Selection</label>
+        <label class="inline"><input type="radio" name="mode" value="page" id="mode-page" /> Whole page</label>
+      </fieldset>
+      <button type="submit" id="save" class="primary">Save note</button>
+      <p id="status" role="status" class="muted"></p>
+    </form>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

@@ -1,3 +1,4 @@
+import { localized } from "@/lib/localizedError";
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -30,9 +31,12 @@ export async function googleIdToken(): Promise<string | null> {
   } catch (error) {
     const code = (error as { code?: string }).code ?? "";
     if (DISMISSED.has(code)) return null;
-    if (code === "auth/popup-blocked") throw new Error("Your browser blocked the Google popup. Allow popups and try again.");
-    if (code === "auth/unauthorized-domain")
-      throw new Error(`${window.location.hostname} isn't an authorized domain in Firebase Authentication settings.`);
-    throw new Error("Google sign-in failed. Please try again.");
+    // The message is English; `messageKey` lets the sign-in button show it in the app's language.
+    if (code === "auth/popup-blocked") throw localized("Your browser blocked the Google popup. Allow popups and try again.", "auth.popupBlocked");
+    if (code === "auth/unauthorized-domain") {
+      const host = window.location.hostname;
+      throw localized(`${host} isn't an authorized domain in Firebase Authentication settings.`, "auth.unauthorizedDomain", { host });
+    }
+    throw localized("Google sign-in failed. Please try again.", "auth.googleFailed");
   }
 }

@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { ErrorBoundary } from "@/components/errorBoundary";
 import { Download, FileQuestion, Maximize, ZoomIn, ZoomOut } from "lucide-react";
 import { getFile } from "@/services/noteService";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/cn";
 import { displayFileName } from "@/lib/fileName";
+import { useT } from "@/i18n";
 
 interface FileDisplayWithAuthProps {
   fileName: string;
@@ -20,7 +22,7 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.25;
 
-const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, file, page }) => {
+const FileDisplayContent: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, file, page }) => {
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>("");
   const [failed, setFailed] = useState(false);
@@ -29,6 +31,7 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const t = useT();
   const previousScaleRef = useRef<number | null>(null);
   const displayName = file?.name ?? displayFileName(fileName);
 
@@ -119,7 +122,7 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
       download={displayName}
       className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-xs font-semibold text-fg transition-colors hover:bg-surface-2"
     >
-      <Download className="size-3.5" /> Download
+      <Download className="size-3.5" /> {t("file.download")}
     </a>
   );
 
@@ -129,8 +132,8 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
         <span className="flex size-12 items-center justify-center rounded-2xl bg-surface-2 text-fg-subtle">
           <FileQuestion className="size-5" />
         </span>
-        <p className="font-semibold text-fg">Couldn&apos;t load this file</p>
-        <p className="max-w-sm text-sm text-fg-muted">It may have been removed, or the storage service isn&apos;t reachable.</p>
+        <p className="font-semibold text-fg">{t("file.failed")}</p>
+        <p className="max-w-sm text-sm text-fg-muted">{t("file.failedHint")}</p>
       </div>
     );
   }
@@ -139,7 +142,7 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
     return (
       <div className="flex h-[50dvh] flex-col items-center justify-center gap-3 text-fg-subtle">
         <Spinner />
-        <p className="text-sm">Loading preview…</p>
+        <p className="text-sm">{t("file.loading")}</p>
       </div>
     );
   }
@@ -149,9 +152,9 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
       return (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))} disabled={zoom <= MIN_ZOOM} icon={<ZoomOut className="size-3.5" />} aria-label="Zoom out" />
+            <Button size="sm" variant="secondary" onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))} disabled={zoom <= MIN_ZOOM} icon={<ZoomOut className="size-3.5" />} aria-label={t("file.zoomOut")} />
             <span className="min-w-14 text-center text-xs font-semibold text-fg-muted tabular-nums">{Math.round(zoom * 100)}%</span>
-            <Button size="sm" variant="secondary" onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))} disabled={zoom >= MAX_ZOOM} icon={<ZoomIn className="size-3.5" />} aria-label="Zoom in" />
+            <Button size="sm" variant="secondary" onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))} disabled={zoom >= MAX_ZOOM} icon={<ZoomIn className="size-3.5" />} aria-label={t("file.zoomIn")} />
             <Button
               size="sm"
               variant="ghost"
@@ -162,7 +165,7 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
               }}
               icon={<Maximize className="size-3.5" />}
             >
-              Fit
+              {t("file.fit")}
             </Button>
             <div className="ml-auto">{downloadLink}</div>
           </div>
@@ -214,7 +217,7 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
         <span className="flex size-12 items-center justify-center rounded-2xl bg-surface-2 text-fg-subtle">
           <FileQuestion className="size-5" />
         </span>
-        <p className="text-sm text-fg-muted">No preview available for this file type.</p>
+        <p className="text-sm text-fg-muted">{t("file.noPreview")}</p>
         {downloadLink}
       </div>
     );
@@ -222,5 +225,12 @@ const FileDisplay: React.FC<FileDisplayWithAuthProps> = ({ fileName, noteId, fil
 
   return <div className="min-h-0 overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">{body}</div>;
 };
+
+/** A file preview; a file that fails to render shows a retry card instead of breaking the page. */
+const FileDisplay: React.FC<FileDisplayWithAuthProps> = (props) => (
+  <ErrorBoundary area="file" resetKeys={[props.fileName, props.noteId, props.file, props.page]}>
+    <FileDisplayContent {...props} />
+  </ErrorBoundary>
+);
 
 export default FileDisplay;

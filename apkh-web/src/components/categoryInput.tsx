@@ -4,13 +4,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import { FolderOpen, Plus } from "lucide-react";
 import { fieldClass } from "@/components/ui/Input";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n";
 
 /** Free-text input with suggestions from existing categories. */
 export function CategoryInput({
   value,
   onChange,
   options,
-  label = "Category",
+  label,
   placeholder,
 }: {
   value: string;
@@ -20,6 +21,7 @@ export function CategoryInput({
   placeholder?: string;
 }) {
   const id = useId();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -46,7 +48,7 @@ export function CategoryInput({
   return (
     <div ref={rootRef} className="relative flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium text-fg">
-        {label}
+        {label ?? t("common.category")}
       </label>
       <div className="relative">
         <FolderOpen className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-fg-subtle" />
@@ -107,7 +109,7 @@ export function CategoryInput({
               {item.create ? <Plus className="size-3.5" /> : <FolderOpen className="size-3.5" />}
               {item.create ? (
                 <span>
-                  Create <span className="font-semibold">“{item.value}”</span>
+                  {t("category.create")} <span className="font-semibold">“{item.value}”</span>
                 </span>
               ) : (
                 <span>{item.value}</span>

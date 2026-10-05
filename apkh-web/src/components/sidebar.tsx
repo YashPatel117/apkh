@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo } from "react";
 import {
+  BarChart3,
   ChevronsUpDown,
   CircleUserRound,
   Coins,
@@ -12,21 +12,29 @@ import {
   MessagesSquare,
   NotebookText,
   Plus,
+  ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
-import { INote } from "@/models/note";
+import { ICategoryCount } from "@/models/note";
 import { activeAi, builtinAiOf, IUser, timeUntil } from "@/models/user";
 import { LogoMark, Wordmark } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { cn } from "@/lib/cn";
+import { FolderTree } from "@/components/folderTree";
+import type { FolderFilter } from "@/hooks/useNotesFilter";
+import { useT } from "@/i18n";
 
 interface SidebarProps {
   user: IUser;
-  notes: INote[];
+  /** Every category in the library, with its note count (from the server) */
+  categories: ICategoryCount[];
+  totalNotes: number;
   sessionsCount: number;
   activeCategory: string | null;
   onCategory: (category: string | null) => void;
+  activeFolder: FolderFilter;
+  onFolder: (folder: FolderFilter) => void;
   onNewNote: () => void;
   onNavigate?: () => void;
   onLogout: () => void;
@@ -62,32 +70,44 @@ export function Avatar({ name, size = "md", className }: { name: string; size?: 
   );
 }
 
-export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory, onNewNote, onNavigate, onLogout }: SidebarProps) {
+export function Sidebar({
+  user,
+  categories,
+  totalNotes,
+  sessionsCount,
+  activeCategory,
+  onCategory,
+  activeFolder,
+  onFolder,
+  onNewNote,
+  onNavigate,
+  onLogout,
+}: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const ai = activeAi(user);
+  const t = useT();
   // Share of this session's built-in AI allowance used, as a whole percentage
   const usage = builtinAiOf(user);
   const used =
     usage && usage.sessionLimit > 0 ? Math.max(0, Math.min(100, Math.round((100 * usage.sessionTokens) / usage.sessionLimit))) : 0;
 
-  const categories = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const note of notes) {
-      const c = note.category?.trim();
-      if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [notes]);
-
   const nav = [
-    { href: "/notes", label: "Notes", Icon: NotebookText, count: notes.length },
-    { href: "/chat", label: "Chats", Icon: MessagesSquare, count: sessionsCount || undefined },
-    { href: "/profile", label: "Profile & AI", Icon: CircleUserRound },
+    { href: "/notes", label: t("nav.notes"), Icon: NotebookText, count: totalNotes },
+    { href: "/chat", label: t("nav.chats"), Icon: MessagesSquare, count: sessionsCount || undefined },
+    { href: "/analytics", label: t("nav.usage"), Icon: BarChart3 },
+    { href: "/profile", label: t("nav.profile"), Icon: CircleUserRound },
+    ...(user.isAdmin ? [{ href: "/admin", label: t("nav.admin"), Icon: ShieldCheck }] : []),
   ];
 
   const pickCategory = (category: string | null) => {
     onCategory(category);
+    if (pathname !== "/notes") router.push("/notes");
+    onNavigate?.();
+  };
+
+  const pickFolder = (folder: FolderFilter) => {
+    onFolder(folder);
     if (pathname !== "/notes") router.push("/notes");
     onNavigate?.();
   };
@@ -110,11 +130,11 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
           className="w-full"
           icon={<Plus className="size-4" />}
         >
-          New note
+          {t("nav.newNote")}
         </Button>
       </div>
 
-      <nav className="mt-5 space-y-0.5 px-3" aria-label="Main">
+      <nav className="mt-5 space-y-0.5 px-3" aria-label={t("nav.main")}>
         {nav.map(({ href, label, Icon, count }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
@@ -122,7 +142,10 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
               key={href}
               href={href}
               onClick={() => {
-                if (href === "/notes") onCategory(null);
+                if (href === "/notes") {
+                  onCategory(null);
+                  onFolder(null);
+                }
                 onNavigate?.();
               }}
               aria-current={active ? "page" : undefined}
@@ -141,12 +164,13 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
         })}
       </nav>
 
-      <div className="mt-6 min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-3">
+        <FolderTree activeFolder={pathname === "/notes" ? activeFolder : null} onFolder={pickFolder} />
         {categories.length > 0 && (
-          <>
-            <p className="px-3 pb-1.5 text-[0.68rem] font-semibold tracking-wider text-fg-subtle uppercase">Categories</p>
+          <div>
+            <p className="px-3 pb-1.5 text-[0.68rem] font-semibold tracking-wider text-fg-subtle uppercase">{t("nav.categories")}</p>
             <ul className="space-y-0.5">
-              {categories.map(([name, count]) => {
+              {categories.map(({ name, count }) => {
                 const active = activeCategory === name && pathname === "/notes";
                 return (
                   <li key={name}>
@@ -167,7 +191,7 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
                 );
               })}
             </ul>
-          </>
+          </div>
         )}
       </div>
 
@@ -186,8 +210,8 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
           <span className="min-w-0 flex-1">
             {!ai && (
               <>
-                <span className="block font-semibold">AI not configured</span>
-                <span className="block truncate opacity-80">Add an API key to ask AI</span>
+                <span className="block font-semibold">{t("nav.aiOff")}</span>
+                <span className="block truncate opacity-80">{t("nav.aiOffHint")}</span>
               </>
             )}
             {ai && (
@@ -201,7 +225,7 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
               </span>
             )}
             {ai?.kind === "key" && (
-              <span className="mt-1 inline-flex items-center gap-1 font-medium tabular-nums" title="Tokens used with this key">
+              <span className="mt-1 inline-flex items-center gap-1 font-medium tabular-nums" title={t("nav.keyTokens")}>
                 <Coins className="size-3" aria-hidden />
                 {ai.config.tokensUsed.toLocaleString()}
               </span>
@@ -211,7 +235,7 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
                 <span
                   className="block h-1.5 overflow-hidden rounded-full bg-line"
                   role="progressbar"
-                  aria-label="Built-in AI tokens used this session"
+                  aria-label={t("llm.builtinUsedLabel")}
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-valuenow={used}
@@ -222,7 +246,7 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
                   />
                 </span>
                 <span className="mt-1 block opacity-70">
-                  {usage.sessionResetsAt ? `Resets in ${timeUntil(usage.sessionResetsAt)}` : "Starts with your first question"}
+                  {usage.sessionResetsAt ? t("nav.resetsIn", { time: timeUntil(usage.sessionResetsAt) }) : t("nav.startsWithFirst")}
                 </span>
               </span>
             )}
@@ -254,7 +278,7 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
             <>
               <div className="px-3 py-2">
                 <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.68rem] font-bold tracking-wider text-accent-fg uppercase">
-                  {user.type} plan
+                  {t("nav.plan", { plan: user.type })}
                 </span>
               </div>
               <MenuItem
@@ -265,11 +289,11 @@ export function Sidebar({ user, notes, sessionsCount, activeCategory, onCategory
                   router.push("/profile");
                 }}
               >
-                Profile & AI settings
+                {t("nav.settings")}
               </MenuItem>
               <div className="my-1 h-px bg-line" />
               <MenuItem danger icon={<LogOut />} onClick={onLogout}>
-                Sign out
+                {t("shell.signOut")}
               </MenuItem>
             </>
           )}

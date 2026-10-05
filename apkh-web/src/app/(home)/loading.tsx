@@ -1,6 +1,11 @@
+"use client";
+
+import { useT } from "@/i18n";
+
 export default function HomeLoading() {
+  const t = useT();
   return (
-    <div className="flex h-dvh overflow-hidden" aria-busy="true" aria-label="Loading your workspace">
+    <div className="flex h-dvh overflow-hidden" aria-busy="true" aria-label={t("shell.loading")}>
       <aside className="hidden w-64 shrink-0 flex-col gap-3 border-r border-line bg-surface/80 p-4 lg:flex">
         <div className="flex items-center gap-2.5 pb-3">
           <div className="size-9 animate-pulse rounded-xl bg-surface-2" />

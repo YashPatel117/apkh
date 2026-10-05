@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { CodeInput, isCodeComplete } from "@/components/ui/CodeInput";
 import { useToast } from "@/components/ui/Toast";
+import { useT } from "@/i18n";
 
 const CODE_LENGTH = 8;
 
@@ -44,6 +45,7 @@ export default function UpgradeModal({
 }) {
   const dispatch = useAppDispatch();
   const toast = useToast();
+  const t = useT();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [redeeming, setRedeeming] = useState(false);
@@ -62,10 +64,10 @@ export default function UpgradeModal({
     try {
       const updatedUser = await redeemVoucher(code);
       dispatch(setUser({ ...user, ...updatedUser }));
-      toast("You're on Pro now. Enjoy the bigger allowance!", "success");
+      toast(t("upgrade.done"), "success");
       close();
     } catch (err) {
-      setError(getErrorMessage(err, "Couldn't redeem the code. Please try again."));
+      setError(getErrorMessage(err, t("upgrade.failed")));
     } finally {
       setRedeeming(false);
     }
@@ -79,28 +81,24 @@ export default function UpgradeModal({
       size="sm"
       title={
         <span className="flex items-center gap-2">
-          <Crown className="size-5 text-amber-500" /> Upgrade to Pro
+          <Crown className="size-5 text-amber-500" /> {t("upgrade.title")}
         </span>
       }
-      description="Redeem a Pro code to get more from the built-in AI."
+      description={t("upgrade.description")}
     >
       <div className="overflow-x-hidden overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
         <ul className="space-y-3">
           <Feature
             Icon={Sparkles}
-            title={
-              <>
-                <span className="tabular-nums">{pro.sessionTokens.toLocaleString()}</span> {BUILTIN_AI_LABEL} tokens per session
-              </>
-            }
+            title={t("upgrade.tokens", { tokens: pro.sessionTokens, name: BUILTIN_AI_LABEL })}
             detail={
               free
-                ? `${Math.round(pro.sessionTokens / free.sessionTokens)}× the Free plan's ${free.sessionTokens.toLocaleString()}, every ${pro.sessionHours} hours.`
-                : `Every ${pro.sessionHours} hours.`
+                ? t("upgrade.vsFree", { times: Math.round(pro.sessionTokens / free.sessionTokens), free: free.sessionTokens, hours: pro.sessionHours })
+                : t("upgrade.every", { hours: pro.sessionHours })
             }
           />
-          <Feature Icon={ListOrdered} title="Priority in the queue" detail="Your questions are answered first when the built-in AI is busy." />
-          <Feature Icon={KeyRound} title="Your own AI keys, with no limit" detail="Same as on Free: keys you add are never limited." />
+          <Feature Icon={ListOrdered} title={t("upgrade.priority")} detail={t("upgrade.priorityText")} />
+          <Feature Icon={KeyRound} title={t("plan.ownKeys")} detail={t("upgrade.keysText")} />
         </ul>
 
         <form
@@ -110,8 +108,8 @@ export default function UpgradeModal({
             void redeem();
           }}
         >
-          <p className="text-sm font-medium text-fg">Enter your Pro code</p>
-          <p className="mt-0.5 text-xs text-fg-subtle">8 letters and digits, like ABCD-2345. Each code works once.</p>
+          <p className="text-sm font-medium text-fg">{t("upgrade.enter")}</p>
+          <p className="mt-0.5 text-xs text-fg-subtle">{t("upgrade.format")}</p>
           <div className="mt-4">
             <CodeInput
               value={code}
@@ -133,10 +131,10 @@ export default function UpgradeModal({
           )}
           <div className="mt-5 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={close} disabled={redeeming}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={!complete} loading={redeeming}>
-              {redeeming ? "Redeeming…" : "Redeem code"}
+              {redeeming ? t("upgrade.redeeming") : t("upgrade.redeem")}
             </Button>
           </div>
         </form>

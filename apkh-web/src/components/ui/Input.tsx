@@ -3,6 +3,7 @@
 import { forwardRef, useId, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n";
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -21,6 +22,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const autoId = useId();
   const inputId = id ?? autoId;
   const [reveal, setReveal] = useState(false);
+  const t = useT();
   const isPassword = type === "password";
 
   return (
@@ -56,7 +58,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             type="button"
             onClick={() => setReveal((v) => !v)}
             className="absolute top-1/2 right-2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg"
-            aria-label={reveal ? "Hide password" : "Show password"}
+            aria-label={reveal ? t("common.hidePassword") : t("common.showPassword")}
           >
             {reveal ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>

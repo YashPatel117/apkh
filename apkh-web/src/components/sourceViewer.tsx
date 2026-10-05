@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import FileDisplay from "@/components/fileDisplay";
 import { SourceRef, sourceLocation } from "@/components/sources";
+import { useT } from "@/i18n";
 
 const SourceViewerContext = createContext<(source: SourceRef) => void>(() => {});
 
@@ -25,6 +26,7 @@ export function SourceViewerProvider({
 }) {
   const [source, setSource] = useState<SourceRef | null>(null);
   const close = useCallback(() => setSource(null), []);
+  const t = useT();
 
   return (
     <SourceViewerContext.Provider value={setSource}>
@@ -36,10 +38,10 @@ export function SourceViewerProvider({
         title={
           <span className="flex items-center gap-2">
             {source?.sourceType === "file" ? <Paperclip className="size-4 text-accent" /> : <FileText className="size-4 text-accent" />}
-            {source?.noteTitle || "Untitled note"}
+            {source?.noteTitle || t("ai.untitled")}
           </span>
         }
-        description={source ? sourceLocation(source) : undefined}
+        description={source ? sourceLocation(source, t) : undefined}
       >
         {source && (
           <SourceBody
@@ -57,12 +59,13 @@ export function SourceViewerProvider({
 
 function SourceBody({ source, onOpenNote }: { source: SourceRef; onOpenNote: (noteId: string) => void }) {
   const note = useAppSelector((state) => (source.noteId ? state.note.byId[source.noteId] : undefined));
+  const t = useT();
 
   if (!note) {
     return (
       <div className="px-5 pb-6 sm:px-6">
         <p className="flex items-center gap-2 text-sm font-medium text-fg">
-          <SearchX className="size-4 text-fg-subtle" /> This note no longer exists.
+          <SearchX className="size-4 text-fg-subtle" /> {t("source.gone")}
         </p>
         <Passage text={source.excerpt} />
       </div>
@@ -86,7 +89,7 @@ function SourceBody({ source, onOpenNote }: { source: SourceRef; onOpenNote: (no
       </div>
       <div className="flex shrink-0 justify-end border-t border-line px-5 py-3 sm:px-6">
         <Button size="sm" variant="secondary" onClick={() => onOpenNote(note.id)} icon={<PencilLine className="size-3.5" />}>
-          Open note
+          {t("source.openNote")}
         </Button>
       </div>
     </>
@@ -94,9 +97,10 @@ function SourceBody({ source, onOpenNote }: { source: SourceRef; onOpenNote: (no
 }
 
 function Passage({ text }: { text: string }) {
+  const t = useT();
   return (
     <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-400/20 dark:bg-amber-400/10">
-      <p className="text-[0.68rem] font-semibold tracking-wider text-amber-800 uppercase dark:text-amber-300">Matched passage</p>
+      <p className="text-[0.68rem] font-semibold tracking-wider text-amber-800 uppercase dark:text-amber-300">{t("source.matched")}</p>
       <p className="mt-1 line-clamp-6 text-sm leading-relaxed whitespace-pre-line text-fg">{text}</p>
     </div>
   );
@@ -106,6 +110,7 @@ function Passage({ text }: { text: string }) {
 function HighlightedNote({ html, passage }: { html: string; passage: string }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [found, setFound] = useState<boolean | null>(null);
+  const t = useT();
   const content = useMemo(() => normalizeNoteLinksInHtml(stripLegacyFileTokenStyles(html)), [html]);
   // A stable object: React re-applies innerHTML whenever this prop is a new object,
   // which would replace the text nodes and drop the highlight on every re-render.
@@ -125,10 +130,7 @@ function HighlightedNote({ html, passage }: { html: string; passage: string }) {
   return (
     <>
       {found === false && (
-        <p className="mb-3 text-xs text-fg-subtle">
-          The passage isn&apos;t in the current text — the note has changed since it was indexed, or the passage comes
-          from its link list.
-        </p>
+        <p className="mb-3 text-xs text-fg-subtle">{t("source.notInText")}</p>
       )}
       <div ref={contentRef} className="rich-content text-sm" dangerouslySetInnerHTML={innerHtml} />
     </>

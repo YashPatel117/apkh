@@ -13,6 +13,7 @@ import { AuthShell, FormAlert } from "@/components/authShell";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { GoogleSignIn } from "@/components/googleSignIn";
+import { useT } from "@/i18n";
 
 const MIN_PASSWORD = 6;
 
@@ -24,6 +25,7 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const dispatch = useAppDispatch();
+  const t = useT();
 
   useEffect(() => {
     if (getValidToken()) router.replace("/notes");
@@ -34,7 +36,7 @@ export default function RegisterPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password.length < MIN_PASSWORD) {
-      setError(`Password must be at least ${MIN_PASSWORD} characters.`);
+      setError(t("auth.tooShort", { count: MIN_PASSWORD }));
       return;
     }
     setIsLoading(true);
@@ -44,20 +46,20 @@ export default function RegisterPage() {
       dispatch(setToken(res.data));
       router.replace("/notes");
     } catch (err) {
-      setError(getErrorMessage(err, "Registration failed. Please check your details."));
+      setError(getErrorMessage(err, t("auth.registerFailed")));
       setIsLoading(false);
     }
   };
 
   return (
     <AuthShell
-      title="Create your account"
-      subtitle="Start building a second brain that answers back."
+      title={t("auth.registerTitle")}
+      subtitle={t("auth.registerText")}
       footer={
         <>
-          Already have an account?{" "}
+          {t("auth.haveAccount")}{" "}
           <Link href="/login" className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">
-            Sign in
+            {t("auth.signIn")}
           </Link>
         </>
       }
@@ -65,7 +67,7 @@ export default function RegisterPage() {
       <form onSubmit={handleRegister} className="flex flex-col gap-4">
         {error && <FormAlert>{error}</FormAlert>}
         <Input
-          label="Full name"
+          label={t("auth.fullName")}
           autoComplete="name"
           placeholder="Ada Lovelace"
           icon={<User />}
@@ -75,7 +77,7 @@ export default function RegisterPage() {
           autoFocus
         />
         <Input
-          label="Email"
+          label={t("auth.email")}
           type="email"
           autoComplete="email"
           placeholder="you@example.com"
@@ -85,18 +87,18 @@ export default function RegisterPage() {
           required
         />
         <Input
-          label="Password"
+          label={t("auth.password")}
           type="password"
           autoComplete="new-password"
-          placeholder="At least 6 characters"
+          placeholder={t("auth.atLeastSix", { count: MIN_PASSWORD })}
           icon={<Lock />}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          error={passwordTooShort ? `Use at least ${MIN_PASSWORD} characters.` : null}
+          error={passwordTooShort ? t("auth.useAtLeast", { count: MIN_PASSWORD }) : null}
           required
         />
         <Button type="submit" size="lg" loading={isLoading} className="mt-2 w-full">
-          {isLoading ? "Creating account…" : "Create account"}
+          {isLoading ? t("auth.creating") : t("auth.create")}
           {!isLoading && <ArrowRight className="size-4" />}
         </Button>
       </form>
