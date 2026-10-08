@@ -11,6 +11,7 @@ import {
   LogOut,
   MessagesSquare,
   NotebookText,
+  Orbit,
   Plus,
   ShieldCheck,
   TriangleAlert,
@@ -94,6 +95,7 @@ export function Sidebar({
 
   const nav = [
     { href: "/notes", label: t("nav.notes"), Icon: NotebookText, count: totalNotes },
+    { href: "/graph", label: t("nav.graph"), Icon: Orbit },
     { href: "/chat", label: t("nav.chats"), Icon: MessagesSquare, count: sessionsCount || undefined },
     { href: "/analytics", label: t("nav.usage"), Icon: BarChart3 },
     { href: "/profile", label: t("nav.profile"), Icon: CircleUserRound },

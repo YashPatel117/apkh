@@ -11,8 +11,8 @@ import { AuthShell, FormAlert } from "@/components/authShell";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useT } from "@/i18n";
-
-const MIN_PASSWORD = 6;
+import { PasswordChecklist } from "@/components/passwordChecklist";
+import { checkPassword, PASSWORD_MAX } from "@/lib/passwordRules";
 
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState("");
@@ -25,11 +25,16 @@ export default function ResetPasswordPage() {
   const t = useT();
 
   const mismatch = confirm.length > 0 && confirm !== password;
+  const passwordCheck = checkPassword(password, { email });
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < MIN_PASSWORD) {
-      setError(t("auth.tooShort", { count: MIN_PASSWORD }));
+    if (!passwordCheck.valid) {
+      setError(t("auth.passwordRulesFailed"));
+      return;
+    }
+    if (password === currentPassword) {
+      setError(t("auth.sameAsCurrent"));
       return;
     }
     if (password !== confirm) {
@@ -91,12 +96,16 @@ export default function ResetPasswordPage() {
           label={t("auth.newPassword")}
           type="password"
           autoComplete="new-password"
-          placeholder={t("auth.atLeastSix", { count: MIN_PASSWORD })}
+          placeholder={t("auth.passwordPlaceholder")}
           icon={<Lock />}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          maxLength={PASSWORD_MAX}
+          aria-describedby="reset-password-rules"
+          aria-invalid={password.length > 0 && !passwordCheck.valid}
           required
         />
+        <PasswordChecklist id="reset-password-rules" password={password} context={{ email }} />
         <Input
           label={t("auth.confirmPassword")}
           type="password"

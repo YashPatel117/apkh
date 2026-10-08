@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { GoogleSignIn } from "@/components/googleSignIn";
 import { useT } from "@/i18n";
+import { LEGACY_PASSWORD_MIN } from "@/lib/passwordRules";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -38,6 +39,12 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Only the length every account already meets: accounts made before the
+    // stricter rules (see passwordRules.ts) must still be able to sign in.
+    if (password.length < LEGACY_PASSWORD_MIN) {
+      setError(t("auth.tooShort", { count: LEGACY_PASSWORD_MIN }));
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
