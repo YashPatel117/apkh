@@ -1,9 +1,13 @@
 import { webApi } from "@/services/axios";
 
+/** notes:write adds notes; notes:read reads and searches them (AI assistants over MCP) */
+export type TokenScope = "notes:write" | "notes:read";
+
 export interface IntegrationToken {
   id: string;
   name: string;
   prefix: string;
+  scopes: TokenScope[];
   createdAt: string;
   lastUsedAt: string | null;
 }
@@ -26,9 +30,9 @@ export async function getIntegrations() {
 }
 
 /** The token is in the response this once; it can't be shown again. */
-export async function createIntegrationToken(name: string) {
-  const res = await webApi.post("/integrations/tokens", { name });
-  return res.data.data as { id: string; name: string; token: string };
+export async function createIntegrationToken(name: string, scopes: TokenScope[] = ["notes:write"]) {
+  const res = await webApi.post("/integrations/tokens", { name, scopes });
+  return res.data.data as { id: string; name: string; scopes: TokenScope[]; token: string };
 }
 
 export async function revokeIntegrationToken(id: string) {

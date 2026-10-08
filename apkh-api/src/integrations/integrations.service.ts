@@ -1,4 +1,7 @@
 import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -7,10 +10,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomBytes } from 'node:crypto';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import {
+  DEFAULT_TOKEN_SCOPES,
   IntegrationToken,
   IntegrationTokenDocument,
+  TokenScope,
 } from 'src/common/schema/integration-token';
+import { ServiceTokenService } from 'src/indexing/service-token.service';
 import { NotesService } from 'src/notes/notes.service';
+import { displayFileName } from 'src/notes/utils/markdown';
+import { SearchService } from 'src/search/search.service';
 import {
   ExternalFormat,
   sourceLine,
@@ -20,9 +28,25 @@ import {
 
 const TOKEN_PREFIX = 'apkh_';
 const MAX_TOKENS = 20;
+// Requests per token per minute, so a looping script or agent can't hammer the
+// API (and the user's embedding provider). Counted per API process.
+const TOKEN_RATE_LIMIT = 60;
+const RATE_WINDOW_MS = 60_000;
+// A note sent to an AI assistant is cut here, so one huge note can't flood its
+// context window.
+const NOTE_MARKDOWN_MAX_CHARS = 40_000;
 
 const hash = (secret: string) =>
   createHash('sha256').update(secret).digest('hex');
+
+const scopesOf = (token: { scopes?: TokenScope[] }) =>
+  token.scopes?.length ? token.scopes : DEFAULT_TOKEN_SCOPES;
+
+const MISSING_SCOPE: Record<TokenScope, string> = {
+  'notes:write': "This token can't add notes.",
+  'notes:read':
+    "This token can't read notes. Create one with “Can read and search notes” in Profile → Integrations.",
+};
 
 export interface ExternalNote {
   title?: string;
@@ -33,13 +57,31 @@ export interface ExternalNote {
   url?: string;
 }
 
-/** Ways to add notes from outside the app. */
+/** A passage found by MCP search (POST /integrations/mcp/search). */
+export interface McpPassage {
+  noteId: string;
+  noteTitle: string;
+  source: 'note' | 'file';
+  fileName?: string;
+  page?: number;
+  match: 'semantic' | 'keyword' | 'both';
+  /** Cosine similarity, for semantic matches */
+  similarity: number | null;
+  text: string;
+}
+
+/** Ways in from outside the app: adding notes, and (MCP) reading and searching them. */
 @Injectable()
 export class IntegrationsService {
+  /** Request times in the last minute, per token hash */
+  private readonly recentRequests = new Map<string, number[]>();
+
   constructor(
     @InjectModel(IntegrationToken.name)
     private tokenModel: Model<IntegrationTokenDocument>,
     private readonly notes: NotesService,
+    private readonly search: SearchService,
+    private readonly serviceTokens: ServiceTokenService,
   ) {}
 
   async list(userId: string) {
@@ -56,6 +98,7 @@ export class IntegrationsService {
           id: (t._id as Types.ObjectId).toHexString(),
           name: t.name,
           prefix: t.prefix,
+          scopes: scopesOf(t),
           createdAt: t.createdAt,
           lastUsedAt: t.lastUsedAt ?? null,
         })),
@@ -65,7 +108,11 @@ export class IntegrationsService {
   }
 
   /** A new token; the secret is returned now and never again. */
-  async createToken(userId: string, name: string) {
+  async createToken(
+    userId: string,
+    name: string,
+    scopes: TokenScope[] = DEFAULT_TOKEN_SCOPES,
+  ) {
     const count = await this.tokenModel.countDocuments({
       userId: new Types.ObjectId(userId),
       kind: 'token',
@@ -82,8 +129,14 @@ export class IntegrationsService {
       kind: 'token',
       secretHash: hash(secret),
       prefix: secret.slice(0, TOKEN_PREFIX.length + 6),
+      scopes: [...new Set(scopes)],
     });
-    return { id: String(doc._id), name: doc.name, token: secret };
+    return {
+      id: String(doc._id),
+      name: doc.name,
+      scopes: scopesOf(doc),
+      token: secret,
+    };
   }
 
   async revokeToken(userId: string, id: string) {
@@ -122,19 +175,30 @@ export class IntegrationsService {
     return { removed: true };
   }
 
-  /** The user a token belongs to (and marks it used), or throws 401. */
-  async userForToken(secret: string | undefined): Promise<string> {
+  /**
+   * The user a token belongs to (and marks it used). Throws 401 for an unknown
+   * or revoked token, 403 when it lacks `scope`, 429 over the rate limit.
+   */
+  async userForToken(
+    secret: string | undefined,
+    scope: TokenScope,
+  ): Promise<string> {
     if (!secret?.startsWith(TOKEN_PREFIX)) {
       throw new UnauthorizedException('A valid integration token is required.');
     }
+    const secretHash = hash(secret);
+    this.checkRateLimit(secretHash);
     const token = await this.tokenModel
       .findOneAndUpdate(
-        { secretHash: hash(secret), kind: 'token' },
+        { secretHash, kind: 'token' },
         { $set: { lastUsedAt: new Date() } },
       )
       .lean()
       .exec();
     if (!token) throw new UnauthorizedException('Unknown or revoked token.');
+    if (!scopesOf(token).includes(scope)) {
+      throw new ForbiddenException(MISSING_SCOPE[scope]);
+    }
     return String(token.userId);
   }
 
@@ -165,6 +229,99 @@ export class IntegrationsService {
       },
       [],
     );
+  }
+
+  // ── MCP: reading and searching (tokens with notes:read) ────────────────
+
+  /** Ranked passages for a query from the user's notes and attachments. */
+  async searchPassages(
+    userId: string,
+    query: string,
+    limit: number,
+    noteIds?: string[],
+  ) {
+    const result = await this.search.searchPassages(
+      this.serviceTokens.forUser(userId),
+      userId,
+      query,
+      { limit, noteIds },
+    );
+    return {
+      query,
+      mode: result.semantic ? ('hybrid' as const) : ('keyword' as const),
+      pendingNotes: result.pendingNotes,
+      ...(result.notice ? { notice: result.notice } : {}),
+      results: result.chunks.map(
+        (chunk): McpPassage => ({
+          noteId: chunk.noteId ?? '',
+          noteTitle: chunk.noteTitle,
+          source: chunk.sourceType === 'file' ? 'file' : 'note',
+          ...(chunk.sourceName
+            ? { fileName: displayFileName(chunk.sourceName) }
+            : {}),
+          ...(chunk.sourcePage ? { page: chunk.sourcePage } : {}),
+          match:
+            chunk.similarity !== null && chunk.keywordMatch
+              ? 'both'
+              : chunk.keywordMatch
+                ? 'keyword'
+                : 'semantic',
+          similarity:
+            chunk.similarity === null
+              ? null
+              : Math.round(chunk.similarity * 1000) / 1000,
+          text: chunk.text,
+        }),
+      ),
+    };
+  }
+
+  /** One note as Markdown (with front matter), cut at NOTE_MARKDOWN_MAX_CHARS. */
+  async getNote(userId: string, id: string) {
+    const { note, folderPath, files, markdown } = await this.notes
+      .noteMarkdown(userId, id)
+      .catch(() => {
+        throw new NotFoundException('Note not found.');
+      });
+    const truncated = markdown.length > NOTE_MARKDOWN_MAX_CHARS;
+    return {
+      id: String(note._id),
+      title: note.title,
+      category: note.category ?? '',
+      folder: folderPath ?? null,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      attachments: files.map(displayFileName),
+      markdown: truncated
+        ? markdown.slice(0, NOTE_MARKDOWN_MAX_CHARS)
+        : markdown,
+      truncated,
+      length: markdown.length,
+    };
+  }
+
+  private checkRateLimit(secretHash: string) {
+    const now = Date.now();
+    const recent = (this.recentRequests.get(secretHash) ?? []).filter(
+      (at) => now - at < RATE_WINDOW_MS,
+    );
+    if (recent.length >= TOKEN_RATE_LIMIT) {
+      this.recentRequests.set(secretHash, recent);
+      throw new HttpException(
+        `Too many requests: at most ${TOKEN_RATE_LIMIT} a minute per token. Try again shortly.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    recent.push(now);
+    this.recentRequests.set(secretHash, recent);
+    // Forget tokens that have gone quiet, so the map can't grow without bound.
+    if (this.recentRequests.size > 1000) {
+      for (const [key, times] of this.recentRequests) {
+        if (!times.some((at) => now - at < RATE_WINDOW_MS)) {
+          this.recentRequests.delete(key);
+        }
+      }
+    }
   }
 
   private inboxView(key: string) {

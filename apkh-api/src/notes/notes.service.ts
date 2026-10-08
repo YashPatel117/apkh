@@ -474,15 +474,7 @@ export class NotesService {
     format: 'md' | 'zip',
     res: Response,
   ) {
-    const note = await this.requireNote(userId, _id);
-    const [files, paths] = await Promise.all([
-      this.fileService.getNoteFiles(_id),
-      note.folderId ? this.folders.paths(userId) : null,
-    ]);
-    const markdown = noteToMarkdown({
-      ...note.toObject(),
-      folderPath: note.folderId ? paths?.get(String(note.folderId)) : undefined,
-    });
+    const { note, files, markdown } = await this.noteMarkdown(userId, _id);
     const name = safeFileName(note.title);
 
     if (format === 'md') {
@@ -494,14 +486,22 @@ export class NotesService {
 
     const archive = this.startZip(res, `${name}.zip`);
     archive.append(markdown, { name: `${name}.md` });
-    await this.appendAttachments(
-      archive,
-      token,
-      _id,
-      files?.files ?? [],
-      'attachments',
-    );
+    await this.appendAttachments(archive, token, _id, files, 'attachments');
     await archive.finalize();
+  }
+
+  /** A note as Markdown (with front matter), its folder path and stored file ids. */
+  async noteMarkdown(userId: string, _id: string) {
+    const note = await this.requireNote(userId, _id);
+    const [noteFiles, paths] = await Promise.all([
+      this.fileService.getNoteFiles(_id),
+      note.folderId ? this.folders.paths(userId) : null,
+    ]);
+    const folderPath = note.folderId
+      ? paths?.get(String(note.folderId))
+      : undefined;
+    const markdown = noteToMarkdown({ ...note.toObject(), folderPath });
+    return { note, folderPath, files: noteFiles?.files ?? [], markdown };
   }
 
   /**

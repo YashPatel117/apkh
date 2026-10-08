@@ -34,7 +34,7 @@ How the four services work together: what is stored, how notes are indexed and r
 
 **`apkh-storage`** stores attachment files per note. **The AI provider** (OpenRouter, Gemini, OpenAI or Anthropic) only ever receives text, images and prompts for one request; it never sees the database. **The built-in AI** works the same way but runs on the host's own server (Ollama by default), so nothing leaves it.
 
-**Auth between services.** Users log in to `apkh-api`, which issues a JWT. `apkh-storage` and `apkh-search` verify the same JWT with the shared `JWT_SECRET`. Background indexing jobs call the services with a short-lived token the API signs for the job's user, so no user token is stored with a job.
+**Auth between services.** Users log in to `apkh-api`, which issues a JWT. `apkh-storage` and `apkh-search` verify the same JWT with the shared `JWT_SECRET`. Background indexing jobs call the services with a short-lived token the API signs for the job's user, so no user token is stored with a job. **Integration tokens** (`apkh_…`, Profile → Integrations) are for callers outside the app: only their SHA-256 hash is stored, and their scopes say what they may do: `notes:write` adds notes (webhooks, the clipper), `notes:read` reads and searches them (`/integrations/mcp/*`, used by `apkh-mcp`). Each token gets at most 60 requests a minute.
 
 ## 2. Repository layout
 
@@ -59,6 +59,8 @@ apkh-web/src
   hooks/  context/  models/  lib/        shared logic, types and helpers
   services/        API clients (axios)
   store/           Redux slices
+
+apkh-mcp/src     MCP server (stdio) for AI assistants: search_notes, get_note, create_note over /integrations/*
 
 scripts/init-env.mjs   creates missing env files (used by setup-all.bat)
 ```

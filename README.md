@@ -114,6 +114,21 @@ Users without a key of their own share open-source models that run on your serve
 - **Free hosting.** Oracle Cloud's Always Free Arm VM (2 cores and 12 GB of RAM as of 2026) fits Ollama and all four services; use MongoDB Atlas's free tier for the database. With only 2 cores, `BUILTIN_AI_CHAT_MODEL=qwen3.5:2b` keeps answers at a usable speed. Install Ollama on the VM with `curl -fsSL https://ollama.com/install.sh | sh`, then pull the two models and set `OLLAMA_CONTEXT_LENGTH=8192` in the Ollama service environment.
 - **Another server.** `BUILTIN_AI_BASE_URL` can point at any OpenAI-compatible server (llama.cpp, vLLM, a hosted endpoint). Keep the embedding model Qwen3-Embedding-0.6B, because stored vectors are labelled with it.
 
+## AI assistants (MCP)
+
+`apkh-mcp/` is an MCP server, so Claude Code, Claude Desktop or Cursor can search, read and add your notes (`search_notes`, `get_note`, `create_note`). `setup-all.bat` builds it. To connect Claude Code:
+
+1. Create a token with **Can read and search notes** in Profile → Integrations (or run `npm run token:create -- you@example.com "Claude Code" --read` in `apkh-api/`).
+2. Register the server:
+
+   ```bash
+   claude mcp add apkh --scope user --env APKH_API_URL=http://localhost:3000 --env APKH_TOKEN=apkh_… -- node "<repo>/apkh-mcp/dist/index.js"
+   ```
+
+3. Ask *"search my notes for …"*.
+
+Details and other clients: [apkh-mcp/README.md](apkh-mcp/README.md).
+
 ## Debugging in VS Code
 
 `.vscode/launch.json` has a configuration per service and **🚀 Run All Services (Debug)** to start all four with the debugger attached (Run and Debug panel).

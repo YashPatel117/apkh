@@ -42,6 +42,6 @@ import { ServiceTokenService } from './service-token.service';
     ServiceTokenService,
     IndexingService,
   ],
-  exports: [IndexingService],
+  exports: [IndexingService, ServiceTokenService],
 })
 export class IndexingModule {}

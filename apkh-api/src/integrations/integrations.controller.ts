@@ -14,14 +14,23 @@ import {
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsIn,
+  IsInt,
+  IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUrl,
+  Max,
   MaxLength,
+  Min,
 } from 'class-validator';
+import { TOKEN_SCOPES, TokenScope } from 'src/common/schema/integration-token';
 import { JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
 import { ApiResponseDto } from 'src/common/dto/api/response';
 import { AuthGuard } from 'src/common/guard/auth.guard';
@@ -34,6 +43,35 @@ class CreateTokenDto {
   @IsNotEmpty()
   @MaxLength(60)
   name!: string;
+
+  /** Default: notes:write only */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsIn(TOKEN_SCOPES, { each: true })
+  scopes?: TokenScope[];
+}
+
+/** POST /integrations/mcp/search */
+class McpSearchDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4000)
+  query!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  limit?: number;
+
+  /** Only search these notes */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsMongoId({ each: true })
+  noteIds?: string[];
 }
 
 /** POST /integrations/notes — a note from a webhook, Zapier/Make or the clipper */
@@ -84,7 +122,7 @@ export class IntegrationsController {
     @Body() dto: CreateTokenDto,
   ) {
     return new ApiResponseDto().ok(
-      await this.integrations.createToken(userId, dto.name),
+      await this.integrations.createToken(userId, dto.name, dto.scopes),
     );
   }
 
@@ -124,13 +162,52 @@ export class IntegrationsController {
     @Headers('x-api-key') apiKey: string | undefined,
     @Body() dto: ExternalNoteDto,
   ) {
-    const secret = apiKey?.trim() || authorization?.replace(/^Bearer\s+/i, '');
-    const userId = await this.integrations.userForToken(secret);
+    const userId = await this.integrations.userForToken(
+      tokenFrom(authorization, apiKey),
+      'notes:write',
+    );
     const created = await this.integrations.addNote(userId, {
       ...dto,
       format: dto.format ?? 'html',
     });
     return { id: created.data.id, title: created.data.title };
+  }
+
+  /**
+   * MCP / AI assistants: the passages a query finds in the user's notes and
+   * attachments (hybrid search, no AI answer). Needs a notes:read token.
+   */
+  @Post('mcp/search')
+  @HttpCode(HttpStatus.OK)
+  async mcpSearch(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-api-key') apiKey: string | undefined,
+    @Body() dto: McpSearchDto,
+  ) {
+    const userId = await this.integrations.userForToken(
+      tokenFrom(authorization, apiKey),
+      'notes:read',
+    );
+    return this.integrations.searchPassages(
+      userId,
+      dto.query,
+      dto.limit ?? 8,
+      dto.noteIds,
+    );
+  }
+
+  /** MCP / AI assistants: one note as Markdown. Needs a notes:read token. */
+  @Get('mcp/notes/:id')
+  async mcpNote(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-api-key') apiKey: string | undefined,
+    @Param('id') id: string,
+  ) {
+    const userId = await this.integrations.userForToken(
+      tokenFrom(authorization, apiKey),
+      'notes:read',
+    );
+    return this.integrations.getNote(userId, id);
   }
 
   /**
@@ -173,4 +250,9 @@ export class IntegrationsController {
     });
     return { id: created.data.id };
   }
+}
+
+/** The integration token from `X-API-Key` or `Authorization: Bearer`. */
+function tokenFrom(authorization?: string, apiKey?: string) {
+  return apiKey?.trim() || authorization?.replace(/^Bearer\s+/i, '').trim();
 }

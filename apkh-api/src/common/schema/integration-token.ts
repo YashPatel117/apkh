@@ -3,9 +3,17 @@ import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type IntegrationTokenDocument = IntegrationToken & Document;
 
+/** What a token may do: add notes, and read / search them (AI assistants over MCP) */
+export const TOKEN_SCOPES = ['notes:write', 'notes:read'] as const;
+export type TokenScope = (typeof TOKEN_SCOPES)[number];
+
+/** Tokens made before scopes existed could only add notes, and still can only do that. */
+export const DEFAULT_TOKEN_SCOPES: TokenScope[] = ['notes:write'];
+
 /**
  * A personal access token for adding notes from outside the app (webhooks,
- * Zapier/Make, the browser clipper). Only its SHA-256 hash is stored; the
+ * Zapier/Make, the browser clipper) and, with `notes:read`, for reading and
+ * searching them (the MCP server). Only its SHA-256 hash is stored; the
  * token itself is shown once, when it is created.
  */
 @Schema({ timestamps: true, collection: 'integration_tokens' })
@@ -27,6 +35,10 @@ export class IntegrationToken {
 
   @Prop({ required: true, unique: true })
   secretHash: string;
+
+  /** Token only; unset on tokens made before scopes (DEFAULT_TOKEN_SCOPES) */
+  @Prop({ type: [String], enum: TOKEN_SCOPES, default: undefined })
+  scopes?: TokenScope[];
 
   /** The first characters, to tell tokens apart in the list */
   @Prop({ required: true })

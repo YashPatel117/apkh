@@ -15,7 +15,8 @@
     "lint": "eslint \"src/**/*.ts\" --fix",
     "search:vector-index": "node scripts/create-vector-index.mjs",
     "plan:set": "node scripts/set-plan.mjs",
-    "vouchers:create": "node scripts/create-vouchers.mjs"
+    "vouchers:create": "node scripts/create-vouchers.mjs",
+    "token:create": "node scripts/create-token.mjs"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

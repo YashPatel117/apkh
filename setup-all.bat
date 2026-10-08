@@ -1,7 +1,7 @@
 @echo off
 setlocal
 rem One-time setup: checks prerequisites, creates missing .env files and
-rem installs the dependencies of all four services, then downloads the built-in AI
+rem installs the dependencies of all four services and builds the MCP server, then downloads the built-in AI
 rem models if Ollama is installed. Safe to run again.
 
 set "ROOT=%~dp0"
@@ -37,6 +37,11 @@ echo [3/5] Installing Node dependencies...
 call :npm_install apkh-api || goto :error
 call :npm_install apkh-storage || goto :error
 call :npm_install apkh-web || goto :error
+call :npm_install apkh-mcp || goto :error
+echo   [apkh-mcp] build...
+pushd "%ROOT%apkh-mcp" || goto :error
+call npm run build --silent || (popd & goto :error)
+popd
 
 echo.
 echo [4/5] Setting up the Python environment for apkh-search...

@@ -57,6 +57,7 @@ export default function IntegrationsCard() {
   const [data, setData] = useState<Integrations | null>(null);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
+  const [canRead, setCanRead] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [inboxBusy, setInboxBusy] = useState(false);
@@ -74,9 +75,10 @@ export default function IntegrationsCard() {
     if (!name.trim()) return;
     setCreating(true);
     try {
-      const created = await createIntegrationToken(name.trim());
+      const created = await createIntegrationToken(name.trim(), canRead ? ["notes:write", "notes:read"] : ["notes:write"]);
       setNewToken(created.token);
       setName("");
+      setCanRead(false);
       load();
     } catch (err) {
       toast(getErrorMessage(err, t("int.createFailed")), "error");
@@ -161,6 +163,12 @@ export default function IntegrationsCard() {
               {t("int.create")}
             </Button>
           </form>
+          <label className="mt-2 flex items-start gap-2 text-xs text-fg-muted">
+            <input type="checkbox" checked={canRead} onChange={(e) => setCanRead(e.target.checked)} className="mt-0.5 accent-accent" />
+            <span>
+              <span className="font-medium text-fg">{t("int.canRead")}</span> {t("int.canReadHint")}
+            </span>
+          </label>
 
           {newToken && (
             <div className="mt-3 rounded-2xl bg-emerald-50 p-3 dark:bg-emerald-500/10">
@@ -177,7 +185,12 @@ export default function IntegrationsCard() {
               {data.tokens.map((token) => (
                 <li key={token.id} className="flex items-center gap-3 py-2 text-sm">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-fg">{token.name}</p>
+                    <p className="flex items-center gap-2 font-medium text-fg">
+                      <span className="truncate">{token.name}</span>
+                      {token.scopes?.includes("notes:read") && (
+                        <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.65rem] font-semibold text-accent">{t("int.readBadge")}</span>
+                      )}
+                    </p>
                     <p className="text-xs text-fg-subtle">
                       <span className="font-mono">{token.prefix}…</span> · {t("int.created", { date: dateFormat.format(new Date(token.createdAt)) })}
                       {" · "}
@@ -197,6 +210,7 @@ export default function IntegrationsCard() {
             <p className="mt-2">{t("int.howToText")}</p>
             <pre className="mt-2 overflow-x-auto rounded-xl bg-slate-900 p-3 text-[0.7rem] leading-relaxed text-slate-100">{example}</pre>
             <p className="mt-2">{t("int.clipperText")}</p>
+            <p className="mt-2">{t("int.mcpText")}</p>
           </details>
 
           {/* Email */}

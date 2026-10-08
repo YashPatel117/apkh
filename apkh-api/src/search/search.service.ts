@@ -84,6 +84,17 @@ interface AiSearchPlan {
   searchedFor?: string;
 }
 
+/** Passages for a query, without an answer (see SearchService.searchPassages). */
+export interface PassageSearchResult {
+  chunks: RetrievedChunk[];
+  /** The query was embedded; false means keyword matches only */
+  semantic: boolean;
+  /** Notes still being (re)indexed, which the search could not use yet */
+  pendingNotes: number;
+  /** Why the search fell back to keywords, when it wasn't by design */
+  notice?: string;
+}
+
 /** Streamed AI search (see SearchService.streamAiSearch). */
 export type AiSearchStreamEvent =
   | {
@@ -281,42 +292,20 @@ export class SearchService {
     });
 
     const space = embeddingSpaceFor(activeLlm.provider);
-    let vector: Float32Array | null = null;
-    if (space) {
-      try {
-        vector = await this.searchApi.embedQuery(
-          token,
-          activeLlm,
-          space,
-          query,
-        );
-      } catch (error) {
-        const needsCredit =
-          error instanceof SearchApiError && error.needsCredit;
-        // A bad key or model won't work for the answer either; report it.
-        if (
-          error instanceof SearchApiError &&
-          !error.retryable &&
-          !needsCredit
-        ) {
-          return { result: this.buildGuidanceResponse(query, error.message) };
-        }
-        // No credit for embeddings (OpenRouter) is expected: answer from keywords.
-        if (!needsCredit) {
-          this.logger.warn(
-            `Query embedding failed, answering from keyword matches: ${errorMessage(error)}`,
-          );
-        }
-      }
+    const embedded = await this.embedSearchQuery(token, activeLlm, query);
+    // A bad key or model won't work for the answer either; report it.
+    if ('error' in embedded) {
+      return { result: this.buildGuidanceResponse(query, embedded.error) };
     }
+    const { vector } = embedded;
 
     const pinned = Boolean(referencedNoteIds?.length);
     const thresholds = similarityThresholds(activeLlm.provider);
     const limit = pinned ? PINNED_NOTES_MAX_CHUNKS : topK;
     const retrieveFor = (text: string, queryVector: Float32Array | null) =>
-      this.retrieval.retrieve(userId, text, {
-        scope: { sourceTypes: ['note', 'file'], noteIds: referencedNoteIds },
+      this.retrieveNotePassages(userId, text, {
         limit,
+        noteIds: referencedNoteIds,
         vector: queryVector,
         space,
         minSimilarity: pinned ? null : thresholds.min,
@@ -375,6 +364,102 @@ export class SearchService {
       pendingNotes,
       searchedFor,
     };
+  }
+
+  /**
+   * The passages AI search would answer from, without the answer: for callers
+   * that are themselves a model (the MCP server). Never fails over AI: with no
+   * AI, or when the query can't be embedded, it searches by keywords. It skips
+   * the query rewrite and the built-in AI allowance (only the query embedding
+   * runs, and the caller can rephrase on its own).
+   */
+  async searchPassages(
+    token: string,
+    userId: string,
+    query: string,
+    options: { limit: number; noteIds?: string[] },
+  ): Promise<PassageSearchResult> {
+    const activeLlm = await this.usersService.getActiveLlmSettings(userId);
+    this.indexing.reconcileUser(userId).catch((err) => {
+      this.logger.error(`Index reconcile failed: ${errorMessage(err)}`);
+    });
+
+    let vector: Float32Array | null = null;
+    let notice: string | undefined;
+    if (activeLlm) {
+      const embedded = await this.embedSearchQuery(token, activeLlm, query);
+      if ('error' in embedded) notice = embedded.error;
+      else vector = embedded.vector;
+    }
+
+    const pinned = Boolean(options.noteIds?.length);
+    const [chunks, pendingNotes] = await Promise.all([
+      this.retrieveNotePassages(userId, query, {
+        limit: options.limit,
+        noteIds: options.noteIds,
+        vector,
+        space: activeLlm ? embeddingSpaceFor(activeLlm.provider) : null,
+        minSimilarity:
+          pinned || !activeLlm
+            ? null
+            : similarityThresholds(activeLlm.provider).min,
+      }),
+      this.indexing.countPendingNotes(userId),
+    ]);
+    return { chunks, semantic: vector !== null, pendingNotes, notice };
+  }
+
+  /**
+   * The query's vector in the active embedding space; null when there is none
+   * (Claude) or embedding failed in a way keywords can stand in for (rate
+   * limit, no OpenRouter credit). An error that would fail the answer too (a
+   * bad key or model) is returned as its message.
+   */
+  private async embedSearchQuery(
+    token: string,
+    llm: ActiveLlmSettings,
+    query: string,
+  ): Promise<{ vector: Float32Array | null } | { error: string }> {
+    const space = embeddingSpaceFor(llm.provider);
+    if (!space) return { vector: null };
+    try {
+      return {
+        vector: await this.searchApi.embedQuery(token, llm, space, query),
+      };
+    } catch (error) {
+      const needsCredit = error instanceof SearchApiError && error.needsCredit;
+      if (error instanceof SearchApiError && !error.retryable && !needsCredit) {
+        return { error: error.message };
+      }
+      // No credit for embeddings (OpenRouter) is expected: search by keywords.
+      if (!needsCredit) {
+        this.logger.warn(
+          `Query embedding failed, searching keyword matches: ${errorMessage(error)}`,
+        );
+      }
+      return { vector: null };
+    }
+  }
+
+  /** Hybrid retrieval over note text and attachments (not chat transcripts). */
+  private retrieveNotePassages(
+    userId: string,
+    text: string,
+    options: {
+      limit: number;
+      noteIds?: string[];
+      vector: Float32Array | null;
+      space: EmbeddingSpace | null;
+      minSimilarity: number | null;
+    },
+  ) {
+    return this.retrieval.retrieve(userId, text, {
+      scope: { sourceTypes: ['note', 'file'], noteIds: options.noteIds },
+      limit: options.limit,
+      vector: options.vector,
+      space: options.space,
+      minSimilarity: options.minSimilarity,
+    });
   }
 
   /** The result for an answer: its citations, and how confident it is. */
