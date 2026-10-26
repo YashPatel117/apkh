@@ -178,6 +178,7 @@ cd apkh-web && npm run dev
 
 ## Troubleshooting
 
+- **Attachments from before the GridFS move are missing**: files saved by older versions are still in `apkh-storage/uploads/`. Run `npm run migrate:uploads` in `apkh-storage/` (add `-- --dry-run` to see what it would copy). It copies them into GridFS, skips files already there and files of deleted notes, and leaves the folder untouched; delete it yourself once the app shows the files.
 - **"Invalid or expired token" / 401 between services**: `JWT_SECRET` differs between `apkh-api`, `apkh-storage` and `apkh-search`. Make it identical and restart them.
 - **`Atlas Vector Search failed …` in the API log**: the index is missing, not READY yet, or the database isn't Atlas. Search keeps working (similarity computed in the API) and Atlas is retried every 10 minutes. The API logs where each search ran (`Passage search: Atlas Vector Search (…ms)`).
 - **"The built-in AI isn't available right now"**: Ollama isn't running or a model isn't pulled. The search-service log names the model and URL it tried. Run `ollama list`, and `ollama pull qwen3.5:4b` / `ollama pull qwen3-embedding:0.6b` for anything missing.

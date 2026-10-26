@@ -28,7 +28,7 @@ The repo has no tests, so every merge is checked by hand.
 ### 1.3 Safety nets for user data
 - [ ] **Trash.** Deleting a note is permanent today, with its files, index and history. Soft-delete with a "Trash" view, restore, and a purge after 30 days.
 - [ ] **Backups.** A documented `mongodump` routine (attachments now live in MongoDB too), and a restore test.
-- [ ] **Migration for old attachments.** Files uploaded to `apkh-storage/uploads/` before the GridFS move are not visible any more; a one-off script that copies them into GridFS.
+- [x] **Migration for old attachments.** `npm run migrate:uploads` in `apkh-storage/` copies files saved in `uploads/` before the GridFS move into GridFS (idempotent; skips files of deleted notes).
 
 ### 1.4 Account basics
 - [ ] **Forgot password by email** (link or one-time code). Resetting needs the current password today, so a user who forgot it is locked out. Needs an email sender (SMTP / Resend), which also unlocks the digest in 2.4.
