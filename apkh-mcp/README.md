@@ -87,4 +87,4 @@ npm run inspect                                             # the MCP Inspector 
 - There is no delete or edit tool, and Claude Code asks before running `create_note`.
 - Note text is untrusted. A clipped web page or an email can contain text that reads like instructions. Results are wrapped in `<passage>` / `<note>` tags and labelled as data, but review what an assistant does after reading notes from untrusted sources.
 
-The API side (`/integrations/mcp/*`, token scopes) and the plan for GitHub and Jira tools are in [MCP_PLAN.md](../MCP_PLAN.md).
+The API side (`/integrations/mcp/*`, token scopes) is described in [ARCHITECTURE.md](../ARCHITECTURE.md).
