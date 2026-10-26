@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -10,6 +11,7 @@ import { UsersService } from 'src/users/users.service';
 import { ApiResponseDto } from 'src/common/dto/api/response';
 import { JwtService } from '@nestjs/jwt';
 import { comparePassword, hashPassword } from 'src/common/utils/hash';
+import { containsPersonalInfo } from 'src/common/utils/password-rules';
 
 @Injectable()
 export class AuthService {
@@ -56,6 +58,10 @@ export class AuthService {
   }
 
   async register(registerDto: RegisterDto) {
+    if (containsPersonalInfo(registerDto.password, registerDto))
+      throw new BadRequestException(
+        'Password must not contain your name or email',
+      );
     const user = await this.userService.findOneByEmailIgnoringCase(
       registerDto.email,
     );
@@ -83,6 +89,20 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('Email or current password is incorrect');
     }
+    // Checked only after the current password, so they reveal nothing to a stranger.
+    if (resetDto.password === resetDto.currentPassword)
+      throw new BadRequestException(
+        'New password must be different from the current one',
+      );
+    if (
+      containsPersonalInfo(resetDto.password, {
+        name: user.name,
+        email: resetDto.email,
+      })
+    )
+      throw new BadRequestException(
+        'Password must not contain your name or email',
+      );
 
     await this.userService.updatePassword(
       resetDto.email,

@@ -58,6 +58,7 @@
   --color-accent-fg: var(--accent-fg);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
 
   --animate-fade-in: fade-in 0.2s ease-out;
   --animate-scale-in: scale-in 0.18s ease-out;
@@ -243,4 +244,82 @@ mark.apkh-source {
   background-color: rgb(250 204 21 / 0.45);
   color: inherit;
   border-radius: 0.2rem;
+}
+
+/* ── Immersive layer (three.js scenes + anime.js choreography) ─────────────── */
+
+/* Scroll reveals start hidden; useReveal() animates them in. */
+[data-reveal] {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    opacity: 1 !important;
+  }
+}
+
+/* Cursor-following light on glass cards (vars set by useSpotlight). */
+.spotlight {
+  position: relative;
+  isolation: isolate;
+}
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s;
+  background: radial-gradient(
+    420px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in oklab, var(--accent) 16%, transparent),
+    transparent 65%
+  );
+}
+.spotlight::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  padding: 1px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in oklab, var(--accent) 70%, transparent),
+    transparent 70%
+  );
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.spotlight-group:hover .spotlight::before,
+.spotlight-group:hover .spotlight::after {
+  opacity: 1;
+}
+
+/* Glass that lets the star field glow through. */
+.glass {
+  background: color-mix(in oklab, var(--surface) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+}
+
+/* A label that hangs off a 3D point (Constellation view). Positioned by JS. */
+.star-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Text scanned by a light line (bento "reads your attachments"). */
+@keyframes scan {
+  0%, 100% { transform: translateY(-10%); opacity: 0; }
+  15%, 85% { opacity: 1; }
+  50% { transform: translateY(950%); }
+}
+.animate-scan {
+  animation: scan 3.2s ease-in-out infinite;
 }

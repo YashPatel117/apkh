@@ -29,6 +29,10 @@ import { ErrorBoundary } from "@/components/errorBoundary";
 import { CommandPalette, CommandPaletteActions } from "@/components/commandPalette";
 import { ShortcutsDialog } from "@/components/shortcutsDialog";
 import HomeLoading from "./loading";
+import { emitCosmos } from "@/lib/cosmosBus";
+
+// three.js stays out of the first bundle: the backdrop is decoration.
+const NeuralCosmos = dynamic(() => import("@/components/cosmos/NeuralCosmos").then((m) => m.NeuralCosmos), { ssr: false });
 
 const NoteEditor = dynamic(() => import("@/components/noteEditor"), {
   ssr: false,
@@ -88,7 +92,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // ── Search / AI ──────────────────────────────────────────────────────────
   const handleSearchChange = (value: string) => {
     // Results live on the notes page — take the user there as soon as they start typing.
-    if (!search.trim() && value.trim() && !value.trim().startsWith("@") && pathname !== "/notes") {
+    // The Constellation lights up matching stars in place, so it keeps the user there.
+    if (!search.trim() && value.trim() && !value.trim().startsWith("@") && pathname !== "/notes" && pathname !== "/graph") {
       router.push("/notes");
     }
     setSearch(value);
@@ -181,6 +186,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => window.removeEventListener("keydown", onKey);
   }, [focusSearch, newNote]);
 
+  // The star field behind the app "thinks" while an answer is being written.
+  useEffect(() => {
+    if (!aiSearch.isSearching) return;
+    emitCosmos("think-start");
+    return () => emitCosmos("think-end");
+  }, [aiSearch.isSearching]);
+
   const { ask: askAi, resetAnswer } = aiSearch;
   const paletteActions = useMemo<CommandPaletteActions>(
     () => ({
@@ -189,7 +201,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       search: (text) => {
         setSearch(text);
         resetAnswer();
-        if (pathname !== "/notes") router.push("/notes");
+        if (pathname !== "/notes" && pathname !== "/graph") router.push("/notes");
       },
       ask: (text) => {
         setSearch(text);
@@ -276,11 +288,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     >
       <SourceViewerProvider onOpenNote={openNote}>
         <div className="relative flex h-dvh overflow-hidden">
-          {/* Themed backdrop: soft orbs in light mode, neural network in dark */}
+          {/* Living backdrop: a slow star field that pulses while the AI thinks */}
           <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
-            <div className="absolute inset-0 bg-[url(/assets/light-background.jpg)] bg-cover bg-center opacity-75 dark:bg-[url(/assets/dark-background.jpg)] dark:opacity-50" />
-            {/* Light veil keeps text readable without washing the artwork out */}
-            <div className="absolute inset-0 bg-linear-to-b from-canvas/10 via-canvas/30 to-canvas/55 dark:from-canvas/20 dark:via-canvas/40 dark:to-canvas/65" />
+            <div className="absolute inset-0 bg-[radial-gradient(70%_55%_at_80%_0%,rgba(99,102,241,0.12),transparent),radial-gradient(50%_45%_at_0%_100%,rgba(245,158,11,0.07),transparent)] dark:bg-[radial-gradient(70%_55%_at_80%_0%,rgba(99,102,241,0.18),transparent),radial-gradient(50%_45%_at_0%_100%,rgba(245,158,11,0.06),transparent)]" />
+            {pathname !== "/graph" && <NeuralCosmos variant="field" className="absolute inset-0" />}
           </div>
 
           {/* Desktop sidebar */}

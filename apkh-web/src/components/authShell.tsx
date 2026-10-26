@@ -5,6 +5,8 @@ import { FileSearch, MessagesSquare, Sparkles } from "lucide-react";
 import { LogoWithText } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ui/theme";
 import { MessageKey, useT } from "@/i18n";
+import { NeuralCosmos } from "@/components/cosmos/NeuralCosmos";
+import { SplitReveal } from "@/components/motion/primitives";
 
 const highlights: { Icon: typeof Sparkles; title: MessageKey; text: MessageKey }[] = [
   { Icon: Sparkles, title: "auth.h1Title", text: "auth.h1Text" },
@@ -26,31 +28,35 @@ export function AuthShell({
   const t = useT();
   return (
     <main className="relative isolate min-h-dvh overflow-hidden">
-      <div
-        aria-hidden
-        className="absolute inset-0 -z-20 bg-[url(/assets/light-background.jpg)] bg-cover bg-center dark:bg-[url(/assets/dark-background.jpg)]"
-      />
-      <div className="absolute inset-0 -z-10 bg-white/20 dark:bg-slate-950/40" aria-hidden />
+      {/* The same mind as the landing page, sitting behind the pitch */}
+      <div aria-hidden className="absolute inset-0 -z-10">
+        <div className="absolute inset-0 bg-[radial-gradient(70%_60%_at_25%_45%,rgba(99,102,241,0.14),transparent),radial-gradient(50%_40%_at_90%_90%,rgba(245,158,11,0.08),transparent)] dark:bg-[radial-gradient(70%_60%_at_25%_45%,rgba(99,102,241,0.22),transparent)]" />
+        <NeuralCosmos className="absolute inset-0" offsetX={-2.2} />
+      </div>
 
-      <div className="absolute top-4 right-4 z-10 rounded-xl bg-surface/70 backdrop-blur">
+      <div className="glass absolute top-4 right-4 z-10 rounded-xl border border-line/60">
         <ThemeToggle />
       </div>
 
       <div className="mx-auto grid min-h-dvh max-w-6xl items-center gap-12 px-4 py-16 lg:grid-cols-[1.1fr_1fr] lg:px-8">
         <section className="hidden animate-rise lg:block">
-          <p className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/50 px-3 py-1 text-xs font-semibold text-indigo-700 backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-indigo-200">
+          <p className="glass inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-xs font-semibold text-fg-muted">
             <Sparkles className="size-3.5" /> {t("auth.badge")}
           </p>
-          <h2 className="mt-5 max-w-lg text-4xl leading-[1.1] font-bold tracking-tight text-slate-900 xl:text-5xl dark:text-white">
-            {t("auth.headline")}{" "}
-            <span className="bg-linear-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent dark:from-blue-400 dark:via-indigo-300 dark:to-violet-400">
+          <h2 className="mt-5 max-w-lg text-4xl leading-[1.05] font-bold tracking-tight text-slate-900 xl:text-5xl dark:text-white">
+            <SplitReveal text={t("auth.headline")} className="block" delay={120} />
+            <span className="block font-display font-normal italic bg-linear-to-r from-sky-500 via-indigo-500 to-amber-500 bg-clip-text text-transparent dark:from-sky-300 dark:via-violet-300 dark:to-amber-300">
               {t("auth.headlineAccent")}
             </span>
           </h2>
-          <ul className="mt-10 space-y-5">
+          <ul className="mt-10 space-y-3">
             {highlights.map(({ Icon, title, text }) => (
-              <li key={title} className="flex max-w-md items-start gap-4">
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/70 bg-white/60 text-indigo-600 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-indigo-300">
+              <li
+                key={title}
+                className="glass flex max-w-md animate-rise items-start gap-4 rounded-2xl border border-line/60 p-3"
+                style={{ animationDelay: `${500 + highlights.findIndex((h) => h.title === title) * 120}ms` }}
+              >
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-accent">
                   <Icon className="size-5" />
                 </span>
                 <span>
@@ -63,7 +69,7 @@ export function AuthShell({
         </section>
 
         <section className="mx-auto w-full max-w-md animate-rise">
-          <div className="rounded-3xl border border-white/70 bg-surface/85 p-6 shadow-2xl shadow-indigo-900/10 backdrop-blur-xl sm:p-8 dark:border-white/10">
+          <div className="rounded-3xl border border-line/70 bg-surface/85 p-6 shadow-2xl shadow-indigo-900/15 backdrop-blur-xl sm:p-8">
             <Link href="/" className="inline-flex" aria-label={t("auth.homeLink")}>
               <LogoWithText className="w-44" />
             </Link>

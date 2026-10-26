@@ -1,11 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNewPassword } from 'src/common/utils/password-rules';
 
 export class LoginDto {
   @ApiProperty({ example: 'yash@patel.com' })
   @IsEmail({}, { message: 'Email must be a valid email address' })
   email: string;
 
+  // Sign-in keeps the original minimum so accounts created before the
+  // stricter new-password rules (IsNewPassword) can still sign in.
   @ApiProperty({ example: '32342324' })
   @IsString({ message: 'Password must be a string' })
   @MinLength(6, { message: 'Password must be at least 6 characters' })
@@ -22,9 +25,9 @@ export class RegisterDto {
   @IsEmail({}, { message: 'Email must be a valid email address' })
   email: string;
 
-  @ApiProperty({ example: 'password123' })
+  @ApiProperty({ example: 'Tr1cky!Pass' })
   @IsString({ message: 'Password must be a string' })
-  @MinLength(6, { message: 'Password must be at least 6 characters' })
+  @IsNewPassword()
   password: string;
 }
 
@@ -45,8 +48,8 @@ export class ResetPasswordDto {
   @IsNotEmpty({ message: 'Current password is required' })
   currentPassword: string;
 
-  @ApiProperty({ example: 'newpassword123' })
+  @ApiProperty({ example: 'N3w!Passw0rd' })
   @IsString({ message: 'Password must be a string' })
-  @MinLength(6, { message: 'Password must be at least 6 characters' })
+  @IsNewPassword()
   password: string;
 }

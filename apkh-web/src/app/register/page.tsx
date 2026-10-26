@@ -13,9 +13,9 @@ import { AuthShell, FormAlert } from "@/components/authShell";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { GoogleSignIn } from "@/components/googleSignIn";
+import { PasswordChecklist } from "@/components/passwordChecklist";
+import { checkPassword, PASSWORD_MAX } from "@/lib/passwordRules";
 import { useT } from "@/i18n";
-
-const MIN_PASSWORD = 6;
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -31,12 +31,12 @@ export default function RegisterPage() {
     if (getValidToken()) router.replace("/notes");
   }, [router]);
 
-  const passwordTooShort = password.length > 0 && password.length < MIN_PASSWORD;
+  const passwordCheck = checkPassword(password, { name, email });
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < MIN_PASSWORD) {
-      setError(t("auth.tooShort", { count: MIN_PASSWORD }));
+    if (!passwordCheck.valid) {
+      setError(t("auth.passwordRulesFailed"));
       return;
     }
     setIsLoading(true);
@@ -90,13 +90,16 @@ export default function RegisterPage() {
           label={t("auth.password")}
           type="password"
           autoComplete="new-password"
-          placeholder={t("auth.atLeastSix", { count: MIN_PASSWORD })}
+          placeholder={t("auth.passwordPlaceholder")}
           icon={<Lock />}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          error={passwordTooShort ? t("auth.useAtLeast", { count: MIN_PASSWORD }) : null}
+          maxLength={PASSWORD_MAX}
+          aria-describedby="register-password-rules"
+          aria-invalid={password.length > 0 && !passwordCheck.valid}
           required
         />
+        <PasswordChecklist id="register-password-rules" password={password} context={{ name, email }} />
         <Button type="submit" size="lg" loading={isLoading} className="mt-2 w-full">
           {isLoading ? t("auth.creating") : t("auth.create")}
           {!isLoading && <ArrowRight className="size-4" />}
