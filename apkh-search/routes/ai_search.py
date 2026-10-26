@@ -28,7 +28,7 @@ from services.llm import (
     test_llm_connection,
 )
 from services.sse import event_stream
-from services.model_catalog import PROVIDERS, ModelListError, list_chat_models
+from services.model_catalog import KEYLESS_PROVIDERS, PROVIDERS, ModelListError, list_chat_models
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +266,7 @@ async def list_models(body: ListModelsRequest):
     """
     api_key = (body.api_key or body.apiKey or "").strip()
 
-    if not api_key or body.provider not in PROVIDERS:
+    if body.provider not in PROVIDERS or not (api_key or body.provider in KEYLESS_PROVIDERS):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"api_key and a provider ({', '.join(PROVIDERS)}) are required.",

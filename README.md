@@ -1,6 +1,6 @@
 # AI-Powered Personal Knowledge Hub
 
-A note-taking app with an AI layer: write rich notes with attachments, then ask questions and get answers grounded in your own notes, with numbered citations that jump to the exact passage or file page. It works without any AI key: a **built-in AI** (open-source models the server runs itself through Ollama) serves every user, within their plan: **Free** or **Pro**, which set a token allowance per session and a place in the queue. On either plan, users can add their own key (OpenRouter, Gemini, OpenAI or Claude) for faster, stronger models with no limit; OpenRouter's free models also cost nothing.
+A note-taking app with an AI layer: write rich notes with attachments, then ask questions and get answers grounded in your own notes, with numbered citations that jump to the exact passage or file page. It works without any AI key: a **built-in AI** (open-source models the server runs itself through Ollama) serves every user, within their plan: **Free** or **Pro**, which set a token allowance per session and a place in the queue. On either plan, users can add their own key (OpenRouter, Gemini, OpenAI or Claude) for faster, stronger models with no limit; OpenRouter's free models also cost nothing. If **Claude Code** is installed on the machine running the app, one click uses its login instead, with no key.
 
 | Service | Stack | Port | Role |
 |---|---|---|---|
@@ -92,6 +92,8 @@ Each service reads its own env file; the `.env.example` next to it documents eve
 | | `BUILTIN_AI_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | That server's name for Qwen3-Embedding-0.6B; don't change the model |
 | | `BUILTIN_AI_VISION`, `BUILTIN_AI_API_KEY` | on, none | `off` for a chat model that can't read images; a key only if the server needs one |
 | | `BUILTIN_AI_CHAT_SLOTS`, `BUILTIN_AI_EMBEDDING_SLOTS` | `1`, `1` | Calls run at once per model; the rest queue by plan. Raise only with a GPU |
+| | `CLAUDE_CODE` | on | `off` hides Claude Code even when the CLI is installed |
+| | `CLAUDE_CODE_PATH`, `CLAUDE_CODE_SLOTS`, `CLAUDE_CODE_TIMEOUT` | `claude` on PATH, `2`, `300` | Where the CLI is; calls at once; seconds before a call is stopped |
 | | `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` | tracing off | Optional LangSmith tracing |
 | `apkh-web/.env.local` | `NEXT_PUBLIC_API_URL` | localhost | Use your LAN IP to open the app from other devices |
 
@@ -113,6 +115,19 @@ Users without a key of their own share open-source models that run on your serve
 - **Hardware.** No GPU needed. Both models together take about 6 GB of RAM and run on a CPU. Expect roughly 4–10 words per second depending on the CPU (an Intel i5-8400 does about 4), so a typical answer takes 15–60 seconds, plus a few seconds to load the model after it has been idle. For more speed, set `BUILTIN_AI_CHAT_MODEL=qwen3.5:2b` (then `ollama pull qwen3.5:2b`); for many users at once, a GPU server (then raise `BUILTIN_AI_CHAT_SLOTS` and Ollama's `OLLAMA_NUM_PARALLEL` together).
 - **Free hosting.** Oracle Cloud's Always Free Arm VM (2 cores and 12 GB of RAM as of 2026) fits Ollama and all four services; use MongoDB Atlas's free tier for the database. With only 2 cores, `BUILTIN_AI_CHAT_MODEL=qwen3.5:2b` keeps answers at a usable speed. Install Ollama on the VM with `curl -fsSL https://ollama.com/install.sh | sh`, then pull the two models and set `OLLAMA_CONTEXT_LENGTH=8192` in the Ollama service environment.
 - **Another server.** `BUILTIN_AI_BASE_URL` can point at any OpenAI-compatible server (llama.cpp, vLLM, a hosted endpoint). Keep the embedding model Qwen3-Embedding-0.6B, because stored vectors are labelled with it.
+
+## Claude Code on this computer
+
+If you use [Claude Code](https://claude.com/claude-code), the app can answer with Claude through it, using your Claude subscription (or Console account) with no API key:
+
+1. Install Claude Code on the machine that runs `apkh-search`, and run `claude` once to log in.
+2. Restart `apkh-search`, then open **Profile > AI models**. A **Use Claude Code** button appears when the CLI is found and logged in; it tests and activates Claude Sonnet. To pick Opus or Haiku, use **Add key > Claude Code** instead and leave the token blank.
+
+Instead of the machine's login, a config can carry its own token: run `claude setup-token` (on any computer), and paste the token it prints into the **Token** field. An Anthropic API key (`sk-ant-api…`) works there too.
+
+How it works: `apkh-search` runs `claude -p` once per call, with no tools, MCP servers or settings, in an empty folder, so Claude only sees the prompt the app sends. Answers stream as usual and images are read for search. Like other Claude models, search matches keywords (Claude has no embedding model). Usage counts against your Claude plan's limits, not the built-in AI's allowance.
+
+This is meant for running the app for yourself. On a server other people use, everyone could use the machine's Claude login, so set `CLAUDE_CODE=off` in `apkh-search/.env` there.
 
 ## AI assistants (MCP)
 
@@ -168,6 +183,6 @@ cd apkh-web && npm run dev
 - **"The built-in AI isn't available right now"**: Ollama isn't running or a model isn't pulled. The search-service log names the model and URL it tried. Run `ollama list`, and `ollama pull qwen3.5:4b` / `ollama pull qwen3-embedding:0.6b` for anything missing.
 - **"The built-in AI is busy right now"**: a request waited in the queue longer than the API's timeout. Many users are asking at once for one CPU: switch to `qwen3.5:2b`, or add hardware. The search-service log shows `waited …s for a slot` lines when the queue gets long.
 - **Built-in AI summaries of long notes look cut off**: Ollama is using its default context window. Set `OLLAMA_CONTEXT_LENGTH=8192` and restart Ollama.
-- **Notes stay "Indexing" or "Failed"**: check the AI key in Profile (or that Ollama is running for the built-in AI), then use Profile > Search index > **Retry failed**. Claude keys index for keyword search only (Anthropic has no embedding model), and so do OpenRouter keys without credit (its embedding model is paid; the chat models are free).
+- **Notes stay "Indexing" or "Failed"**: check the AI key in Profile (or that Ollama is running for the built-in AI), then use Profile > Search index > **Retry failed**. Claude keys and Claude Code index for keyword search only (Anthropic has no embedding model), and so do OpenRouter keys without credit (its embedding model is paid; the chat models are free).
 - **Quota / rate-limit errors when testing a key**: the provider refused the request (e.g. a free tier without access to that model). Pick another model or enable billing with the provider.
 - **`start-all.bat` opens nothing**: run it from a terminal to see the message; without Windows Terminal it opens separate windows instead of tabs.

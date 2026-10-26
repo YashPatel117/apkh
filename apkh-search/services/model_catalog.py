@@ -12,9 +12,13 @@ import time
 
 import httpx
 
+from services import claude_code
+
 logger = logging.getLogger(__name__)
 
-PROVIDERS = ("openrouter", "gemini", "openai", "anthropic")
+PROVIDERS = ("openrouter", "gemini", "openai", "anthropic", "claude-code")
+# Providers that work without a key (Claude Code uses its own login).
+KEYLESS_PROVIDERS = ("claude-code",)
 REQUEST_TIMEOUT = 15.0
 
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -41,6 +45,11 @@ class ModelListError(Exception):
 
 async def list_chat_models(provider: str, api_key: str) -> list[dict[str, str]]:
     """Return [{id, label}] for the models the key can use, newest first."""
+    if provider == "claude-code":
+        try:
+            return await claude_code.list_models(api_key)
+        except claude_code.ClaudeCodeError as exc:
+            raise ModelListError(str(exc)) from exc
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         if provider == "openrouter":
             return await _list_openrouter(client)

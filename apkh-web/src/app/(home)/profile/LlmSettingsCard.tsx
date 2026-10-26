@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Link2, Pencil, Plus, PlugZap, Tag, Trash2 } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleAlert, Coins, ExternalLink, KeyRound, Link2, Pencil, Plus, PlugZap, Tag, Terminal, Trash2 } from "lucide-react";
 import { testLlmSettings, addLlmConfig, activateLlmConfig, deleteLlmConfig, listLlmModels, switchToBuiltinAi } from "@/services/authService";
 import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch } from "@/store/hook";
@@ -31,18 +31,24 @@ import { useT } from "@/i18n";
 // Models are not listed here: they are fetched live from the provider with the
 // user's key, so new releases appear and retired models disappear on their own.
 // OpenRouter lists its free models. The built-in AI needs no key, so it has a
-// row of its own instead of a place in this form.
-const PROVIDER_GROUPS: { id: Exclude<LlmProvider, "builtin">; label: string; docsUrl: string }[] = [
+// row of its own instead of a place in this form. Claude Code (the CLI on the
+// server machine) uses its own login, so its key is an optional token.
+const PROVIDER_GROUPS: { id: Exclude<LlmProvider, "builtin">; label: string; docsUrl: string; keyless?: boolean }[] = [
   { id: "openrouter", label: "OpenRouter", docsUrl: "https://openrouter.ai/keys" },
   { id: "gemini", label: "Google Gemini", docsUrl: "https://aistudio.google.com/app/apikey" },
   { id: "openai", label: "OpenAI", docsUrl: "https://platform.openai.com/api-keys" },
   { id: "anthropic", label: "Anthropic Claude", docsUrl: "https://console.anthropic.com/settings/keys" },
+  { id: "claude-code", label: "Claude Code", docsUrl: "https://docs.claude.com/en/docs/claude-code/setup", keyless: true },
 ];
 
 // "Connect OpenRouter" saves its key under this name, replacing it on a reconnect.
 const OPENROUTER_CONNECT_NAME = "OpenRouter";
 // Free models come and go and some are rate-limited; try a few before giving up.
 const OPENROUTER_MODELS_TO_TRY = 5;
+
+// "Use Claude Code" saves this config: the CLI's own login, the latest Sonnet.
+const CLAUDE_CODE_NAME = "Claude Code";
+const CLAUDE_CODE_MODEL = "claude-code:sonnet";
 
 // Shorter input is still being typed or pasted; don't query the provider yet.
 const MIN_KEY_LENGTH = 20;
@@ -259,6 +265,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const builtinAi = builtinAiOf(user);
   // Any saved OpenRouter key, connected or pasted, makes "Connect OpenRouter" redundant
   const hasOpenrouter = configs.some((c) => providerOfModel(c.llmModel) === "openrouter");
+  const hasClaudeCode = configs.some((c) => providerOfModel(c.llmModel) === "claude-code");
   const builtinAiActive =Boolean(builtinAi) && !configs.some((c) => c.isActive);
   const [showForm, setShowForm] = useState(configs.length === 0 && !builtinAi);
   const [pendingDelete, setPendingDelete] = useState<ILlmConfig | null>(null);
@@ -275,6 +282,9 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const [saving, setSaving] = useState(false);
   // "redirecting" to openrouter.ai, or "saving" its key on the way back
   const [connect, setConnect] = useState<"idle" | "redirecting" | "saving">("idle");
+  // Whether Claude Code is installed and logged in on the server, for the one-click button
+  const [claudeCodeReady, setClaudeCodeReady] = useState(false);
+  const [claudeCodeBusy, setClaudeCodeBusy] = useState(false);
 
   const trimmedKey = apiKey.trim();
   const group = PROVIDER_GROUPS.find((g) => g.id === providerId) ?? PROVIDER_GROUPS[0];
@@ -285,10 +295,12 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const editingKeyName = editing?.keyName;
   const useSavedKey = Boolean(editingKeyName) && !trimmedKey && savedProviderId !== undefined && group.id === savedProviderId;
 
+  const keyless = Boolean(group.keyless);
   const modelRequest = useMemo<ModelRequest | null>(() => {
     if (trimmedKey) return trimmedKey.length >= MIN_KEY_LENGTH ? { provider: providerId, apiKey: trimmedKey } : null;
-    return useSavedKey ? { provider: providerId, keyName: editingKeyName } : null;
-  }, [providerId, trimmedKey, useSavedKey, editingKeyName]);
+    if (useSavedKey) return { provider: providerId, keyName: editingKeyName };
+    return keyless ? { provider: providerId } : null;
+  }, [providerId, trimmedKey, useSavedKey, editingKeyName, keyless]);
 
   useEffect(() => {
     if (!modelRequest) return;
@@ -316,10 +328,10 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     modelsStatus === "ok" && editing !== null && providerId === savedProviderId && !models.some((m) => m.id === editing.llmModel);
 
   const activeModel = selectedModel;
-  const hasKey = Boolean(trimmedKey) || useSavedKey;
+  const hasKey = Boolean(trimmedKey) || useSavedKey || keyless;
   const canTest = keyName.trim().length > 0 && activeModel.length > 0 && hasKey;
   const canSave = testStatus === "ok" && canTest && !saving;
-  const keySource = trimmedKey ? { apiKey: trimmedKey } : { keyName: editingKeyName };
+  const keySource = trimmedKey ? { apiKey: trimmedKey } : useSavedKey ? { keyName: editingKeyName } : {};
 
   const resetTest = () => {
     setTestStatus("idle");
@@ -410,6 +422,35 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Offer "Use Claude Code" only when the server can run it right now.
+  useEffect(() => {
+    if (hasClaudeCode) return;
+    let cancelled = false;
+    listLlmModels({ provider: "claude-code" })
+      .then((res) => {
+        if (!cancelled) setClaudeCodeReady(res.ok);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [hasClaudeCode]);
+
+  async function handleUseClaudeCode() {
+    setClaudeCodeBusy(true);
+    try {
+      const test = await testLlmSettings({ model: CLAUDE_CODE_MODEL });
+      if (!test.ok) throw new Error(test.error ?? t("llm.ccFailed"));
+      const updatedUser = await addLlmConfig({ keyName: CLAUDE_CODE_NAME, model: CLAUDE_CODE_MODEL, setActive: true });
+      dispatch(setUser({ ...user, ...updatedUser }));
+      toast(t("llm.ccConnected", { model: CLAUDE_CODE_MODEL }), "success");
+    } catch (err) {
+      toast(getErrorMessage(err, t("llm.ccFailed")), "error");
+    } finally {
+      setClaudeCodeBusy(false);
+    }
+  }
+
   async function handleConnectOpenrouter() {
     setConnect("redirecting");
     try {
@@ -468,8 +509,20 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
             {builtinAi ? t("llm.introBuiltin") : t("llm.introKey")}
           </p>
         </div>
-        {(!hasOpenrouter || !showForm) && (
+        {(!hasOpenrouter || !showForm || (claudeCodeReady && !hasClaudeCode)) && (
           <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {claudeCodeReady && !hasClaudeCode && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void handleUseClaudeCode()}
+                loading={claudeCodeBusy}
+                icon={<Terminal className="size-3.5" />}
+                title={t("llm.ccButtonHint")}
+              >
+                {t("llm.useClaudeCode")}
+              </Button>
+            )}
             {!hasOpenrouter && (
               <Button
                 size="sm"
@@ -551,10 +604,10 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           </div>
 
           <Input
-            label={t("llm.apiKey")}
+            label={keyless ? t("llm.tokenOptional") : t("llm.apiKey")}
             type="password"
             icon={<KeyRound />}
-            placeholder={editing ? t("llm.keyPhKeep") : t("llm.keyPh")}
+            placeholder={useSavedKey ? t("llm.keyPhKeep") : keyless ? t("llm.ccKeyPh") : editing ? t("llm.keyPhKeep") : t("llm.keyPh")}
             autoComplete="off"
             value={apiKey}
             onChange={(e) => {
@@ -562,9 +615,18 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
               resetTest();
             }}
             hint={
-              <a href={group.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-                {t("llm.getKey", { provider: group.label })} <ExternalLink className="size-3" />
-              </a>
+              keyless ? (
+                <span>
+                  {t("llm.ccTokenHint")}{" "}
+                  <a href={group.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+                    {t("llm.ccSetup")} <ExternalLink className="size-3" />
+                  </a>
+                </span>
+              ) : (
+                <a href={group.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+                  {t("llm.getKey", { provider: group.label })} <ExternalLink className="size-3" />
+                </a>
+              )
             }
           />
 
@@ -608,7 +670,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
               </p>
             ) : modelsStatus === "ok" && models.length > 0 ? (
               <p className="text-xs text-fg-subtle">
-                {group.id === "openrouter" ? t("llm.freeList") : t("llm.liveList", { provider: group.label })}
+                {group.id === "openrouter" ? t("llm.freeList") : keyless ? t("llm.ccList") : t("llm.liveList", { provider: group.label })}
               </p>
             ) : null}
           </div>
@@ -616,6 +678,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
           {group.id === "openrouter" && (
             <p className="text-xs text-fg-subtle">{t("llm.orNote")}</p>
           )}
+          {keyless && <p className="text-xs text-fg-subtle">{t("llm.ccNote")}</p>}
 
           {testStatus === "ok" && (
             <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" role="status">

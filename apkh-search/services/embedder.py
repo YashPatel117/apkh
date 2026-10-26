@@ -90,7 +90,7 @@ def resolve_space(
     default_model = DEFAULT_EMBEDDING_MODELS.get(provider)
     if default_model is None:
         raise EmbeddingError(
-            "Anthropic models are not supported for semantic search embeddings. "
+            "Claude models have no embedding model for semantic search. "
             "Notes are matched by keyword instead.",
             400,
         )

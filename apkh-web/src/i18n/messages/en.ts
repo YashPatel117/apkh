@@ -422,6 +422,16 @@ const en = {
   "llm.removeBuiltin": "The {name} takes over.",
   "llm.removeOff": "AI features will be off until you add another key.",
   "llm.removeConfirm": "Remove",
+  "llm.useClaudeCode": "Use Claude Code",
+  "llm.ccButtonHint": "Claude Code is installed on this app's server: use its login, no key needed",
+  "llm.ccConnected": "Now using Claude Code ({model}).",
+  "llm.ccFailed": "Couldn't use Claude Code.",
+  "llm.tokenOptional": "Token (optional)",
+  "llm.ccKeyPh": "Leave blank to use Claude Code's own login",
+  "llm.ccTokenHint": "Or run claude setup-token and paste the token it prints.",
+  "llm.ccSetup": "Set up Claude Code",
+  "llm.ccList": "Claude Code uses the newest model of each family.",
+  "llm.ccNote": "Runs the Claude Code CLI installed where this app's server runs, with its login (a Claude subscription or Console account). Search matches keywords: Claude has no embedding model.",
 
   // Profile page
   "profile.stats": "Workspace stats",

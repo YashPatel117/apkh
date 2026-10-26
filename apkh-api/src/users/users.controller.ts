@@ -30,6 +30,7 @@ import {
   builtinAiEnabled,
   builtinAllowance,
   LLM_PROVIDERS,
+  isClaudeCodeModel,
   type LlmProvider,
 } from './users.service';
 import { planDetails, planOf } from './plans';
@@ -135,7 +136,11 @@ export class UsersController {
     @JwtTokenUserId() userId: string,
     @Body() body: TestLlmDto,
   ) {
-    const apiKey = await this.resolveApiKey(userId, body);
+    const apiKey = await this.resolveApiKey(
+      userId,
+      body,
+      isClaudeCodeModel(body.model),
+    );
     try {
       const res$ = this.httpService.post<{
         ok: boolean;
@@ -163,7 +168,11 @@ export class UsersController {
     @JwtTokenUserId() userId: string,
     @Body() body: ListLlmModelsDto,
   ) {
-    const apiKey = await this.resolveApiKey(userId, body);
+    const apiKey = await this.resolveApiKey(
+      userId,
+      body,
+      body.provider === 'claude-code',
+    );
     try {
       const res$ = this.httpService.post<{
         ok: boolean;
@@ -267,16 +276,21 @@ export class UsersController {
     }
   }
 
-  /** Use the key typed in the form, else the saved key of the named config */
+  /**
+   * Use the key typed in the form, else the saved key of the named config;
+   * none for a keyless provider (Claude Code then uses its own login).
+   */
   private async resolveApiKey(
     userId: string,
     source: LlmKeySourceDto,
+    keyless = false,
   ): Promise<string> {
     const apiKey = source.apiKey?.trim();
     if (apiKey) return apiKey;
     if (source.keyName) {
       return this.usersService.getLlmConfigApiKey(userId, source.keyName);
     }
+    if (keyless) return '';
     throw new BadRequestException('apiKey or keyName is required');
   }
 

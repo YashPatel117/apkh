@@ -6,6 +6,7 @@ Supported providers (detected by model name):
   - OpenRouter     : "author/model" ids (e.g. "qwen/qwen3.8-27b:free"); no native id has a "/"
   - Google Gemini  : model starts with "gemini-"
   - OpenAI         : model starts with "gpt-", "chatgpt-" or "o<N>" (o1, o3, o4-mini, ...)
+  - Claude Code    : "claude-code:<model>" (the Claude Code CLI on this machine; see claude_code.py)
   - Anthropic      : model starts with "claude-"
 """
 
@@ -21,7 +22,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-from services import builtin_ai
+from services import builtin_ai, claude_code
 from services.html_parser import parse_note_html
 from services.langsmith_config import build_langchain_config
 
@@ -128,9 +129,13 @@ def is_openrouter_model(model: str) -> bool:
 
 
 def has_credentials(api_key: str | None, model: str | None) -> bool:
-    """A model, plus the user's key unless it is the built-in model."""
+    """A model, plus the user's key unless it is the built-in model or Claude Code (its own login)."""
     resolved_model = (model or "").strip()
-    return bool(resolved_model) and (bool((api_key or "").strip()) or builtin_ai.is_builtin_model(resolved_model))
+    return bool(resolved_model) and (
+        bool((api_key or "").strip())
+        or builtin_ai.is_builtin_model(resolved_model)
+        or claude_code.is_claude_code_model(resolved_model)
+    )
 
 
 def detect_provider(model: str) -> str:
@@ -138,6 +143,8 @@ def detect_provider(model: str) -> str:
     normalized = model.lower()
     if builtin_ai.is_builtin_model(normalized):
         return "builtin"
+    if claude_code.is_claude_code_model(normalized):
+        return "claude-code"
     if is_openrouter_model(normalized):
         return "openrouter"
     if normalized.startswith("gemini"):
@@ -148,8 +155,8 @@ def detect_provider(model: str) -> str:
         return "anthropic"
     raise ValueError(
         f"Cannot detect provider for model '{model}'. "
-        "Use an OpenRouter 'author/model' id, or a model starting with 'gemini-', 'gpt-', "
-        "'chatgpt-', 'o<N>' or 'claude-'."
+        "Use an OpenRouter 'author/model' id, a 'claude-code:<model>' id, or a model starting "
+        "with 'gemini-', 'gpt-', 'chatgpt-', 'o<N>' or 'claude-'."
     )
 
 
@@ -181,6 +188,8 @@ def _raw_provider_error_message(exc: Exception) -> str:
     message = str(exc).strip()
     if not message:
         return exc.__class__.__name__
+    if isinstance(exc, claude_code.ClaudeCodeError):
+        return message
 
     lowered = message.lower()
     if (
@@ -229,6 +238,8 @@ def _failure_message(provider: str, model: str, exc: Exception, default: str) ->
     if provider == "builtin":
         builtin_ai.log_failure("chat", exc)
         return builtin_ai.UNAVAILABLE_MESSAGE
+    if isinstance(exc, claude_code.ClaudeCodeError):
+        return str(exc)
     if _is_model_unavailable(exc):
         return _model_unavailable_message(model)
     return default
@@ -239,6 +250,8 @@ def supports_vision(model: str) -> bool:
     normalized = model.strip().lower()
     if builtin_ai.is_builtin_model(normalized):
         return builtin_ai.reads_images()
+    if claude_code.is_claude_code_model(normalized):
+        return True
     return normalized != "gpt-4" and not normalized.startswith(_TEXT_ONLY_MODEL_PREFIXES)
 
 
@@ -255,6 +268,8 @@ def _chat_model(provider: str, api_key: str, model: str, temperature: float = 0.
             temperature=temperature,
             stream_usage=True,
         )
+    if provider == "claude-code":
+        return claude_code.ChatClaudeCode(model=model, token=api_key or "")
     if provider == "gemini":
         return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, temperature=temperature)
     if provider == "openai":

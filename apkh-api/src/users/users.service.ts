@@ -21,14 +21,30 @@ export type LlmProvider =
   | 'openrouter'
   | 'gemini'
   | 'openai'
-  | 'anthropic';
+  | 'anthropic'
+  | 'claude-code';
 /** Providers used with a user's own key (their models can be listed). */
 export const LLM_PROVIDERS: LlmProvider[] = [
   'openrouter',
   'gemini',
   'openai',
   'anthropic',
+  'claude-code',
 ];
+
+/**
+ * Claude Code: the `claude` CLI on the server machine (apkh-search runs it).
+ * It uses the CLI's own login, so a key is optional; one given is a token
+ * from `claude setup-token`.
+ */
+export const CLAUDE_CODE_PREFIX = 'claude-code';
+export function isClaudeCodeModel(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  return (
+    normalized === CLAUDE_CODE_PREFIX ||
+    normalized.startsWith(`${CLAUDE_CODE_PREFIX}:`)
+  );
+}
 
 /**
  * The built-in AI: open-source models the host runs (apkh-search picks them),
@@ -288,7 +304,8 @@ export class UsersService {
 
   /**
    * Add a new LLM config for a user. If keyName already exists, update it;
-   * an empty apiKey then keeps the saved key (used to switch models).
+   * an empty apiKey then keeps the saved key (used to switch models) as long
+   * as the provider stays the same. Claude Code needs no key.
    */
   async addLlmConfig(
     userId: string,
@@ -301,15 +318,28 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
 
     // Check if keyName already exists → update in place
+    const keyless = isClaudeCodeModel(model);
     const existing = user.llmConfigs.find((c) => c.keyName === keyName);
     if (existing) {
-      if (apiKey) existing.llmApiKey = this.encryption.encrypt(apiKey);
+      if (apiKey) {
+        existing.llmApiKey = this.encryption.encrypt(apiKey);
+      } else if (
+        this.detectProvider(existing.llmModel) !== this.detectProvider(model)
+      ) {
+        // Another provider's key would be sent to the new one.
+        if (!keyless) {
+          throw new BadRequestException(
+            'apiKey is required when changing the provider',
+          );
+        }
+        existing.llmApiKey = this.encryption.encrypt('');
+      }
       existing.llmModel = model;
-    } else if (apiKey) {
+    } else if (apiKey || keyless) {
       (user.llmConfigs as any[]).push({
         keyName,
         llmModel: model,
-        llmApiKey: this.encryption.encrypt(apiKey),
+        llmApiKey: this.encryption.encrypt(apiKey ?? ''),
         isActive: false,
         tokensUsed: 0,
         createdAt: new Date(),
@@ -477,6 +507,11 @@ export class UsersService {
 
   private detectProvider(model: string): LlmProvider {
     const normalized = model.toLowerCase();
+
+    // Before the "claude" check below: "claude-code:sonnet" is the local CLI
+    if (isClaudeCodeModel(normalized)) {
+      return 'claude-code';
+    }
 
     // OpenRouter ids are "author/model"; native Gemini, OpenAI and Claude ids never contain "/"
     if (normalized.includes('/')) {
