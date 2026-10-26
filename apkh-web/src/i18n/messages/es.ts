@@ -436,7 +436,7 @@ const es: Partial<Record<MessageKey, string>> = {
   "llm.ccTokenHint": "O ejecuta claude setup-token y pega el token que muestra.",
   "llm.ccSetup": "Configurar Claude Code",
   "llm.ccList": "Claude Code usa el modelo más reciente de cada familia.",
-  "llm.ccNote": "Ejecuta la CLI de Claude Code instalada donde corre el servidor de esta app, con su sesión (una suscripción de Claude o una cuenta de Console). La búsqueda usa palabras clave: Claude no tiene modelo de embeddings.",
+  "llm.ccNote": "Ejecuta la CLI de Claude Code instalada donde corre el servidor de esta app, con su sesión (una suscripción de Claude o una cuenta de Console). Claude no tiene modelo de embeddings, así que la búsqueda por significado usa el de la IA integrada de este servidor; sin ella, la búsqueda usa palabras clave.",
 
   "profile.stats": "Estadísticas del espacio",
   "profile.notes": "Notas",
@@ -447,7 +447,7 @@ const es: Partial<Record<MessageKey, string>> = {
   "profile.ready": "Listo para respuestas basadas en tus notas",
   "profile.using": "Usando {name} · {model}",
   "profile.keywordOnly": "Solo coincidencia de palabras clave",
-  "profile.keywordOnlyText": "{model} puede responder y resumir, pero Claude no tiene modelo de embeddings, así que las notas y los adjuntos se encuentran por palabras clave y no por significado. Usa la IA integrada o una clave de Gemini u OpenAI para la búsqueda semántica.",
+  "profile.keywordOnlyText": "{model} puede responder y resumir, pero Claude no tiene modelo de embeddings y este servidor no ejecuta la IA integrada que lo haría por él, así que las notas y los adjuntos se encuentran por palabras clave y no por significado. Usa una clave de Gemini u OpenAI para la búsqueda semántica.",
   "profile.aiOffText": "Añade una clave de API y prueba la conexión para activar las preguntas a la IA, los resúmenes y el chat.",
   "profile.sourceNotes": "{count} {count|nota disponible|notas disponibles} como fuente",
 

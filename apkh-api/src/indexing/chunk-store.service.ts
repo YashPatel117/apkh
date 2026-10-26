@@ -8,7 +8,10 @@ import {
 } from 'src/common/schema/chunk';
 import { sha256 } from 'src/common/utils/content-hash';
 import { toStoredVector } from 'src/common/utils/vector';
-import type { EmbeddingSpace } from 'src/search-api/embedding-space';
+import {
+  embeddingLlm,
+  type EmbeddingSpace,
+} from 'src/search-api/embedding-space';
 import {
   SearchApiClient,
   SearchApiError,
@@ -83,6 +86,11 @@ export class ChunkStoreService {
     tokensUsed: number;
     /** The key has no credit for embeddings: new passages are keyword-only */
     needsCredit: boolean;
+    /**
+     * The built-in AI, embedding for a provider without an embedding model
+     * (Claude), couldn't be reached: new passages are keyword-only for now.
+     */
+    embedderUnavailable: boolean;
   }> {
     const { token, llm, space, owner, title, pieces, existing } = params;
     const hashes = pieces.map((piece) => sha256(piece.text));
@@ -91,6 +99,7 @@ export class ChunkStoreService {
     let embedded = 0;
     let tokensUsed = 0;
     let needsCredit = false;
+    let embedderUnavailable = false;
     if (space) {
       for (const chunk of existing) {
         if (
@@ -120,17 +129,31 @@ export class ChunkStoreService {
         } catch (error) {
           // A key without credit for (paid) embeddings still gets keyword
           // search; the next edit or a rebuild embeds what is missing.
-          if (!(error instanceof SearchApiError && error.needsCredit)) {
+          if (error instanceof SearchApiError && error.needsCredit) {
+            needsCredit = true;
+          } else if (
+            error instanceof SearchApiError &&
+            embeddingLlm(llm, space) !== llm
+          ) {
+            // Claude's answers don't depend on the built-in AI, so its notes
+            // stay searchable by keyword while it is down.
+            embedderUnavailable = true;
+          } else {
             throw error;
           }
-          needsCredit = true;
         }
       }
     }
 
     if (!(await params.stillExists())) {
       await this.deleteFor(owner);
-      return { chunkCount: null, embedded, tokensUsed, needsCredit };
+      return {
+        chunkCount: null,
+        embedded,
+        tokensUsed,
+        needsCredit,
+        embedderUnavailable,
+      };
     }
 
     const docs = pieces.map((piece, i) => {
@@ -161,9 +184,21 @@ export class ChunkStoreService {
 
     if (!(await params.stillExists())) {
       await this.deleteFor(owner);
-      return { chunkCount: null, embedded, tokensUsed, needsCredit };
+      return {
+        chunkCount: null,
+        embedded,
+        tokensUsed,
+        needsCredit,
+        embedderUnavailable,
+      };
     }
-    return { chunkCount: docs.length, embedded, tokensUsed, needsCredit };
+    return {
+      chunkCount: docs.length,
+      embedded,
+      tokensUsed,
+      needsCredit,
+      embedderUnavailable,
+    };
   }
 
   async deleteFor(

@@ -6,7 +6,10 @@ import { Note, NoteDocument } from 'src/common/schema/note';
 import { sha256 } from 'src/common/utils/content-hash';
 import { errorMessage } from 'src/common/utils/http-error';
 import { FileService } from 'src/file/file.service';
-import { embeddingSpaceFor } from 'src/search-api/embedding-space';
+import {
+  embeddingLlm,
+  embeddingSpaceFor,
+} from 'src/search-api/embedding-space';
 import {
   ExtractedFile,
   SearchApiClient,
@@ -174,34 +177,48 @@ export class NoteIndexerService {
     if (stored.chunkCount === null) {
       return { kind: 'deleted' };
     }
-    tokensUsed += stored.tokensUsed;
-    // Indexing never counts toward the plan's session allowance.
-    this.usersService
-      .addTokenUsage(userId, tokensUsed, llm, {
-        interactive: false,
-        kind: 'index',
-      })
-      .catch((err) => {
-        this.logger.error(
-          `Failed to track indexing tokens: ${errorMessage(err)}`,
-        );
-      });
+    // Indexing never counts toward the plan's session allowance. Reading
+    // attachments is the user's model; embeddings may be the built-in AI's.
+    const embedder = space ? embeddingLlm(llm, space) : llm;
+    const usage =
+      embedder === llm
+        ? [{ llm, tokens: tokensUsed + stored.tokensUsed }]
+        : [
+            { llm, tokens: tokensUsed },
+            { llm: embedder, tokens: stored.tokensUsed },
+          ];
+    for (const { llm: by, tokens } of usage) {
+      this.usersService
+        .addTokenUsage(userId, tokens, by, {
+          interactive: false,
+          kind: 'index',
+        })
+        .catch((err) => {
+          this.logger.error(
+            `Failed to track indexing tokens: ${errorMessage(err)}`,
+          );
+        });
+    }
 
     this.logger.log(
       `Indexed note ${noteId.toHexString()}: ${stored.chunkCount} chunks, ${stored.embedded} embedded, ` +
         `${toExtract.length}/${files.length} attachment(s) read` +
         (stored.needsCredit
           ? ' (no credit for embeddings: keyword search only)'
-          : ''),
+          : stored.embedderUnavailable
+            ? ' (built-in AI unreachable for embeddings: keyword search for now)'
+            : ''),
     );
 
     const retryFiles = fileResults.some((f) => f.status === 'failed');
     return {
       kind: 'indexed',
       chunkCount: stored.chunkCount,
-      embeddingModel: space?.id ?? null,
-      // Without a hash the next run retries the failed attachments.
-      sourceHash: retryFiles ? '' : sourceHash,
+      // Not embedded yet: the next reconcile queues the note again.
+      embeddingModel: stored.embedderUnavailable ? null : (space?.id ?? null),
+      // Without a hash the next run retries the failed attachments (and the
+      // embeddings the built-in AI couldn't make).
+      sourceHash: retryFiles || stored.embedderUnavailable ? '' : sourceHash,
       files: fileResults,
       retryFiles,
     };

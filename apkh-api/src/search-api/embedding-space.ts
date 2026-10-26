@@ -1,4 +1,9 @@
-import type { LlmProvider } from 'src/users/users.service';
+import {
+  BUILTIN_MODEL_ID,
+  builtinAiEnabled,
+  type ActiveLlmSettings,
+  type LlmProvider,
+} from 'src/users/users.service';
 
 /**
  * An embedding model at a fixed size. Vectors are only comparable within one
@@ -37,17 +42,45 @@ const SPACES: Record<EmbeddingSpace['provider'], EmbeddingSpace> = {
 };
 
 /**
- * The space a provider's vectors live in, or null (Anthropic has no embedding
- * model). OpenRouter embeds with OpenAI's text-embedding-3-small, so its
- * vectors share OpenAI's space: switching between the two needs no reindex.
+ * The space a provider's vectors live in. OpenRouter embeds with OpenAI's
+ * text-embedding-3-small, so its vectors share OpenAI's space: switching
+ * between the two needs no reindex. Claude (a key or Claude Code) has no
+ * embedding model, so its notes are embedded by the built-in AI's model while
+ * Claude answers; with the built-in AI off they get keyword search only (null).
  */
 export function embeddingSpaceFor(
   provider: LlmProvider | null | undefined,
 ): EmbeddingSpace | null {
-  if (provider === 'openrouter') return SPACES.openai;
-  return provider === 'builtin' ||
-    provider === 'gemini' ||
-    provider === 'openai'
-    ? SPACES[provider]
-    : null;
+  switch (provider) {
+    case 'openrouter':
+      return SPACES.openai;
+    case 'builtin':
+    case 'gemini':
+    case 'openai':
+      return SPACES[provider];
+    case 'anthropic':
+    case 'claude-code':
+      return builtinAiEnabled() ? SPACES.builtin : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Who embeds for a user: their own provider, or the built-in AI when their
+ * space is the built-in one (Claude). Embedding calls and their token counts
+ * go to this, so built-in embeddings queue and count as the built-in AI's.
+ */
+export function embeddingLlm(
+  llm: ActiveLlmSettings,
+  space: EmbeddingSpace,
+): ActiveLlmSettings {
+  if (space.provider !== 'builtin' || llm.provider === 'builtin') return llm;
+  return {
+    keyName: 'Built-in AI',
+    apiKey: '',
+    model: BUILTIN_MODEL_ID,
+    provider: 'builtin',
+    plan: llm.plan,
+  };
 }

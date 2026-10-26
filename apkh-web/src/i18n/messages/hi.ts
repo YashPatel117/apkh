@@ -435,7 +435,7 @@ const hi: Partial<Record<MessageKey, string>> = {
   "llm.ccTokenHint": "या claude setup-token चलाएँ और उसका दिखाया टोकन पेस्ट करें।",
   "llm.ccSetup": "Claude Code सेट अप करें",
   "llm.ccList": "Claude Code हर फ़ैमिली का सबसे नया मॉडल इस्तेमाल करता है।",
-  "llm.ccNote": "इस ऐप के सर्वर वाली मशीन पर इंस्टॉल Claude Code CLI उसके लॉगिन (Claude सदस्यता या Console खाता) से चलता है। खोज कीवर्ड से होती है: Claude का कोई एम्बेडिंग मॉडल नहीं है।",
+  "llm.ccNote": "इस ऐप के सर्वर वाली मशीन पर इंस्टॉल Claude Code CLI उसके लॉगिन (Claude सदस्यता या Console खाता) से चलता है। Claude में एम्बेडिंग मॉडल नहीं है, इसलिए अर्थ से खोज इस सर्वर के बिल्ट-इन AI के एम्बेडिंग मॉडल से होती है; उसके बिना खोज कीवर्ड से होती है।",
 
   "profile.stats": "वर्कस्पेस आँकड़े",
   "profile.notes": "नोट",
@@ -446,7 +446,7 @@ const hi: Partial<Record<MessageKey, string>> = {
   "profile.ready": "आपके नोट पर आधारित जवाबों के लिए तैयार",
   "profile.using": "{name} · {model} इस्तेमाल हो रहा है",
   "profile.keywordOnly": "सिर्फ़ कीवर्ड मिलान",
-  "profile.keywordOnlyText": "{model} जवाब और सारांश दे सकता है, पर Claude में एम्बेडिंग मॉडल नहीं है, इसलिए नोट और अटैचमेंट अर्थ से नहीं, कीवर्ड से खोजे जाते हैं। अर्थ आधारित खोज के लिए बिल्ट-इन AI या Gemini/OpenAI कुंजी इस्तेमाल करें।",
+  "profile.keywordOnlyText": "{model} जवाब और सारांश दे सकता है, पर Claude में एम्बेडिंग मॉडल नहीं है और यह सर्वर बिल्ट-इन AI नहीं चलाता जो उसकी जगह एम्बेड करे, इसलिए नोट और अटैचमेंट अर्थ से नहीं, कीवर्ड से खोजे जाते हैं। अर्थ आधारित खोज के लिए Gemini/OpenAI कुंजी इस्तेमाल करें।",
   "profile.aiOffText": "AI से पूछें, सारांश और चैट चालू करने के लिए API कुंजी जोड़ें और कनेक्शन जाँचें।",
   "profile.sourceNotes": "स्रोत के रूप में {count} नोट उपलब्ध",
 

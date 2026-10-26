@@ -11,7 +11,10 @@ import {
 } from 'src/common/schema/chat-session';
 import { sha256 } from 'src/common/utils/content-hash';
 import { errorMessage } from 'src/common/utils/http-error';
-import { embeddingSpaceFor } from 'src/search-api/embedding-space';
+import {
+  embeddingLlm,
+  embeddingSpaceFor,
+} from 'src/search-api/embedding-space';
 import { SearchApiClient } from 'src/search-api/search-api.client';
 import { UsersService } from 'src/users/users.service';
 import { ChunkStoreService } from './chunk-store.service';
@@ -104,10 +107,15 @@ export class ChatIndexerService {
       return { kind: 'deleted' };
     }
     this.usersService
-      .addTokenUsage(userId, stored.tokensUsed, llm, {
-        interactive: false,
-        kind: 'index',
-      })
+      .addTokenUsage(
+        userId,
+        stored.tokensUsed,
+        space ? embeddingLlm(llm, space) : llm,
+        {
+          interactive: false,
+          kind: 'index',
+        },
+      )
       .catch((err) => {
         this.logger.error(
           `Failed to track indexing tokens: ${errorMessage(err)}`,
@@ -123,8 +131,9 @@ export class ChatIndexerService {
     return {
       kind: 'indexed',
       chunkCount: stored.chunkCount,
-      embeddingModel: space?.id ?? null,
-      sourceHash,
+      // Not embedded yet (built-in AI unreachable): the next reconcile retries.
+      embeddingModel: stored.embedderUnavailable ? null : (space?.id ?? null),
+      sourceHash: stored.embedderUnavailable ? '' : sourceHash,
       files: [],
       retryFiles: false,
     };

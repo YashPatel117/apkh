@@ -38,7 +38,10 @@ Not needed for now; every merge is checked by hand. Kept here for later.
 ## 2. Make it better
 
 ### 2.1 Search by meaning for everyone
-Claude keys, Claude Code and OpenRouter keys without credit only get keyword search, because their providers have no free embedding model. Embed their notes with the built-in AI's Qwen3-Embedding instead (it already runs locally), while answers still come from the user's chosen model. This is the biggest quality gain available, and Claude Code users are hit by the gap right now.
+- [x] **Claude keys and Claude Code** embed with the built-in AI's Qwen3-Embedding (keyword-only while it is down, embedded once it is back).
+- [ ] **OpenRouter keys without credit**: still keyword search; they would need to move to the built-in space, which re-embeds everything for users who do have credit.
+
+Claude keys, Claude Code and OpenRouter keys without credit only got keyword search, because their providers have no free embedding model. Embed their notes with the built-in AI's Qwen3-Embedding instead (it already runs locally), while answers still come from the user's chosen model. This is the biggest quality gain available, and Claude Code users are hit by the gap right now.
 
 **Done when:** a Claude Code user's search finds a note by meaning ("trip costs" → a note titled "Goa budget").
 

@@ -121,9 +121,11 @@ A user saves one or more AI configs in Profile. When the API needs AI it reads t
 | Gemini | `gemini-embedding-001@1536` | meaning + keyword |
 | OpenAI | `text-embedding-3-small@1536` | meaning + keyword |
 | OpenRouter | `text-embedding-3-small@1536` (OpenAI's model via OpenRouter, same space as OpenAI) | meaning + keyword; keyword only without credit |
-| Anthropic (Claude) | none: Anthropic has no embedding model | keyword only |
+| Anthropic (Claude), Claude Code | `qwen3-embedding-0.6b@1536`, embedded by the built-in AI (Anthropic has no embedding model) while Claude answers | meaning + keyword; keyword only with `BUILTIN_AI=off` |
 
 **OpenRouter without credit.** The chat models offered are free, but the embedding model is paid (about $0.02 per million tokens). When OpenRouter answers 402 (no credit), `apkh-search` returns 402 and the API falls back: indexing stores the new passages without vectors (keyword-searchable; only chunks that have a vector carry the space label), AI search and chat answer from keyword matches, and similar notes compare words. After adding credit, editing a note or Profile > Rebuild index embeds what is missing.
+
+**Claude borrows the built-in embedder.** `embeddingLlm()` (API) sends a Claude user's embedding calls to `apkh-search` as the built-in AI, so they queue by plan like built-in calls, and their tokens count as built-in indexing usage (never toward the session allowance). If the built-in AI can't be reached, indexing stores the passages without vectors instead of failing and leaves the job without a space and source hash, so the next reconcile embeds them once it is back; queries fall back to keyword matches meanwhile.
 
 Queries are embedded in the same space (for Gemini with the `RETRIEVAL_QUERY` task type, which pairs with `RETRIEVAL_DOCUMENT` for passages; for Qwen3-Embedding with its `Instruct: … Query:` prefix, which passages don't get). Vectors are L2-normalised. Qwen3-Embedding's 1024-dimension vectors are zero-padded to 1536 so one vector index serves every space; padding changes neither the norm nor any similarity.
 
@@ -168,7 +170,7 @@ A note with no text still gets one chunk, its title, so it can be found. Chat tr
 | Text edit | only passages whose text changed are embedded |
 | Attachment added / removed | only that file is read / its chunks are dropped |
 | Provider switched | vectors rebuilt from stored text; no attachment is read again |
-| Switched to Claude | nothing: stored chunks already serve keyword search |
+| Switched to Claude | vectors rebuilt in the built-in AI's space (nothing, with the built-in AI off) |
 
 Passages are split by size, so an edit near the start of a long note can shift later boundaries and re-embed those passages; attachments are never re-read for that. Attachments with nothing readable (`empty`, `unsupported`, `missing`) aren't downloaded again unless the index is rebuilt; failed ones retry automatically.
 

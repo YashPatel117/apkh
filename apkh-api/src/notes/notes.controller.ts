@@ -184,7 +184,7 @@ export class NotesController {
   @Post('reindex')
   @HttpCode(HttpStatus.ACCEPTED)
   async reindexAll(@JwtTokenUserId() userId: string, @Body() dto: ReindexDto) {
-    await this.indexing.reindexAll(userId, { force: dto.force });
+    await this.indexing.reindexAll(userId, { force: dto?.force });
     return this.indexing.getStatus(userId);
   }
 
@@ -264,7 +264,7 @@ export class NotesController {
     @Param('id') id: string,
     @Body() dto: ReindexDto,
   ) {
-    return this.notesService.reindex(userId, id, dto.force);
+    return this.notesService.reindex(userId, id, dto?.force);
   }
 
   /** EXPORT one note: ?format=md (default) or zip (with attachments) */

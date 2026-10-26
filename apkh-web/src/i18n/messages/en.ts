@@ -455,7 +455,7 @@ const en = {
   "llm.ccTokenHint": "Or run claude setup-token and paste the token it prints.",
   "llm.ccSetup": "Set up Claude Code",
   "llm.ccList": "Claude Code uses the newest model of each family.",
-  "llm.ccNote": "Runs the Claude Code CLI installed where this app's server runs, with its login (a Claude subscription or Console account). Search matches keywords: Claude has no embedding model.",
+  "llm.ccNote": "Runs the Claude Code CLI installed where this app's server runs, with its login (a Claude subscription or Console account). Claude has no embedding model, so search by meaning uses the built-in AI's embedding model on this server; without it, search matches keywords.",
 
   // Profile page
   "profile.stats": "Workspace stats",
@@ -467,7 +467,7 @@ const en = {
   "profile.ready": "Ready for grounded answers",
   "profile.using": "Using {name} · {model}",
   "profile.keywordOnly": "Keyword matching only",
-  "profile.keywordOnlyText": "{model} can answer and summarize, but Claude has no embedding model, so notes and attachments are found by keywords rather than meaning. Use the built-in AI or a Gemini or OpenAI key for semantic search.",
+  "profile.keywordOnlyText": "{model} can answer and summarize, but Claude has no embedding model and this server doesn't run the built-in AI that would embed for it, so notes and attachments are found by keywords rather than meaning. Use a Gemini or OpenAI key for semantic search.",
   "profile.aiOffText": "Add an API key and test the connection to enable Ask AI, summaries and chat.",
   "profile.sourceNotes": "{count} {count|note|notes} available as source material",
 
@@ -501,7 +501,7 @@ const en = {
   // Profile: search index
   "indexCard.title": "Search index",
   "indexCard.semantic": "Notes and attachments are indexed by meaning and by keyword.",
-  "indexCard.keyword": "Notes and attachments are indexed by keyword (your active model has no embedding model).",
+  "indexCard.keyword": "Notes and attachments are indexed by keyword (no embedding model is available for your active model).",
   "indexCard.searchable": "Searchable",
   "indexCard.failed": "Failed",
   "indexCard.problems": "{count} {count|note has|notes have} attachments that couldn't be fully read — hover the badge on the note for details.",

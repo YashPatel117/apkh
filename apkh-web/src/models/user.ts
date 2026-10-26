@@ -14,11 +14,14 @@ export function providerOfModel(model: string): LlmProvider | null {
 }
 
 /**
- * Only these providers have an embedding model, which semantic search needs.
- * OpenRouter's is paid: a key without credit falls back to keyword search.
+ * Whether notes are searched by meaning with this model. OpenRouter, Gemini
+ * and OpenAI embed with their own models (OpenRouter's is paid: a key without
+ * credit falls back to keyword search). Claude has none, so its notes are
+ * embedded by the server's built-in AI, when the server runs one.
  */
-export function supportsSemanticSearch(model: string) {
+export function supportsSemanticSearch(model: string, serverHasBuiltinAi: boolean) {
   const provider = providerOfModel(model);
+  if (provider === "anthropic" || provider === "claude-code") return serverHasBuiltinAi;
   return provider === "openrouter" || provider === "gemini" || provider === "openai";
 }
 

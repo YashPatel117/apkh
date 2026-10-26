@@ -126,7 +126,7 @@ If you use [Claude Code](https://claude.com/claude-code), the app can answer wit
 
 Instead of the machine's login, a config can carry its own token: run `claude setup-token` (on any computer), and paste the token it prints into the **Token** field. An Anthropic API key (`sk-ant-api…`) works there too.
 
-How it works: `apkh-search` runs `claude -p` once per call, with no tools, MCP servers or settings, in an empty folder, so Claude only sees the prompt the app sends. Answers stream as usual and images are read for search. Like other Claude models, search matches keywords (Claude has no embedding model). Usage counts against your Claude plan's limits, not the built-in AI's allowance.
+How it works: `apkh-search` runs `claude -p` once per call, with no tools, MCP servers or settings, in an empty folder, so Claude only sees the prompt the app sends. Answers stream as usual and images are read for search. Claude has no embedding model, so notes are embedded for search by meaning with the built-in AI's Qwen3-Embedding (when the built-in AI is on; otherwise search matches keywords). Usage counts against your Claude plan's limits, not the built-in AI's allowance.
 
 This is meant for running the app for yourself. On a server other people use, everyone could use the machine's Claude login, so set `CLAUDE_CODE=off` in `apkh-search/.env` there.
 
@@ -185,6 +185,6 @@ cd apkh-web && npm run dev
 - **"The built-in AI isn't available right now"**: Ollama isn't running or a model isn't pulled. The search-service log names the model and URL it tried. Run `ollama list`, and `ollama pull qwen3.5:4b` / `ollama pull qwen3-embedding:0.6b` for anything missing.
 - **"The built-in AI is busy right now"**: a request waited in the queue longer than the API's timeout. Many users are asking at once for one CPU: switch to `qwen3.5:2b`, or add hardware. The search-service log shows `waited …s for a slot` lines when the queue gets long.
 - **Built-in AI summaries of long notes look cut off**: Ollama is using its default context window. Set `OLLAMA_CONTEXT_LENGTH=8192` and restart Ollama.
-- **Notes stay "Indexing" or "Failed"**: check the AI key in Profile (or that Ollama is running for the built-in AI), then use Profile > Search index > **Retry failed**. Claude keys and Claude Code index for keyword search only (Anthropic has no embedding model), and so do OpenRouter keys without credit (its embedding model is paid; the chat models are free).
+- **Notes stay "Indexing" or "Failed"**: check the AI key in Profile (or that Ollama is running for the built-in AI), then use Profile > Search index > **Retry failed**. Claude keys and Claude Code embed with the built-in AI (Anthropic has no embedding model), so with `BUILTIN_AI=off` or Ollama down they index for keyword search only, and so do OpenRouter keys without credit (its embedding model is paid; the chat models are free).
 - **Quota / rate-limit errors when testing a key**: the provider refused the request (e.g. a free tier without access to that model). Pick another model or enable billing with the provider.
 - **`start-all.bat` opens nothing**: run it from a terminal to see the message; without Windows Terminal it opens separate windows instead of tabs.

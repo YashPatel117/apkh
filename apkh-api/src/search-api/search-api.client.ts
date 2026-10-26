@@ -11,7 +11,7 @@ import { readSseJson } from 'src/common/utils/sse';
 import { decodeVector } from 'src/common/utils/vector';
 import { queuePriority } from 'src/users/plans';
 import type { ActiveLlmSettings } from 'src/users/users.service';
-import type { EmbeddingSpace } from './embedding-space';
+import { embeddingLlm, type EmbeddingSpace } from './embedding-space';
 
 /** A failed call to apkh-search. `status` is null when it couldn't be reached. */
 export class SearchApiError extends Error {
@@ -143,10 +143,11 @@ export class SearchApiClient {
 
   async embed(
     token: string,
-    llm: ActiveLlmSettings,
+    activeLlm: ActiveLlmSettings,
     space: EmbeddingSpace,
     texts: string[],
   ): Promise<{ vectors: Float32Array[]; tokensUsed: number }> {
+    const llm = embeddingLlm(activeLlm, space);
     const vectors: Float32Array[] = [];
     let tokensUsed = 0;
     // apkh-search caps texts per request; large attachments go in batches.
@@ -172,10 +173,11 @@ export class SearchApiClient {
 
   async embedQuery(
     token: string,
-    llm: ActiveLlmSettings,
+    activeLlm: ActiveLlmSettings,
     space: EmbeddingSpace,
     query: string,
   ): Promise<Float32Array> {
+    const llm = embeddingLlm(activeLlm, space);
     const data = await this.post<{ embedding: number[] }>(
       '/ai-search/embed-query',
       {
