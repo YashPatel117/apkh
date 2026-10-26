@@ -26,7 +26,7 @@ Not needed for now; every merge is checked by hand. Kept here for later.
 - [ ] GitHub Actions: lint + type-check + tests for each package on every push and PR
 
 ### 1.3 Safety nets for user data
-- [ ] **Trash.** Deleting a note is permanent today, with its files, index and history. Soft-delete with a "Trash" view, restore, and a purge after 30 days.
+- [x] **Trash.** Deleting moves a note to Trash (sidebar and command palette): restore it, delete it for good, or empty the trash; notes are purged with their files and history after `TRASH_RETENTION_DAYS` (30).
 - [ ] **Backups.** A documented `mongodump` routine (attachments now live in MongoDB too), and a restore test.
 - [x] **Migration for old attachments.** `npm run migrate:uploads` in `apkh-storage/` copies files saved in `uploads/` before the GridFS move into GridFS (idempotent; skips files of deleted notes).
 

@@ -31,6 +31,7 @@ import { errorMessage, toHttpException } from 'src/common/utils/http-error';
 import { IndexingService } from 'src/indexing/indexing.service';
 import { FoldersService } from 'src/folders/folders.service';
 import { RealtimeService } from 'src/realtime/realtime.service';
+import { TrashService } from './trash.service';
 
 export interface NotesPageQuery {
   limit: number;
@@ -67,6 +68,7 @@ export class NotesService {
     private readonly indexing: IndexingService,
     private readonly folders: FoldersService,
     private readonly realtime: RealtimeService,
+    private readonly trash: TrashService,
   ) {}
 
   /** CREATE */
@@ -335,28 +337,11 @@ export class NotesService {
     return new ApiResponseDto<NoteResponse>().ok(result);
   }
 
-  /** DELETE */
-  async remove(token: string, userId: string, _id: string) {
+  /** DELETE: moves the note to the trash (see TrashService) */
+  async remove(userId: string, _id: string) {
     try {
-      const note = await this.noteModel.findOneAndDelete({ userId, _id });
-      if (!note) {
-        throw new HttpException('Note not found', HttpStatus.BAD_REQUEST);
-      }
-
-      // Delete related files
-      await this.fileService.removeNoteFiles(token, _id);
-
-      // Delete the note's search index
-      await this.indexing.removeNote(_id);
-
-      // Delete cached summaries and the edit history
-      await Promise.all([
-        this.clearSummaryCache(_id, userId),
-        this.versionModel.deleteMany({ noteId: note._id }),
-      ]);
-
-      this.realtime.emit(userId, 'note:deleted', { id: _id });
-      return new ApiResponseDto<NoteDocument>().ok(note);
+      await this.trash.trash(userId, _id);
+      return new ApiResponseDto<{ trashed: boolean }>().ok({ trashed: true });
     } catch (error) {
       throw toHttpException(error);
     }

@@ -147,9 +147,43 @@ export async function updateNote(id: string, note: INoteDto) {
   return res.data.data as INote;
 }
 
+/** Moves a note to the trash (it can be restored until it is purged). */
 export async function deleteNote(id: string) {
   const res = await webApi.delete(`/notes/${id}`);
   return res.data;
+}
+
+export interface ITrashedNote {
+  id: string;
+  title: string;
+  category: string;
+  snippet: string;
+  files: string[];
+  deletedAt: string;
+  /** When the note is deleted for good */
+  purgeAt: string;
+}
+
+/** Trashed notes, newest first, and how many days they are kept. */
+export async function getTrash() {
+  const res = await webApi.get("/notes/trash");
+  return res.data.data as { retentionDays: number; notes: ITrashedNote[] };
+}
+
+/** Puts a trashed note back; returns it as it is now. */
+export async function restoreNote(id: string) {
+  const res = await webApi.post(`/notes/trash/${id}/restore`);
+  return res.data.data as INote;
+}
+
+/** Deletes a trashed note, its attachments and history for good. */
+export async function deleteNoteForever(id: string) {
+  await webApi.delete(`/notes/trash/${id}`);
+}
+
+export async function emptyTrash() {
+  const res = await webApi.delete("/notes/trash");
+  return res.data.data as { deleted: number };
 }
 
 export async function getFile(noteId: string, fileName: string) {

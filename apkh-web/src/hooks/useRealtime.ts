@@ -15,6 +15,8 @@ import type { INote } from "@/models/note";
 
 /** Fired on window when a conversation changes elsewhere; the chat page reloads it. */
 export const CHAT_UPDATED_EVENT = "kh:chat-updated";
+/** Fired on window when the trash changes; the trash page reloads. */
+export const TRASH_CHANGED_EVENT = "kh:trash-changed";
 
 /** Runs `fn` once, `ms` after the last call (bursts of events become one reload). */
 function debounce(fn: () => void, ms: number) {
@@ -96,6 +98,7 @@ export function useRealtime(enabled: boolean) {
     socket.on("folders:changed", refreshMeta);
     socket.on("index:changed", refreshIndex);
     socket.on("profile:changed", refreshProfile);
+    socket.on("trash:changed", () => window.dispatchEvent(new Event(TRASH_CHANGED_EVENT)));
     socket.on("chat:updated", (detail: { sessionId: string; deleted?: boolean }) => {
       refreshSessions();
       window.dispatchEvent(new CustomEvent(CHAT_UPDATED_EVENT, { detail }));

@@ -14,6 +14,7 @@ import {
   Orbit,
   Plus,
   ShieldCheck,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
 import { ICategoryCount } from "@/models/note";
@@ -98,6 +99,7 @@ export function Sidebar({
     { href: "/graph", label: t("nav.graph"), Icon: Orbit },
     { href: "/chat", label: t("nav.chats"), Icon: MessagesSquare, count: sessionsCount || undefined },
     { href: "/analytics", label: t("nav.usage"), Icon: BarChart3 },
+    { href: "/trash", label: t("nav.trash"), Icon: Trash2 },
     { href: "/profile", label: t("nav.profile"), Icon: CircleUserRound },
     ...(user.isAdmin ? [{ href: "/admin", label: t("nav.admin"), Icon: ShieldCheck }] : []),
   ];

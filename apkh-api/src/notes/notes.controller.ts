@@ -18,6 +18,12 @@ import {
 import type { Response } from 'express';
 import { sendSse } from 'src/common/utils/sse';
 import { NotesService } from './notes.service';
+import {
+  TrashService,
+  trashRetentionDays,
+  type TrashedNoteView,
+} from './trash.service';
+import { ApiResponseDto } from 'src/common/dto/api/response';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 import { AiSearchDto } from './dto/ai-search.dto';
@@ -43,6 +49,7 @@ export class NotesController {
     private readonly notesService: NotesService,
     private readonly searchService: SearchService,
     private readonly indexing: IndexingService,
+    private readonly trash: TrashService,
   ) {}
 
   /** CREATE */
@@ -104,14 +111,52 @@ export class NotesController {
     return this.notesService.update(token, userId, id, updateNoteDto, files);
   }
 
-  /** DELETE */
-  @Delete(':id')
-  remove(
+  // ── Trash (before the ':id' routes, which would match "trash") ─────────
+
+  /** Deleted notes, newest first, with when each is deleted for good */
+  @Get('trash')
+  async listTrash(@JwtTokenUserId() userId: string) {
+    return new ApiResponseDto<{
+      retentionDays: number;
+      notes: TrashedNoteView[];
+    }>().ok({
+      retentionDays: trashRetentionDays(),
+      notes: await this.trash.list(userId),
+    });
+  }
+
+  @Post('trash/:id/restore')
+  async restoreFromTrash(
+    @JwtTokenUserId() userId: string,
+    @Param('id') id: string,
+  ) {
+    return new ApiResponseDto().ok(await this.trash.restore(userId, id));
+  }
+
+  /** Delete one trashed note for good */
+  @Delete('trash/:id')
+  async purgeFromTrash(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,
     @Param('id') id: string,
   ) {
-    return this.notesService.remove(token, userId, id);
+    await this.trash.purge(token, userId, id);
+    return new ApiResponseDto().ok({ deleted: true });
+  }
+
+  /** Empty the trash */
+  @Delete('trash')
+  async emptyTrash(
+    @JwtToken() token: string,
+    @JwtTokenUserId() userId: string,
+  ) {
+    return new ApiResponseDto().ok(await this.trash.empty(token, userId));
+  }
+
+  /** DELETE: moves the note to the trash */
+  @Delete(':id')
+  remove(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    return this.notesService.remove(userId, id);
   }
 
   /** GET LATEST UPDATED TIME */

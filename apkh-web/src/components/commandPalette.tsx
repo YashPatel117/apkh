@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
+  Trash2,
 } from "lucide-react";
 import { INote } from "@/models/note";
 import { getNotesPage, exportAllNotes } from "@/services/noteService";
@@ -136,6 +137,7 @@ export function CommandPalette({ open, onClose, actions }: { open: boolean; onCl
       { id: "go-graph", label: t("nav.graph"), group: groups.go, Icon: Orbit, keywords: "graph 3d map sky stars", run: go("/graph") },
       { id: "go-chat", label: t("nav.chats"), group: groups.go, Icon: MessagesSquare, run: go("/chat") },
       { id: "go-usage", label: t("nav.usage"), group: groups.go, Icon: BarChart3, keywords: "analytics tokens cost", run: go("/analytics") },
+      { id: "go-trash", label: t("nav.trash"), group: groups.go, Icon: Trash2, keywords: "deleted restore bin", run: go("/trash") },
       { id: "go-profile", label: t("nav.profile"), group: groups.go, Icon: CircleUserRound, keywords: "settings key integrations", run: go("/profile") },
     );
     if (user?.isAdmin) list.push({ id: "go-admin", label: t("nav.admin"), group: groups.go, Icon: ShieldCheck, run: go("/admin") });

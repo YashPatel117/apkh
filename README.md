@@ -85,6 +85,7 @@ Each service reads its own env file; the `.env.example` next to it documents eve
 | | `BUILTIN_AI` | on | `off` hides the built-in AI (users then need their own key) |
 | | `PLAN_SESSION_HOURS` | `5` | Length of a usage session |
 | | `PLAN_FREE_SESSION_TOKENS`, `PLAN_PRO_SESSION_TOKENS` | `30000`, `200000` | Built-in AI tokens per session on each plan |
+| | `TRASH_RETENTION_DAYS` | `30` | Days deleted notes stay in Trash before they and their attachments are deleted for good |
 | `apkh-storage/.env` | `JWT_SECRET`, `MONGODB_URI`, `CORS_ORIGINS`, `PORT` | | Files are stored in GridFS; use the API's `MONGODB_URI` |
 | `apkh-search/.env` | `JWT_SECRET`, `CORS_ORIGINS`, `STORAGE_API_URL` | | |
 | | `BUILTIN_AI_BASE_URL` | `http://localhost:11434/v1` | Ollama, or any OpenAI-compatible server |

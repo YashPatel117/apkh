@@ -348,6 +348,7 @@ export default function NotesPage() {
         open={Boolean(pendingDelete)}
         title={t("notes.deleteTitle")}
         message={t("notes.deleteMessage", { title: pendingDelete?.title || t("ai.untitled") })}
+        confirmLabel={t("notes.deleteConfirm")}
         onConfirm={confirmDelete}
         onClose={() => setPendingDelete(null)}
       />

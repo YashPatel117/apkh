@@ -9,6 +9,7 @@ export type RealtimeEvent =
   | 'folders:changed'
   | 'index:changed'
   | 'chat:updated'
+  | 'trash:changed'
   | 'profile:changed';
 
 @Injectable()
