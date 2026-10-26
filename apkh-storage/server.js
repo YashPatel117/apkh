@@ -7,6 +7,7 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const archiver = require("archiver");
 const cors = require("cors");
+const { MongoClient, GridFSBucket } = require("mongodb");
 const { rateLimit } = require("express-rate-limit");
 const pino = require("pino");
 const pinoHttp = require("pino-http");
@@ -21,6 +22,12 @@ const logger = pino({ level: process.env.LOG_LEVEL || "info", base: { service: "
 const JwtSecretKey = process.env.JWT_SECRET;
 if (!JwtSecretKey) {
   logger.fatal("Missing JWT_SECRET. Copy .env.example to .env and fill it in.");
+  process.exit(1);
+}
+
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  logger.fatal("Missing MONGODB_URI. Copy .env.example to .env and fill it in.");
   process.exit(1);
 }
 
@@ -76,10 +83,14 @@ app.use(
   })
 );
 
-const baseFolder = path.join(__dirname, "uploads");
-// Uploads land here first and are moved into place once they pass the quota check.
+// Files live in MongoDB GridFS (attachments.files / attachments.chunks), one
+// document per file, keyed by metadata.userId + metadata.noteId + filename.
+const client = new MongoClient(MONGODB_URI);
+let db;
+let bucket;
+
+// Uploads land here first and are copied into GridFS once they pass the quota check.
 const tmpFolder = path.join(__dirname, ".upload-tmp");
-fs.mkdirSync(baseFolder, { recursive: true });
 fs.mkdirSync(tmpFolder, { recursive: true });
 
 const upload = multer({
@@ -90,57 +101,47 @@ const upload = multer({
   limits: { fileSize: MAX_FILE_BYTES, files: MAX_FILES_PER_REQUEST },
 });
 
-/**
- * Resolves a path under baseFolder from user-supplied segments (user id, noteId,
- * filename). Returns null if any segment could escape its directory.
- */
-function safePath(...segments) {
-  for (const segment of segments) {
-    if (
-      typeof segment !== "string" ||
-      !segment ||
-      segment === "." ||
-      segment === ".." ||
-      /[\\/\0]/.test(segment)
-    )
-      return null;
-  }
-  const target = path.resolve(baseFolder, ...segments);
-  return target.startsWith(baseFolder + path.sep) ? target : null;
-}
-
-async function exists(target) {
-  try {
-    await fsp.access(target);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function fileSize(target) {
-  try {
-    return (await fsp.stat(target)).size;
-  } catch {
-    return 0;
-  }
-}
-
-/** Total bytes under a folder (0 if it doesn't exist). */
-async function folderSize(folder) {
-  let entries;
-  try {
-    entries = await fsp.readdir(folder, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
-  const sizes = await Promise.all(
-    entries.map((entry) => {
-      const target = path.join(folder, entry.name);
-      return entry.isDirectory() ? folderSize(target) : fileSize(target);
-    })
+/** True for a user-supplied id or filename that is safe to store and serve. */
+function validSegment(segment) {
+  return (
+    typeof segment === "string" &&
+    !!segment &&
+    segment !== "." &&
+    segment !== ".." &&
+    !/[\\/\0]/.test(segment)
   );
-  return sizes.reduce((total, size) => total + size, 0);
+}
+
+/** GridFS file documents of a user, optionally narrowed to a note and filenames. */
+function findFiles(userId, noteId, filenames) {
+  const query = { "metadata.userId": userId };
+  if (noteId) query["metadata.noteId"] = noteId;
+  if (filenames) query.filename = { $in: filenames };
+  return bucket.find(query).toArray();
+}
+
+function deleteFiles(files) {
+  return Promise.all(files.map((f) => bucket.delete(f._id)));
+}
+
+/** Copies an uploaded temp file into GridFS. */
+function writeFile(userId, noteId, file) {
+  return new Promise((resolve, reject) => {
+    const stream = bucket.openUploadStream(file.originalname, {
+      metadata: { userId, noteId },
+    });
+    stream.once("finish", resolve).once("error", reject);
+    fs.createReadStream(file.path).once("error", reject).pipe(stream);
+  });
+}
+
+/** Bytes stored per user, optionally for one user only. */
+async function usageByUser(userId) {
+  const match = userId ? [{ $match: { "metadata.userId": userId } }] : [];
+  return db
+    .collection("attachments.files")
+    .aggregate([...match, { $group: { _id: "$metadata.userId", usedBytes: { $sum: "$length" } } }])
+    .toArray();
 }
 
 async function removeTempFiles(files) {
@@ -152,10 +153,10 @@ async function removeTempFiles(files) {
 /** Liveness: the process is up. */
 app.get("/health", (req, res) => res.json({ status: "ok", service: "apkh-storage" }));
 
-/** Readiness: uploads can be written. */
+/** Readiness: the database answers. */
 app.get("/ready", async (req, res) => {
   try {
-    await fsp.access(baseFolder, fs.constants.W_OK);
+    await db.command({ ping: 1 });
     res.json({ status: "ready" });
   } catch (err) {
     res.status(503).json({ status: "unavailable", error: err.message });
@@ -196,24 +197,18 @@ const uploadLimiter = rateLimit({ ...limitOptions, limit: UPLOADS_PER_MINUTE });
 
 /** Bytes this user stores, and their quota. */
 app.get("/usage", async (req, res) => {
-  const userFolder = safePath(req.id);
-  if (!userFolder) return res.status(400).send("Invalid user");
-  res.json({ usedBytes: await folderSize(userFolder), quotaBytes: USER_QUOTA_BYTES });
+  const [usage] = await usageByUser(req.id);
+  res.json({ usedBytes: usage?.usedBytes ?? 0, quotaBytes: USER_QUOTA_BYTES });
 });
 
 /** Storage used per user (admin panel; apkh-api signs these tokens). */
 app.get("/admin/usage", async (req, res) => {
   if (req.service !== "admin") return res.status(403).send("Forbidden");
-  const entries = await fsp.readdir(baseFolder, { withFileTypes: true });
-  const users = await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory())
-      .map(async (entry) => ({ userId: entry.name, usedBytes: await folderSize(path.join(baseFolder, entry.name)) }))
-  );
+  const users = (await usageByUser()).map((u) => ({ userId: u._id, usedBytes: u.usedBytes }));
   res.json({ users, quotaBytes: USER_QUOTA_BYTES });
 });
 
-// 📌 Upload files under noteId
+// 📌 Upload files under noteId (a file with the same name is replaced)
 app.post(
   "/upload/:noteId",
   uploadLimiter,
@@ -236,20 +231,21 @@ app.post(
   async (req, res, next) => {
     const files = req.files || [];
     try {
-      const folderPath = safePath(req.id, req.params.noteId);
-      if (!folderPath) return res.status(400).send("Invalid noteId");
-
-      const filePaths = files.map((f) => safePath(req.id, req.params.noteId, f.originalname));
-      if (filePaths.some((p) => !p)) return res.status(400).send("Invalid filename");
+      const { noteId } = req.params;
+      if (!validSegment(noteId)) return res.status(400).send("Invalid noteId");
+      if (files.some((f) => !validSegment(f.originalname)))
+        return res.status(400).send("Invalid filename");
 
       // Files replaced by this upload don't count twice.
-      const [used, replaced] = await Promise.all([
-        folderSize(safePath(req.id)),
-        Promise.all(filePaths.map(fileSize)),
+      const names = files.map((f) => f.originalname);
+      const [[usage], previous] = await Promise.all([
+        usageByUser(req.id),
+        findFiles(req.id, noteId, names),
       ]);
+      const used = usage?.usedBytes ?? 0;
+      const replaced = previous.reduce((total, f) => total + f.length, 0);
       const incoming = files.reduce((total, f) => total + f.size, 0);
-      const after = used - replaced.reduce((a, b) => a + b, 0) + incoming;
-      if (after > USER_QUOTA_BYTES) {
+      if (used - replaced + incoming > USER_QUOTA_BYTES) {
         return res
           .status(413)
           .send(
@@ -257,13 +253,12 @@ app.post(
           );
       }
 
-      await fsp.mkdir(folderPath, { recursive: true });
-      await Promise.all(files.map((f, i) => fsp.rename(f.path, filePaths[i])));
-      res.json(files.map((f) => f.originalname));
+      for (const f of files) await writeFile(req.id, noteId, f);
+      await deleteFiles(previous);
+      res.json(names);
     } catch (err) {
       next(err);
     } finally {
-      // Anything not moved into place (rejected or failed) is dropped.
       removeTempFiles(files).catch(() => {});
     }
   }
@@ -275,16 +270,10 @@ app.post("/files", async (req, res, next) => {
     if (!noteId || !Array.isArray(files) || files.length === 0) {
       return res.status(400).send("noteId and files array are required");
     }
+    if (!validSegment(noteId)) return res.status(400).send("Invalid noteId");
 
-    const folderPath = safePath(req.id, noteId);
-    if (!folderPath) return res.status(400).send("Invalid noteId");
-    if (!(await exists(folderPath))) return res.status(404).send("Note ID not found");
-
-    const present = [];
-    for (const filename of files) {
-      const filePath = safePath(req.id, noteId, filename);
-      if (filePath && (await exists(filePath))) present.push({ filePath, filename });
-    }
+    const found = await findFiles(req.id, noteId, files.filter(validSegment));
+    if (found.length === 0) return res.status(404).send("Note ID not found");
 
     // Set headers for ZIP download
     res.setHeader("Content-Type", "application/zip");
@@ -296,7 +285,7 @@ app.post("/files", async (req, res, next) => {
       res.destroy(err);
     });
     archive.pipe(res);
-    present.forEach(({ filePath, filename }) => archive.file(filePath, { name: filename }));
+    found.forEach((f) => archive.append(bucket.openDownloadStream(f._id), { name: f.filename }));
     await archive.finalize();
   } catch (err) {
     next(err);
@@ -305,46 +294,47 @@ app.post("/files", async (req, res, next) => {
 
 // 📌 Get specific file
 app.get("/files/:noteId/:filename", async (req, res) => {
-  const filePath = safePath(req.id, req.params.noteId, req.params.filename);
-  if (!filePath) return res.status(400).send("Invalid path");
-  if (!(await exists(filePath))) return res.status(404).send("File not found");
-  res.sendFile(filePath);
+  const { noteId, filename } = req.params;
+  if (!validSegment(noteId) || !validSegment(filename))
+    return res.status(400).send("Invalid path");
+
+  const [file] = await findFiles(req.id, noteId, [filename]);
+  if (!file) return res.status(404).send("File not found");
+
+  res.type(path.extname(filename) || "bin");
+  res.set("Content-Length", String(file.length));
+  bucket
+    .openDownloadStream(file._id)
+    .on("error", (err) => res.destroy(err))
+    .pipe(res);
 });
 
-// 📌 Delete all files for user
+// Deletes succeed even when nothing matches, so notes whose files are already
+// gone (e.g. uploaded before the move to GridFS) can still be deleted.
+
+// 📌 Delete all files of a user
 app.delete("/files", async (req, res) => {
-  const userFolder = safePath(req.id);
-  if (!userFolder) return res.status(400).send("Invalid user");
-  if (!(await exists(userFolder))) return res.status(404).send("ID not found");
-  await fsp.rm(userFolder, { recursive: true, force: true });
+  await deleteFiles(await findFiles(req.id));
   res.send("All files deleted for user");
 });
 
-// 📌 Delete noteId folder
+// 📌 Delete all files of a note
 app.delete("/files/:noteId", async (req, res) => {
-  const folderPath = safePath(req.id, req.params.noteId);
-  if (!folderPath) return res.status(400).send("Invalid noteId");
-  if (!(await exists(folderPath))) return res.status(404).send("Note ID not found");
-  await fsp.rm(folderPath, { recursive: true, force: true });
+  const { noteId } = req.params;
+  if (!validSegment(noteId)) return res.status(400).send("Invalid noteId");
+  await deleteFiles(await findFiles(req.id, noteId));
   res.send("Note folder deleted");
 });
 
-// 📌 Delete selected files inside noteId
+// 📌 Delete specific files from a note
 app.delete("/files/:noteId/files", async (req, res) => {
-  const folderPath = safePath(req.id, req.params.noteId);
-  if (!folderPath) return res.status(400).send("Invalid noteId");
-  if (!(await exists(folderPath))) return res.status(404).send("Note ID not found");
+  const { noteId } = req.params;
+  if (!validSegment(noteId)) return res.status(400).send("Invalid noteId");
 
-  const { filenames } = req.body; // expect array of filenames
+  const { filenames } = req.body;
   if (!Array.isArray(filenames)) return res.status(400).send("filenames[] required");
 
-  await Promise.all(
-    filenames.map((filename) => {
-      const filePath = safePath(req.id, req.params.noteId, filename);
-      return filePath ? fsp.rm(filePath, { force: true }) : null;
-    })
-  );
-
+  await deleteFiles(await findFiles(req.id, noteId, filenames));
   res.send("Selected files deleted");
 });
 
@@ -355,7 +345,17 @@ app.use((err, req, res, next) => {
   res.status(500).send("Storage error");
 });
 
-const server = app.listen(port, () => logger.info(`Server running at http://localhost:${port}`));
+let server;
+
+async function start() {
+  await client.connect();
+  db = client.db();
+  bucket = new GridFSBucket(db, { bucketName: "attachments" });
+  await db
+    .collection("attachments.files")
+    .createIndex({ "metadata.userId": 1, "metadata.noteId": 1, filename: 1 });
+  server = app.listen(port, () => logger.info(`Server running at http://localhost:${port}`));
+}
 
 // Finish in-flight uploads and downloads before exiting, so no file is left half-written.
 let shuttingDown = false;
@@ -363,9 +363,10 @@ function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info({ signal }, "shutting down");
+  if (!server) process.exit(0);
   server.close(() => {
     logger.info("all connections closed");
-    process.exit(0);
+    client.close().finally(() => process.exit(0));
   });
   server.closeIdleConnections?.();
   setTimeout(() => {
@@ -375,3 +376,8 @@ function shutdown(signal) {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+start().catch((err) => {
+  logger.fatal({ err }, "Failed to start storage service");
+  process.exit(1);
+});

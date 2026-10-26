@@ -1,5 +1,5 @@
 import { ICategoryCount, INote, INoteDto, INotesPage, INoteVersion, IndexStatus } from "@/models/note";
-import { webApi, storageApi } from "@/services/axios";
+import { webApi } from "@/services/axios";
 import { streamPost } from "@/services/sse";
 
 export const NOTES_PAGE_SIZE = 50;
@@ -153,7 +153,7 @@ export async function deleteNote(id: string) {
 }
 
 export async function getFile(noteId: string, fileName: string) {
-  const res = await storageApi.get(`/files/${encodeURIComponent(noteId)}/${encodeURIComponent(fileName)}`, {
+  const res = await webApi.get(`/file/${encodeURIComponent(noteId)}/${encodeURIComponent(fileName)}`, {
     responseType: "blob",
   });
   return res;

@@ -2,15 +2,9 @@ import axios, { AxiosInstance } from "axios";
 import { clearToken } from "@/services/session";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
-export const STORAGE_URL = process.env.NEXT_PUBLIC_STORAGE_URL ?? "http://localhost:3001";
 
 const webApi = axios.create({
   baseURL: API_URL,
-  withCredentials: true,
-});
-
-const storageApi = axios.create({
-  baseURL: STORAGE_URL,
   withCredentials: true,
 });
 
@@ -50,9 +44,6 @@ function responseInterceptor(apiInstance: AxiosInstance) {
 requestInterceptor(webApi);
 responseInterceptor(webApi);
 
-requestInterceptor(storageApi);
-responseInterceptor(storageApi);
-
 /** Best-effort human message from an API / network error. */
 export function getErrorMessage(error: unknown, fallback = "Something went wrong. Please try again.") {
   if (axios.isAxiosError(error)) {
@@ -66,4 +57,4 @@ export function getErrorMessage(error: unknown, fallback = "Something went wrong
   return fallback;
 }
 
-export { webApi, storageApi };
+export { webApi };

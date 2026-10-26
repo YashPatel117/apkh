@@ -8,10 +8,10 @@ How the four services work together: what is stored, how notes are indexed and r
                  ┌──────────────┐
   Browser ──────►│  apkh-web    │  Next.js UI (3002)
                  └──────┬───────┘
-          notes, chat,  │  file upload / download
-          AI search     │  ─────────────────────────────┐
-                 ┌──────▼───────┐                ┌──────▼───────┐
-                 │  apkh-api    │───────────────►│ apkh-storage │  files on disk (3001)
+          notes, chat,  │
+   AI search, files     │  file upload / download
+                 ┌──────▼───────┐                ┌──────────────┐
+                 │  apkh-api    │───────────────►│ apkh-storage │  files in MongoDB GridFS (3001)
                  │  NestJS 3000 │                └──────▲───────┘
                  └──┬───────┬───┘                       │ downloads attachments
           MongoDB ◄─┘       │ extract / chunk / embed / │
@@ -32,7 +32,7 @@ How the four services work together: what is stored, how notes are indexed and r
 - **generate**: RAG answers, chat replies, summaries and query rewrites
 - **models / test**: list the models a key can use, and test a key + model
 
-**`apkh-storage`** stores attachment files per note. **The AI provider** (OpenRouter, Gemini, OpenAI or Anthropic) only ever receives text, images and prompts for one request; it never sees the database. **The built-in AI** works the same way but runs on the host's own server (Ollama by default), so nothing leaves it.
+**`apkh-storage`** stores attachment files per note in MongoDB GridFS (`attachments` bucket). The browser never calls it directly: uploads and downloads go through the API. **The AI provider** (OpenRouter, Gemini, OpenAI or Anthropic) only ever receives text, images and prompts for one request; it never sees the database. **The built-in AI** works the same way but runs on the host's own server (Ollama by default), so nothing leaves it.
 
 **Auth between services.** Users log in to `apkh-api`, which issues a JWT. `apkh-storage` and `apkh-search` verify the same JWT with the shared `JWT_SECRET`. Background indexing jobs call the services with a short-lived token the API signs for the job's user, so no user token is stored with a job. **Integration tokens** (`apkh_…`, Profile → Integrations) are for callers outside the app: only their SHA-256 hash is stored, and their scopes say what they may do: `notes:write` adds notes (webhooks, the clipper), `notes:read` reads and searches them (`/integrations/mcp/*`, used by `apkh-mcp`). Each token gets at most 60 requests a minute.
 

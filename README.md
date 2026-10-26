@@ -85,7 +85,7 @@ Each service reads its own env file; the `.env.example` next to it documents eve
 | | `BUILTIN_AI` | on | `off` hides the built-in AI (users then need their own key) |
 | | `PLAN_SESSION_HOURS` | `5` | Length of a usage session |
 | | `PLAN_FREE_SESSION_TOKENS`, `PLAN_PRO_SESSION_TOKENS` | `30000`, `200000` | Built-in AI tokens per session on each plan |
-| `apkh-storage/.env` | `JWT_SECRET`, `CORS_ORIGINS`, `PORT` | | |
+| `apkh-storage/.env` | `JWT_SECRET`, `MONGODB_URI`, `CORS_ORIGINS`, `PORT` | | Files are stored in GridFS; use the API's `MONGODB_URI` |
 | `apkh-search/.env` | `JWT_SECRET`, `CORS_ORIGINS`, `STORAGE_API_URL` | | |
 | | `BUILTIN_AI_BASE_URL` | `http://localhost:11434/v1` | Ollama, or any OpenAI-compatible server |
 | | `BUILTIN_AI_CHAT_MODEL` | `qwen3.5:4b` | `qwen3.5:2b` is about twice as fast |
@@ -93,9 +93,9 @@ Each service reads its own env file; the `.env.example` next to it documents eve
 | | `BUILTIN_AI_VISION`, `BUILTIN_AI_API_KEY` | on, none | `off` for a chat model that can't read images; a key only if the server needs one |
 | | `BUILTIN_AI_CHAT_SLOTS`, `BUILTIN_AI_EMBEDDING_SLOTS` | `1`, `1` | Calls run at once per model; the rest queue by plan. Raise only with a GPU |
 | | `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` | tracing off | Optional LangSmith tracing |
-| `apkh-web/.env.local` | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_STORAGE_URL` | localhost | Use your LAN IP to open the app from other devices |
+| `apkh-web/.env.local` | `NEXT_PUBLIC_API_URL` | localhost | Use your LAN IP to open the app from other devices |
 
-To open the app from a phone or another computer, put your machine's LAN IP in `apkh-web/.env.local` and add `http://<lan-ip>:3002` to `CORS_ORIGINS` in the API and storage env files.
+To open the app from a phone or another computer, put your machine's LAN IP in `apkh-web/.env.local` and add `http://<lan-ip>:3002` to `CORS_ORIGINS` in the API env file.
 
 ## Built-in AI and plans
 
