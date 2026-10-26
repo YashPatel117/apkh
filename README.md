@@ -9,7 +9,7 @@ A note-taking app with an AI layer: write rich notes with attachments, then ask 
 | `apkh-storage` | Express | 3001 | Attachment files |
 | `apkh-search` | FastAPI, LangChain | 8000 | Reads files, chunks, embeds, generates answers (stateless) |
 
-How it all fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
+How it all fits together: [ARCHITECTURE.md](ARCHITECTURE.md). What's next: [ROADMAP.md](ROADMAP.md).
 
 ## Prerequisites
 
