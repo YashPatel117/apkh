@@ -51,8 +51,22 @@ def parse_note_html(html: str) -> ParsedNote:
                 "text": text
             })
 
-    # Extract plain text
-    text = soup.get_text(separator="\n", strip=True)
-    result.text_content = text
-
+    result.text_content = _plain_text(soup)
     return result
+
+
+# Elements that start a new line; inline ones (links, bold…) stay in their sentence.
+_BLOCK_TAGS = [
+    "p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+    "blockquote", "pre", "tr", "td", "th", "ul", "ol", "table",
+]
+
+
+def _plain_text(soup: BeautifulSoup) -> str:
+    """One line per paragraph, list item or heading, with whitespace collapsed."""
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    for tag in soup.find_all(_BLOCK_TAGS):
+        tag.append("\n")
+    lines = (" ".join(line.split()) for line in soup.get_text().splitlines())
+    return "\n".join(line for line in lines if line)

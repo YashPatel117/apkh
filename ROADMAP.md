@@ -16,8 +16,8 @@ Several features were only checked against a mocked API or not clicked through a
 
 **Done when:** a written checklist in `deploy/README.md` (or a new `TESTING.md`) passes on a fresh install.
 
-### 1.2 Automated tests and CI
-The repo has no tests, so every merge is checked by hand.
+### 1.2 Automated tests and CI (deferred)
+Not needed for now; every merge is checked by hand. Kept here for later.
 
 - [ ] API (Jest, already set up by Nest): auth and password rules, note CRUD scoped to the owner, AI config rules (keyless Claude Code, provider change needs a key), integration token scopes, plan allowance maths
 - [ ] Search (pytest): `detect_provider`, `has_credentials`, the chunker, `_normalize_actions`, Claude Code event parsing with a fake CLI script
@@ -86,8 +86,8 @@ Only matters once other people use a hosted copy.
 - [ ] Lower the embedding model's memory (it loads at about 2.9 GB with an 8K context it doesn't need)
 
 ## Suggested order
-1. 1.1 verification pass and 1.2 tests + CI (everything after this is safer to build)
-2. 1.3 trash and the attachment migration
+1. 1.1 verification pass
+2. 1.3 trash (the attachment migration is done)
 3. 2.1 search by meaning for everyone
 4. 1.4 forgot password by email
 5. 2.2 note URLs, links and tags
