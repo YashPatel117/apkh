@@ -1,8 +1,10 @@
-export type LlmProvider = "builtin" | "openrouter" | "gemini" | "openai" | "anthropic";
+export type LlmProvider = "builtin" | "openrouter" | "gemini" | "openai" | "anthropic" | "claude-code";
 
 /** Provider serving a model ID, or null for an unrecognised one. */
 export function providerOfModel(model: string): LlmProvider | null {
   const normalized = model.trim().toLowerCase();
+  // "claude-code:sonnet": Claude Code on the server machine (checked before "claude")
+  if (normalized === "claude-code" || normalized.startsWith("claude-code:")) return "claude-code";
   // OpenRouter ids are "author/model"; native Gemini, OpenAI and Claude ids never contain "/"
   if (normalized.includes("/")) return "openrouter";
   if (normalized.startsWith("gemini")) return "gemini";
