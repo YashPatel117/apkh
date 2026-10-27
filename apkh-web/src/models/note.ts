@@ -5,6 +5,8 @@ export interface INote {
   title: string;
   content: string;
   category: string;
+  /** Lowercase, hyphenated labels; missing on notes saved offline */
+  tags?: string[];
   /** Folder (collection) the note is filed in; null at the top level */
   folderId?: string | null;
   createdAt: string;
@@ -72,6 +74,8 @@ export interface INoteDto {
   title: string;
   content: string;
   category: string;
+  /** Left out (offline saves), the note's tags stay as they are */
+  tags?: string[];
   /** New notes: the folder to file them in */
   folderId?: string | null;
   files?: File[];

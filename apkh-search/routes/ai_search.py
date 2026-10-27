@@ -25,6 +25,7 @@ from services.llm import (
     has_credentials,
     rewrite_search_query,
     stream_rag_answer,
+    suggest_tags,
     test_llm_connection,
 )
 from services.sse import event_stream
@@ -200,6 +201,33 @@ async def summarize_note(body: SummaryRequest, request: Request):
         "request_id": request_id,
         "run_id": result.get("run_id"),
     }
+
+
+class SuggestTagsRequest(BaseModel):
+    title: Id = ""
+    category: Id = ""
+    content: Annotated[str, Field(max_length=MAX_TEXT_CHARS)] = ""
+    current_tags: list[Annotated[str, Field(max_length=64)]] = Field(default=[], max_length=50)
+    existing_tags: list[Annotated[str, Field(max_length=64)]] = Field(default=[], max_length=500)
+    api_key: Id = ""
+    model: Id
+
+
+@router.post("/suggest-tags")
+async def suggest_note_tags(body: SuggestTagsRequest, request: Request):
+    """Suggest tags for a note, preferring the user's existing ones."""
+    request_id = str(uuid.uuid4())
+    return await suggest_tags(
+        title=body.title,
+        content=body.content,
+        category=body.category,
+        current_tags=body.current_tags,
+        existing_tags=body.existing_tags,
+        api_key=body.api_key,
+        model=body.model,
+        user_id=getattr(request.state, "user_id", None),
+        request_id=request_id,
+    )
 
 
 class ConversationMessage(BaseModel):

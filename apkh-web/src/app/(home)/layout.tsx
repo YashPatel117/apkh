@@ -53,7 +53,7 @@ function isTyping(target: EventTarget | null) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loadError, notesLoaded, loadData, signOut } = useAuth();
-  const { categories, totalNotes } = useAppSelector((state) => state.note);
+  const { categories, tags, totalNotes } = useAppSelector((state) => state.note);
   const sessionsCount = useAppSelector((state) => state.chat.sessions.length);
   const router = useRouter();
   const pathname = usePathname();
@@ -253,6 +253,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       onCategory={filter.setActiveCategory}
       activeFolder={filter.activeFolder}
       onFolder={filter.setActiveFolder}
+      tags={tags}
+      activeTag={filter.activeTag}
+      onTag={filter.setActiveTag}
       onNewNote={newNote}
       onNavigate={onNavigate}
       onLogout={signOut}
@@ -274,6 +277,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         setActiveCategory: filter.setActiveCategory,
         activeFolder: filter.activeFolder,
         setActiveFolder: filter.setActiveFolder,
+        activeTag: filter.activeTag,
+        setActiveTag: filter.setActiveTag,
         openNote,
         newNote,
         aiAnswer: aiSearch.answer,

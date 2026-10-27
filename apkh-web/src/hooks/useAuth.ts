@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { profile } from "@/services/authService";
 import { clearToken, getValidToken } from "@/services/session";
 import { getErrorMessage } from "@/services/axios";
-import { getCategories, getNoteLastUpdatedTime, getNotesPage } from "@/services/noteService";
+import { getCategories, getNoteLastUpdatedTime, getNotesPage, getTags } from "@/services/noteService";
 import { getFolders } from "@/services/folderService";
 import { getChatSessions } from "@/services/chatService";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { logout, setToken, setUser } from "@/store/slices/authSlice";
-import { setCategories, setFirstPage, setFolders } from "@/store/slices/noteSlice";
+import { setCategories, setFirstPage, setFolders, setTags } from "@/store/slices/noteSlice";
 import { setSessions } from "@/store/slices/chatSlice";
 import { clearCachedLibrary, readCachedLibrary, saveCachedLibrary } from "@/lib/offlineCache";
 import { useT } from "@/i18n";
@@ -19,11 +19,12 @@ import { useT } from "@/i18n";
 let profileRequest: Promise<unknown> | null = null;
 let notesRequest: Promise<unknown> | null = null;
 
-/** Refreshes the sidebar's category counts and folders (after saves, moves, deletes). */
+/** Refreshes the sidebar's category and tag counts and folders (after saves, moves, deletes). */
 export async function refreshLibraryMeta(dispatch: ReturnType<typeof useAppDispatch>) {
-  const [categories, folders] = await Promise.all([getCategories(), getFolders()]);
+  const [categories, folders, tags] = await Promise.all([getCategories(), getFolders(), getTags()]);
   dispatch(setCategories(categories));
   dispatch(setFolders(folders));
+  dispatch(setTags(tags));
 }
 
 /**

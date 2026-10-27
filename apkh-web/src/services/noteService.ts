@@ -8,6 +8,8 @@ export interface NotesQuery {
   /** Words to find in the title, category or text */
   q?: string;
   category?: string | null;
+  /** Only notes with this tag */
+  tag?: string | null;
   /** A folder id, or "root" for notes in no folder */
   folderId?: string | null;
 }
@@ -20,11 +22,24 @@ export async function getNotesPage(query: NotesQuery = {}, cursor?: string | nul
       cursor: cursor || undefined,
       q: query.q?.trim() || undefined,
       category: query.category || undefined,
+      tag: query.tag || undefined,
       folderId: query.folderId || undefined,
     },
     signal,
   });
   return res.data.data as INotesPage;
+}
+
+/** Every tag in use, with how many notes have it (most used first). */
+export async function getTags() {
+  const res = await webApi.get("/notes/tags");
+  return res.data.data as ICategoryCount[];
+}
+
+/** Tags the AI suggests for a note, preferring tags already in use. */
+export async function suggestTags(note: { title: string; category: string; content: string; tags: string[] }) {
+  const res = await webApi.post("/notes/suggest-tags", note);
+  return res.data.data as { tags: string[]; error: string | null };
 }
 
 /** Every category in use with its note count, and the total number of notes. */
@@ -121,6 +136,7 @@ export async function createNote(note: INoteDto) {
   formData.append("title", note.title);
   formData.append("content", note.content);
   formData.append("category", note.category);
+  if (note.tags) formData.append("tags", JSON.stringify(note.tags));
   if (note.folderId) formData.append("folderId", note.folderId);
 
   if (note.files && note.files.length > 0) {
@@ -144,6 +160,7 @@ export async function updateNote(id: string, note: INoteDto) {
   formData.append("title", note.title);
   formData.append("content", note.content);
   formData.append("category", note.category);
+  if (note.tags) formData.append("tags", JSON.stringify(note.tags));
   if (note.removedFiles?.length)
     formData.append("removedFiles", note.removedFiles?.join(","));
 

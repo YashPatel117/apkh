@@ -29,7 +29,12 @@ import { UpdateNoteDto } from './dto/update-note.dto';
 import { AiSearchDto } from './dto/ai-search.dto';
 import { ReindexDto } from './dto/reindex.dto';
 import { SummaryQueryDto } from './dto/summary-query.dto';
-import { ExportNoteDto, ListNotesDto, MoveNoteDto } from './dto/list-notes.dto';
+import {
+  ExportNoteDto,
+  ListNotesDto,
+  MoveNoteDto,
+  SuggestTagsDto,
+} from './dto/list-notes.dto';
 import { IndexingService } from 'src/indexing/indexing.service';
 import { SearchService } from 'src/search/search.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';
@@ -82,6 +87,23 @@ export class NotesController {
   @Get('categories')
   categories(@JwtTokenUserId() userId: string) {
     return this.notesService.categories(userId);
+  }
+
+  /** Every tag in use, with its note count */
+  @Get('tags')
+  tags(@JwtTokenUserId() userId: string) {
+    return this.notesService.tags(userId);
+  }
+
+  /** Tags the AI suggests for a note (saved or still being written) */
+  @Post('suggest-tags')
+  @HttpCode(HttpStatus.OK)
+  suggestTags(
+    @JwtToken() token: string,
+    @JwtTokenUserId() userId: string,
+    @Body() dto: SuggestTagsDto,
+  ) {
+    return this.notesService.suggestTags(token, userId, dto);
   }
 
   /** EXPORT every note (Markdown + attachments + JSON) as a ZIP */

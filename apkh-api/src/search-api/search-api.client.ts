@@ -339,6 +339,43 @@ export class SearchApiClient {
     };
   }
 
+  async suggestTags(
+    token: string,
+    llm: ActiveLlmSettings,
+    params: {
+      title: string;
+      category: string;
+      content: string;
+      currentTags: string[];
+      existingTags: string[];
+    },
+  ): Promise<{ tags: string[]; error: boolean; tokensUsed: number }> {
+    const data = await this.post<{
+      tags: string[];
+      error?: boolean;
+      tokens_used: number;
+    }>(
+      '/ai-search/suggest-tags',
+      {
+        title: params.title,
+        category: params.category,
+        content: params.content,
+        current_tags: params.currentTags,
+        existing_tags: params.existingTags.slice(0, 500),
+        api_key: llm.apiKey,
+        model: llm.model,
+      },
+      token,
+      timeoutFor(llm, ANSWER_TIMEOUT_MS),
+      llm,
+    );
+    return {
+      tags: data.tags ?? [],
+      error: Boolean(data.error),
+      tokensUsed: data.tokens_used ?? 0,
+    };
+  }
+
   async summarize(
     token: string,
     llm: ActiveLlmSettings,

@@ -41,6 +41,8 @@ export default function NotesPage() {
     setActiveCategory,
     activeFolder,
     setActiveFolder,
+    activeTag,
+    setActiveTag,
     openNote,
     newNote,
     aiAnswer,
@@ -116,7 +118,7 @@ export default function NotesPage() {
   }, []);
 
   const aiLinked = Boolean(aiAnswer && !aiFailed && aiAnswer.references.length);
-  const filtering = Boolean(query.trim() || activeCategory || activeFolder || aiLinked);
+  const filtering = Boolean(query.trim() || activeCategory || activeFolder || activeTag || aiLinked);
   const attachmentCount = filteredNotes.reduce((total, note) => total + note.files.length, 0);
 
   const confirmDelete = async () => {
@@ -142,10 +144,12 @@ export default function NotesPage() {
     }
   };
 
-  const emptyFolder = Boolean(activeFolder && !query.trim() && !activeCategory);
+  const emptyFolder = Boolean(activeFolder && !query.trim() && !activeCategory && !activeTag);
   const heading = aiLinked
     ? t("notes.referenced")
-    : activeCategory
+    : activeTag
+      ? `#${activeTag}`
+      : activeCategory
       ? activeCategory
       : query.trim()
         ? t("notes.searchResults")
@@ -217,7 +221,7 @@ export default function NotesPage() {
       )}
 
       {/* Active filters */}
-      {(aiLinked || activeCategory || query.trim()) && (
+      {(aiLinked || activeCategory || activeTag || query.trim()) && (
         <div className="mt-5 flex flex-wrap items-center gap-2">
           {aiLinked && (
             <div className="flex w-full flex-wrap items-center gap-3 rounded-2xl border border-indigo-200 bg-linear-to-r from-blue-50 via-indigo-50 to-violet-50 px-4 py-3 dark:border-indigo-400/20 dark:from-blue-500/10 dark:via-indigo-500/10 dark:to-violet-500/10">
@@ -245,6 +249,17 @@ export default function NotesPage() {
               <span>{activeCategory}</span>
               <X className="size-3.5" />
               <span className="sr-only">{t("notes.removeCategory")}</span>
+            </button>
+          )}
+          {!aiLinked && activeTag && (
+            <button
+              type="button"
+              onClick={() => setActiveTag(null)}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface py-1 pr-2 pl-3 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
+            >
+              <span>#{activeTag}</span>
+              <X className="size-3.5" />
+              <span className="sr-only">{t("tags.removeFilter")}</span>
             </button>
           )}
           {!aiLinked && query.trim() && (

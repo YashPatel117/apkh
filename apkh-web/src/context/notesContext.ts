@@ -25,6 +25,8 @@ export interface NotesContextType {
   setActiveCategory: (category: string | null) => void;
   activeFolder: FolderFilter;
   setActiveFolder: (folder: FolderFilter) => void;
+  activeTag: string | null;
+  setActiveTag: (tag: string | null) => void;
   openNote: (noteId: string) => void;
   newNote: () => void;
   aiAnswer: AiSearchResponse | null;
@@ -50,6 +52,8 @@ export const NotesContext = createContext<NotesContextType>({
   setActiveCategory: () => {},
   activeFolder: null,
   setActiveFolder: () => {},
+  activeTag: null,
+  setActiveTag: () => {},
   openNote: () => {},
   newNote: () => {},
   aiAnswer: null,

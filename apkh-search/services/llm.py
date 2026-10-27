@@ -115,6 +115,17 @@ _REWRITE_INSTRUCTION = (
     'Respond with JSON only: {"query": "<standalone search query>", "keywords": ["<term>", ...]}'
 )
 
+_TAGS_INSTRUCTION = (
+    "You suggest tags for one personal note, so it can be found and grouped later.\n"
+    "Rules:\n"
+    "- Suggest up to {limit} tags for what the note is about: topics, projects, places, "
+    "people's roles, kinds of note (meeting, recipe, idea).\n"
+    "- Tags are short: one to three lowercase words joined by hyphens, e.g. \"trip-planning\".\n"
+    "- Prefer the user's existing tags when one fits; only invent a new tag when none does.\n"
+    "- Don't repeat the note's category or tags it already has.\n"
+    'Respond with JSON only: {{"tags": ["...", "..."]}}'
+)
+
 # Models the supported providers serve without image input.
 _TEXT_ONLY_MODEL_PREFIXES = ("gpt-3.5", "o1-mini", "o1-preview", "o3-mini")
 
@@ -932,6 +943,71 @@ async def rewrite_search_query(
         "tokens_used": result["tokens_used"],
         "error": False,
     }
+
+
+async def suggest_tags(
+    title: str,
+    content: str,
+    category: str,
+    current_tags: list[str],
+    existing_tags: list[str],
+    api_key: str,
+    model: str,
+    limit: int = 5,
+    user_id: str | None = None,
+    request_id: str | None = None,
+) -> dict:
+    """
+    Tags for a note, preferring the user's existing ones. Returns {tags,
+    tokens_used, error}; on failure, no tags and error true.
+    """
+    fallback = {"tags": [], "tokens_used": 0, "error": True}
+    resolved_key = (api_key or "").strip()
+    resolved_model = model.strip()
+    if not has_credentials(resolved_key, resolved_model):
+        return fallback
+    try:
+        provider = detect_provider(resolved_model)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return fallback
+
+    text = parse_note_html(content or "").text_content.strip()
+    sections = [f"Title: {title.strip()}" if title.strip() else "", f"Category: {category.strip()}" if category.strip() else ""]
+    if current_tags:
+        sections.append("Tags it already has: " + ", ".join(current_tags))
+    sections.append("The user's existing tags: " + (", ".join(existing_tags[:200]) or "none yet"))
+    sections.append(f"Note:\n{text[:6000] or '(empty)'}")
+    user_prompt = "\n\n".join(s for s in sections if s)
+
+    trace_config = build_langchain_config(
+        run_name=f"suggest_tags:{request_id or 'unknown'}",
+        metadata={
+            "provider": provider,
+            "model_name": resolved_model,
+            "user_id": user_id or "anonymous",
+            "endpoint_name": "suggest_tags",
+            "request_id": request_id or "unknown",
+        },
+    )
+    try:
+        result = await _caller_for(provider)(
+            resolved_key, resolved_model, _TAGS_INSTRUCTION.format(limit=limit), user_prompt, config=trace_config,
+        )
+    except Exception as exc:
+        logger.error("Tag suggestion failed [%s/%s]: %s", provider, resolved_model, exc)
+        return fallback
+
+    raw = _parse_json_object(result["answer"]).get("tags")
+    skip = {t.lower() for t in current_tags} | {category.strip().lower()}
+    tags: list[str] = []
+    for tag in raw if isinstance(raw, list) else []:
+        if not isinstance(tag, str):
+            continue
+        cleaned = re.sub(r"[^\w-]+", "-", tag.strip().lstrip("#").lower()).strip("-")[:32]
+        if cleaned and cleaned not in skip and cleaned not in tags:
+            tags.append(cleaned)
+    return {"tags": tags[:limit], "tokens_used": result["tokens_used"], "error": False}
 
 
 def _normalize_actions(raw: dict) -> dict:

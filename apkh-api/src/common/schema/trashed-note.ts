@@ -27,6 +27,9 @@ export class TrashedNote {
   @Prop({ default: '' })
   category: string;
 
+  @Prop({ type: [String], default: [] })
+  tags: string[];
+
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Folder', default: null })
   folderId: Types.ObjectId | null;
 

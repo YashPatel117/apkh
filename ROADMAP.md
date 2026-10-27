@@ -48,7 +48,7 @@ Claude keys, Claude Code and OpenRouter keys without credit only got keyword sea
 ### 2.2 Notes that link to each other
 - [x] A page per note (`/notes/<id>`): read it, follow its links, attachments, summary, and actions (title links on cards, "Open page" / "Copy link" in the card menu)
 - [x] `[[` in the editor links another note (searches all notes), and a **Linked from** section under each note page lists backlinks
-- [ ] Tags: suggested by the AI when a note is saved, editable, filterable in the sidebar; categories stay as they are
+- [x] Tags: edited in the note editor (autocomplete from tags in use, **Suggest** asks the AI), shown on cards and note pages, filterable from the sidebar and matched by search; kept through Trash and in Markdown exports
 - [ ] The graph view (`/graph`) drawn from real links and tags instead of categories only
 
 ### 2.3 Trustworthy answers

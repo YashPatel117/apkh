@@ -499,6 +499,45 @@ export class SearchService {
     );
   }
 
+  /** Tags for a note from the user's model; `error` explains an empty result. */
+  async suggestTags(
+    token: string,
+    userId: string,
+    note: {
+      title: string;
+      category: string;
+      content: string;
+      currentTags: string[];
+      existingTags: string[];
+    },
+  ): Promise<{ tags: string[]; error: string | null }> {
+    const activeLlm = await this.usersService.getActiveLlmSettings(userId);
+    if (!activeLlm) {
+      return { tags: [], error: 'Add an AI key in Profile to suggest tags.' };
+    }
+    const overLimit = await this.usersService.builtinLimitMessage(
+      userId,
+      activeLlm,
+    );
+    if (overLimit) return { tags: [], error: overLimit };
+    try {
+      const result = await this.searchApi.suggestTags(token, activeLlm, note);
+      this.trackTokens(userId, result.tokensUsed, activeLlm, 'summary');
+      return {
+        tags: result.tags,
+        error: result.error ? 'The AI could not suggest tags right now.' : null,
+      };
+    } catch (error) {
+      if (error instanceof SearchApiError) {
+        return {
+          tags: [],
+          error: this.normalizeSearchServiceMessage(error.message),
+        };
+      }
+      throw error;
+    }
+  }
+
   async generateNoteSummary(
     token: string,
     userId: string,

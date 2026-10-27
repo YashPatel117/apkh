@@ -32,6 +32,7 @@ import { noteHref, noteLinkClick } from "@/lib/noteLinks";
 import { displayFileName } from "@/lib/fileName";
 import { isOfflineId } from "@/lib/offlineQueue";
 import { NoteSummaryPanel } from "@/components/noteSummaryPanel";
+import { TagChips } from "@/components/tagInput";
 import { SimilarNotesModal } from "@/components/similarNotes";
 import { NoteHistoryModal } from "@/components/noteHistory";
 import { MoveNoteModal } from "@/components/moveNoteModal";
@@ -51,7 +52,7 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
   const dispatch = useAppDispatch();
   const toast = useToast();
   const { t, language } = useI18n();
-  const { openNote } = useNotes();
+  const { openNote, setActiveTag } = useNotes();
   const note = useAppSelector((state) => state.note.byId[id]) as INote | undefined;
   const folders = useAppSelector((state) => state.note.folders);
   const aiOn = useAppSelector((state) => Boolean(activeAi(state.auth.user)));
@@ -245,6 +246,14 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
         </div>
 
         <h1 className="mt-3 text-2xl font-bold tracking-tight break-words text-fg sm:text-3xl">{note.title || t("ai.untitled")}</h1>
+        <TagChips
+          tags={note.tags}
+          onPick={(tag) => {
+            setActiveTag(tag);
+            router.push("/notes");
+          }}
+          className="mt-2 -ml-1.5"
+        />
 
         <div className="rich-content mt-5 text-[0.98rem]" onClick={onContentClick} dangerouslySetInnerHTML={html} />
 

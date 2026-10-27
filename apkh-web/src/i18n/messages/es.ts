@@ -815,5 +815,15 @@ const es: Partial<Record<MessageKey, string>> = {
   "notePage.attachments": "Adjuntos",
   "notePage.missing": "Esta nota no está disponible",
   "notePage.missingHint": "Puede que se haya eliminado. Las notas eliminadas esperan en la Papelera, donde puedes restaurarlas.",
+  "tags.title": "Etiquetas",
+  "tags.label": "Etiquetas",
+  "tags.placeholder": "Añade etiquetas: escribe y pulsa Intro",
+  "tags.remove": "Quitar la etiqueta {tag}",
+  "tags.suggest": "Sugerir",
+  "tags.suggested": "Sugeridas:",
+  "tags.noSuggestions": "No hay etiquetas nuevas que sugerir para esta nota.",
+  "tags.suggestFailed": "No se pudieron sugerir etiquetas ahora.",
+  "tags.filterBy": "#{tag}: {count} {count|nota|notas}",
+  "tags.removeFilter": "Quitar el filtro de etiqueta",
 };
 export default es;

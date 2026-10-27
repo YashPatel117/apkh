@@ -8,6 +8,9 @@ import { Paperclip, Type } from "lucide-react";
 import { INote, INoteDto } from "@/models/note";
 import FileDisplay from "@/components/fileDisplay";
 import { CategoryInput } from "@/components/categoryInput";
+import { TagInput } from "@/components/tagInput";
+import { useAppSelector } from "@/store/hook";
+import { activeAi } from "@/models/user";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "@/lib/noteLinkUtils";
 import { displayFileName } from "@/lib/fileName";
 import { Input } from "@/components/ui/Input";
@@ -46,6 +49,7 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
   const [note, setNote] = useState<INoteDto>({
     title: initialNote?.title || "",
     category: initialNote?.category || "",
+    tags: initialNote?.tags ?? [],
     // Cleaned on load, so the next save persists chip HTML without the legacy styles.
     content: stripLegacyFileTokenStyles(initialNote?.content || ""),
   });
@@ -53,6 +57,8 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ file?: File; fileName: string } | null>(null);
   const t = useT();
+  const tagOptions = useAppSelector((state) => state.note.tags.map((tag) => tag.name));
+  const aiOn = useAppSelector((state) => Boolean(activeAi(state.auth.user)));
   const filesRef = useRef<FileItem[]>(files);
   const quillRef = useRef<ReactQuill | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +113,7 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
         {
           title: note.title.trim(),
           category: note.category.trim(),
+          tags: note.tags,
           content: normalizeNoteLinksInHtml(note.content),
           files: files
             .filter((f) => f.file && fileTokens.includes(f.id))
@@ -165,6 +172,15 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
             onChange={(category) => setNote((prev) => ({ ...prev, category }))}
             options={categoryOptions}
             placeholder={t("editor.categoryPlaceholder")}
+          />
+        </div>
+
+        <div className="mt-4">
+          <TagInput
+            value={note.tags ?? []}
+            onChange={(tags) => setNote((prev) => ({ ...prev, tags }))}
+            options={tagOptions}
+            suggestFrom={aiOn && (note.title.trim() || plainText) ? { title: note.title, category: note.category, content: note.content } : null}
           />
         </div>
 

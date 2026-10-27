@@ -71,6 +71,7 @@ turndown.addRule('quillListItem', {
 export interface ExportableNote {
   title: string;
   category: string;
+  tags?: string[];
   content: string;
   createdAt: string | Date;
   updatedAt: string | Date;
@@ -85,6 +86,9 @@ export function noteToMarkdown(note: ExportableNote): string {
     '---',
     `title: ${yaml(note.title || 'Untitled note')}`,
     `category: ${yaml(note.category || '')}`,
+    ...(note.tags?.length
+      ? [`tags: [${note.tags.map((tag) => yaml(tag)).join(', ')}]`]
+      : []),
     ...(note.folderPath ? [`folder: ${yaml(note.folderPath)}`] : []),
     `created: ${iso(note.createdAt)}`,
     `updated: ${iso(note.updatedAt)}`,

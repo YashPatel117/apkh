@@ -17,6 +17,8 @@ interface NoteState {
   /** Notes in the library, and per category (from the server, not just loaded pages) */
   totalNotes: number;
   categories: ICategoryCount[];
+  /** Every tag in use, with its note count */
+  tags: ICategoryCount[];
   folders: IFolder[];
   /** Bumped by every create/edit/delete, so filtered views know to refresh */
   revision: number;
@@ -32,6 +34,7 @@ const initialState: NoteState = {
   byId: {},
   totalNotes: 0,
   categories: [],
+  tags: [],
   folders: [],
   revision: 0,
   indexStatus: null,
@@ -91,6 +94,9 @@ const noteSlice = createSlice({
         }
       }
     },
+    setTags: (state, action: PayloadAction<ICategoryCount[]>) => {
+      state.tags = action.payload;
+    },
     setCategories: (state, action: PayloadAction<{ categories: ICategoryCount[]; total: number }>) => {
       state.categories = action.payload.categories;
       state.totalNotes = action.payload.total;
@@ -128,6 +134,7 @@ export const {
   addNote,
   deleteNote,
   setCategories,
+  setTags,
   setFolders,
   setIndexStatus,
   markNoteIndexing,

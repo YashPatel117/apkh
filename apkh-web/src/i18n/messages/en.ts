@@ -849,6 +849,16 @@ const en = {
   "notePage.attachments": "Attachments",
   "notePage.missing": "This note isn't available",
   "notePage.missingHint": "It may have been deleted. Deleted notes wait in Trash, where you can restore them.",
+  "tags.title": "Tags",
+  "tags.label": "Tags",
+  "tags.placeholder": "Add tags: type and press Enter",
+  "tags.remove": "Remove tag {tag}",
+  "tags.suggest": "Suggest",
+  "tags.suggested": "Suggested:",
+  "tags.noSuggestions": "No new tags to suggest for this note.",
+  "tags.suggestFailed": "Couldn't suggest tags right now.",
+  "tags.filterBy": "#{tag}: {count} {count|note|notes}",
+  "tags.removeFilter": "Remove tag filter",
 };
 export type MessageKey = keyof typeof en;
 export default en;

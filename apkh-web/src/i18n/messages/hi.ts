@@ -814,5 +814,15 @@ const hi: Partial<Record<MessageKey, string>> = {
   "notePage.attachments": "अटैचमेंट",
   "notePage.missing": "यह नोट उपलब्ध नहीं है",
   "notePage.missingHint": "हो सकता है इसे हटा दिया गया हो। हटाए गए नोट ट्रैश में रहते हैं, जहाँ से आप इन्हें वापस ला सकते हैं।",
+  "tags.title": "टैग",
+  "tags.label": "टैग",
+  "tags.placeholder": "टैग जोड़ें: टाइप करें और Enter दबाएँ",
+  "tags.remove": "टैग {tag} हटाएँ",
+  "tags.suggest": "सुझाएँ",
+  "tags.suggested": "सुझाए गए:",
+  "tags.noSuggestions": "इस नोट के लिए सुझाने को कोई नया टैग नहीं है।",
+  "tags.suggestFailed": "अभी टैग नहीं सुझाए जा सके।",
+  "tags.filterBy": "#{tag}: {count} नोट",
+  "tags.removeFilter": "टैग फ़िल्टर हटाएँ",
 };
 export default hi;

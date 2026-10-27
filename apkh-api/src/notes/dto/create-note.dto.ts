@@ -13,6 +13,11 @@ export class CreateNoteDto {
   @IsOptional()
   category?: string;
 
+  /** Tags: a JSON list or "a, b" (multipart forms send strings) */
+  @ApiPropertyOptional({ type: String })
+  @IsOptional()
+  tags?: string | string[];
+
   /** Folder to file the note in; empty for none */
   @ApiPropertyOptional()
   @IsOptional()

@@ -31,11 +31,12 @@ export function useNotesFilter(search: string, aiAnswer: AiSearchResponse | null
   const { notes, nextCursor, totalNotes, byId, revision } = useAppSelector((state) => state.note);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<FolderFilter>(null);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   // An in-progress "@mention" is a note picker, not search text.
   const typedQuery = search.replace(/(^|\s)@\S*/g, " ").replace(/\s+/g, " ").trim();
   const textQuery = useDebounced(typedQuery, DEBOUNCE_MS);
-  const filtered = Boolean(textQuery || activeCategory || activeFolder);
+  const filtered = Boolean(textQuery || activeCategory || activeFolder || activeTag);
 
   const [results, setResults] = useState<INotesPage | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,8 +44,8 @@ export function useNotesFilter(search: string, aiAnswer: AiSearchResponse | null
   const request = useRef<AbortController | null>(null);
 
   const query = useMemo(
-    () => ({ q: textQuery, category: activeCategory, folderId: activeFolder }),
-    [textQuery, activeCategory, activeFolder],
+    () => ({ q: textQuery, category: activeCategory, folderId: activeFolder, tag: activeTag }),
+    [textQuery, activeCategory, activeFolder, activeTag],
   );
 
   // Filtered results: refetched when the filters change or a note is saved.
@@ -122,5 +123,7 @@ export function useNotesFilter(search: string, aiAnswer: AiSearchResponse | null
     setActiveCategory,
     activeFolder,
     setActiveFolder,
+    activeTag,
+    setActiveTag,
   };
 }

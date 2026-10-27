@@ -27,6 +27,7 @@ import { activeAi } from "@/models/user";
 import { cn } from "@/lib/cn";
 import { displayFileName } from "@/lib/fileName";
 import { noteHref, noteLinkClick } from "@/lib/noteLinks";
+import { TagChips } from "@/components/tagInput";
 
 const PREVIEW_MAX_HEIGHT = 168; // px
 
@@ -95,7 +96,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
   const [similarOpen, setSimilarOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
-  const { openNote } = useNotes();
+  const { openNote, setActiveTag } = useNotes();
   const router = useRouter();
   const toast = useToast();
   const t = useT();
@@ -314,6 +315,8 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
             />
           </div>
         )}
+
+        <TagChips tags={note.tags} onPick={setActiveTag} className="mt-2 -ml-1.5" />
 
         {/* AI summary */}
         {aiOn && summaryOpen && <NoteSummaryPanel noteId={note.id} noteTitle={note.title} updatedAt={note.updatedAt} />}

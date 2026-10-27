@@ -42,6 +42,12 @@ export class ListNotesDto {
   @MaxLength(200)
   category?: string;
 
+  @ApiPropertyOptional({ description: 'Only notes with this tag' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  tag?: string;
+
   @ApiPropertyOptional({
     description: 'A folder id, or "root" for unfiled notes',
   })
@@ -56,6 +62,32 @@ export class ExportNoteDto {
   @IsOptional()
   @IsIn(['md', 'zip'])
   format?: 'md' | 'zip';
+}
+
+export class SuggestTagsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  category?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200_000)
+  content?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  tags?: string[];
 }
 
 export class MoveNoteDto {

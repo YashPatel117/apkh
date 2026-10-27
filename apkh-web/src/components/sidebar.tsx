@@ -37,6 +37,10 @@ interface SidebarProps {
   onCategory: (category: string | null) => void;
   activeFolder: FolderFilter;
   onFolder: (folder: FolderFilter) => void;
+  /** Every tag in the library, with its note count */
+  tags: ICategoryCount[];
+  activeTag: string | null;
+  onTag: (tag: string | null) => void;
   onNewNote: () => void;
   onNavigate?: () => void;
   onLogout: () => void;
@@ -81,6 +85,9 @@ export function Sidebar({
   onCategory,
   activeFolder,
   onFolder,
+  tags,
+  activeTag,
+  onTag,
   onNewNote,
   onNavigate,
   onLogout,
@@ -106,6 +113,12 @@ export function Sidebar({
 
   const pickCategory = (category: string | null) => {
     onCategory(category);
+    if (pathname !== "/notes") router.push("/notes");
+    onNavigate?.();
+  };
+
+  const pickTag = (tag: string | null) => {
+    onTag(tag);
     if (pathname !== "/notes") router.push("/notes");
     onNavigate?.();
   };
@@ -195,6 +208,32 @@ export function Sidebar({
                 );
               })}
             </ul>
+          </div>
+        )}
+        {tags.length > 0 && (
+          <div>
+            <p className="px-3 pb-1.5 text-[0.68rem] font-semibold tracking-wider text-fg-subtle uppercase">{t("tags.title")}</p>
+            <div className="flex flex-wrap gap-1 px-2">
+              {tags.map(({ name, count }) => {
+                const active = activeTag === name && pathname === "/notes";
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => pickTag(active ? null : name)}
+                    aria-pressed={active}
+                    title={t("tags.filterBy", { tag: name, count })}
+                    className={cn(
+                      "cursor-pointer rounded-lg px-2 py-1 text-xs transition-colors",
+                      active ? "bg-accent-soft font-medium text-accent-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg",
+                    )}
+                  >
+                    #{name}
+                    <span className="ml-1 text-fg-subtle tabular-nums">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

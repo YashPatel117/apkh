@@ -32,6 +32,7 @@ import { IndexingService } from 'src/indexing/indexing.service';
 import { FoldersService } from 'src/folders/folders.service';
 import { RealtimeService } from 'src/realtime/realtime.service';
 import { htmlToPlainText } from 'src/common/utils/html';
+import { normalizeTags } from './utils/tags';
 import { TrashService } from './trash.service';
 
 export interface NotesPageQuery {
@@ -42,6 +43,8 @@ export interface NotesPageQuery {
   category?: string;
   /** A folder id, or "root" for notes outside any folder */
   folderId?: string;
+  /** Only notes with this tag */
+  tag?: string;
 }
 
 export interface NotesPage {
@@ -108,6 +111,7 @@ export class NotesService {
       const note = new this.noteModel({
         ...createNoteDto,
         ...resolvedMetadata,
+        tags: normalizeTags(createNoteDto.tags),
         folderId,
         userId,
       });
@@ -173,12 +177,14 @@ export class NotesService {
               $or: [
                 { title: pattern },
                 { category: pattern },
+                { tags: pattern },
                 { contentPlain: pattern },
               ],
             };
           });
       }
       if (query.category) filter.category = query.category;
+      if (query.tag) filter.tags = query.tag;
       if (query.folderId === 'root') filter.folderId = null;
       else if (query.folderId && isValidObjectId(query.folderId)) {
         filter.folderId = new Types.ObjectId(query.folderId);
@@ -243,6 +249,50 @@ export class NotesService {
     });
   }
 
+  /** Every tag in use, with how many notes have it. */
+  async tags(userId: string) {
+    const rows = await this.noteModel
+      .aggregate<{
+        _id: string;
+        count: number;
+      }>([
+        { $match: { userId: new Types.ObjectId(userId) } },
+        { $unwind: '$tags' },
+        { $group: { _id: '$tags', count: { $sum: 1 } } },
+        { $sort: { count: -1, _id: 1 } },
+      ])
+      .exec();
+    return new ApiResponseDto<{ name: string; count: number }[]>().ok(
+      rows.map((row) => ({ name: row._id, count: row.count })),
+    );
+  }
+
+  /** Tags the AI suggests for a note being written, preferring ones already in use. */
+  async suggestTags(
+    token: string,
+    userId: string,
+    note: {
+      title?: string;
+      category?: string;
+      content?: string;
+      tags?: string[];
+    },
+  ) {
+    const existing = await this.noteModel.distinct('tags', {
+      userId: new Types.ObjectId(userId),
+    });
+    const result = await this.searchService.suggestTags(token, userId, {
+      title: note.title ?? '',
+      category: note.category ?? '',
+      content: note.content ?? '',
+      currentTags: normalizeTags(note.tags ?? []),
+      existingTags: existing.filter((t): t is string => typeof t === 'string'),
+    });
+    return new ApiResponseDto<{ tags: string[]; error: string | null }>().ok(
+      result,
+    );
+  }
+
   /** READ ONE */
   async findOne(userId: string, _id: string) {
     try {
@@ -294,6 +344,9 @@ export class NotesService {
       note.title = resolvedMetadata.title;
       note.content = nextContent;
       note.category = resolvedMetadata.category;
+      if (updateNoteDto.tags !== undefined) {
+        note.tags = normalizeTags(updateNoteDto.tags);
+      }
       if (updateNoteDto.folderId !== undefined) {
         note.folderId = updateNoteDto.folderId
           ? ((await this.folders.require(userId, updateNoteDto.folderId))
@@ -789,6 +842,7 @@ function toNoteResponse(note: NoteDocument, files: string[]): NoteResponse {
     title: note.title,
     content: note.content,
     category: note.category,
+    tags: note.tags ?? [],
     folderId: note.folderId ? String(note.folderId) : null,
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
