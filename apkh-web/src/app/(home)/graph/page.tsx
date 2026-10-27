@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, LocateFixed, Pause, Play, Plus, Sparkles, X } from "lucide-react";
 import { Constellation, ConstellationApi } from "@/components/cosmos/Constellation";
 import { clusterColor, groupByCategory, StarNote } from "@/components/cosmos/constellationLayout";
+import { linkedNoteIds } from "@/lib/noteLinks";
 import { useReveal } from "@/components/motion/primitives";
 import { useNotes } from "@/context/notesContext";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
@@ -66,6 +67,7 @@ export default function GraphPage() {
         folderId: note.folderId ?? null,
         updatedAt: note.updatedAt,
         weight: Math.log10(10 + (note.content?.length ?? 0) + note.files.length * 4000),
+        links: linkedNoteIds(note.content),
       })),
     [notes],
   );

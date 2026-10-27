@@ -9,6 +9,8 @@ export interface StarNote {
   updatedAt: string;
   /** Rough "mass": longer notes and attachments make brighter stars */
   weight: number;
+  /** Notes this one links to ("[[" links) */
+  links: string[];
 }
 
 export interface Cluster {

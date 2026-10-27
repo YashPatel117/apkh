@@ -16,6 +16,14 @@ export function noteIdFromHref(href: string | null | undefined): string | null {
   return match[1];
 }
 
+/** Ids of the notes a note's HTML links to, each once. */
+export function linkedNoteIds(html: string | undefined): string[] {
+  if (!html?.includes("/notes/")) return [];
+  const ids = new Set<string>();
+  for (const match of html.matchAll(/href=["'](?:https?:\/\/[^/"']+)?\/notes\/([a-f\d]{24})\/?["']/gi)) ids.add(match[1]);
+  return [...ids];
+}
+
 /**
  * A click on a note link inside rendered note HTML: its note id, or null.
  * Modified clicks (new tab, etc.) are left to the browser.

@@ -474,7 +474,8 @@ export function Constellation({ className, apiRef, labelsRef, tooltipRef, questi
         nebGeo.setAttribute("aLit", new THREE.BufferAttribute(new Float32Array(nc).fill(1), 1));
         nebulae = new THREE.Points(nebGeo, nebulaMat);
 
-        // Edges: every star to its constellation's heart, and notes in a folder chained together
+        // Edges: every star to its constellation's heart, notes in a folder chained
+        // together, and the brightest for links between notes ("[[" links)
         const segs: [number, number[], number][] = []; // [owner star, other end, alpha]
         notes.forEach((_, i) => segs.push([i, layout!.clusters[layout!.clusterOf[i]].center, 0.14]));
         const byFolder = new Map<string, number[]>();
@@ -489,6 +490,14 @@ export function Constellation({ className, apiRef, labelsRef, tooltipRef, questi
           for (let k = 1; k < list.length; k++) {
             const j = list[k - 1];
             segs.push([list[k], [layout!.positions[j * 3], layout!.positions[j * 3 + 1], layout!.positions[j * 3 + 2]], 0.4]);
+          }
+        });
+        const indexOf = new Map(notes.map((note, i) => [note.id, i]));
+        notes.forEach((note, i) => {
+          for (const target of note.links) {
+            const j = indexOf.get(target);
+            if (j === undefined || j === i) continue;
+            segs.push([i, [layout!.positions[j * 3], layout!.positions[j * 3 + 1], layout!.positions[j * 3 + 2]], 0.75]);
           }
         });
         const ePos = new Float32Array(segs.length * 6);
