@@ -248,8 +248,8 @@ export type AiSearchResponse = {
     excerpt: string;
     /** Cosine similarity for a meaning match; 0 for a keyword-only match */
     similarity_score: number;
-    /** Why the passage was found (older API versions omit it) */
-    match?: "semantic" | "keyword" | "both";
+    /** Why the passage was found (older API versions omit it); pinned: part of a note asked about */
+    match?: "semantic" | "keyword" | "both" | "pinned";
     /** The answer cites it as [n], n being its position + 1 */
     cited?: boolean;
   }[];

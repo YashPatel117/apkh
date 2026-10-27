@@ -851,5 +851,7 @@ const es: Partial<Record<MessageKey, string>> = {
   "links.noOutgoing": "Esta nota no enlaza a otras notas. Escribe [[ al editar para añadir uno.",
   "links.backlinksFailed": "No se pudieron cargar las notas que enlazan aquí.",
   "links.unavailable": "Nota eliminada",
+  "match.pinned": "De tu nota",
+  "match.pinnedHint": "Parte de una nota por la que preguntaste, o de una nota que enlaza",
 };
 export default es;

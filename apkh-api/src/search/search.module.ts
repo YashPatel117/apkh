@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { KnowledgeChunk, KnowledgeChunkSchema } from 'src/common/schema/chunk';
+import { Note, NoteSchema } from 'src/common/schema/note';
 import { IndexingModule } from 'src/indexing/indexing.module';
 import { SearchApiModule } from 'src/search-api/search-api.module';
 import { UsersModule } from 'src/users/users.module';
@@ -12,6 +13,7 @@ import { SearchService } from './search.service';
   imports: [
     MongooseModule.forFeature([
       { name: KnowledgeChunk.name, schema: KnowledgeChunkSchema },
+      { name: Note.name, schema: NoteSchema },
     ]),
     SearchApiModule,
     IndexingModule,

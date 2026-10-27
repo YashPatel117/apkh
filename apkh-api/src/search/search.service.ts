@@ -5,7 +5,8 @@ import {
   KnowledgeChunk,
   KnowledgeChunkDocument,
 } from 'src/common/schema/chunk';
-import { NoteDocument } from 'src/common/schema/note';
+import { Note, NoteDocument } from 'src/common/schema/note';
+import { linkedNoteIds } from 'src/notes/utils/note-links';
 import type { NoteActions, SummaryMode } from 'src/common/schema/summary';
 import type { UsageKind } from 'src/common/schema/usage-event';
 import { htmlToPlainText } from 'src/common/utils/html';
@@ -55,7 +56,8 @@ export interface AiSearchResultReference {
   /** Cosine similarity for a semantic match, 0 for a keyword-only match */
   similarity_score: number;
   /** Why the passage was retrieved */
-  match: 'semantic' | 'keyword' | 'both';
+  /** pinned: part of a note asked about (or one it links to) that matched neither way */
+  match: 'semantic' | 'keyword' | 'both' | 'pinned';
   /** The answer cites it as [n], n being its 1-based position */
   cited: boolean;
 }
@@ -130,6 +132,8 @@ export function similarityThresholds(provider: LlmProvider) {
 // like "what are the key points?" scores low against every chunk) and get a
 // larger share of the note instead.
 const PINNED_NOTES_MAX_CHUNKS = 12;
+// Notes linked from pinned notes that join the question, at most
+const MAX_LINKED_NOTES = 10;
 
 const SIMILAR_NOTES_LIMIT = 5;
 
@@ -144,6 +148,7 @@ export class SearchService {
   constructor(
     @InjectModel(KnowledgeChunk.name)
     private readonly chunkModel: Model<KnowledgeChunkDocument>,
+    @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
     private readonly usersService: UsersService,
     private readonly searchApi: SearchApiClient,
     private readonly retrieval: RetrievalService,
@@ -300,12 +305,15 @@ export class SearchService {
     const { vector } = embedded;
 
     const pinned = Boolean(referencedNoteIds?.length);
+    const noteIds = pinned
+      ? await this.withLinkedNotes(userId, referencedNoteIds!)
+      : undefined;
     const thresholds = similarityThresholds(activeLlm.provider);
     const limit = pinned ? PINNED_NOTES_MAX_CHUNKS : topK;
     const retrieveFor = (text: string, queryVector: Float32Array | null) =>
       this.retrieveNotePassages(userId, text, {
         limit,
-        noteIds: referencedNoteIds,
+        noteIds,
         vector: queryVector,
         space,
         minSimilarity: pinned ? null : thresholds.min,
@@ -393,10 +401,13 @@ export class SearchService {
     }
 
     const pinned = Boolean(options.noteIds?.length);
+    const noteIds = pinned
+      ? await this.withLinkedNotes(userId, options.noteIds!)
+      : undefined;
     const [chunks, pendingNotes] = await Promise.all([
       this.retrieveNotePassages(userId, query, {
         limit: options.limit,
-        noteIds: options.noteIds,
+        noteIds,
         vector,
         space: activeLlm ? embeddingSpaceFor(activeLlm.provider) : null,
         minSimilarity:
@@ -441,6 +452,46 @@ export class SearchService {
     }
   }
 
+  /**
+   * A question about pinned notes also reads the notes they link to ("[["
+   * links, one step), so "is candidate 1 a good fit?" on a job description
+   * finds the linked candidate's CV. Only the user's own notes count.
+   */
+  private async withLinkedNotes(
+    userId: string,
+    noteIds: string[],
+  ): Promise<string[]> {
+    const pinned = noteIds.filter((id) => Types.ObjectId.isValid(id));
+    const notes = await this.noteModel
+      .find({
+        userId: new Types.ObjectId(userId),
+        _id: { $in: pinned.map((id) => new Types.ObjectId(id)) },
+      })
+      .select('content')
+      .lean()
+      .exec();
+    const linked = [
+      ...new Set(notes.flatMap((note) => linkedNoteIds(note.content))),
+    ].filter((id) => !pinned.includes(id));
+    if (!linked.length) return noteIds;
+    const existing = await this.noteModel
+      .find({
+        userId: new Types.ObjectId(userId),
+        _id: {
+          $in: linked
+            .slice(0, MAX_LINKED_NOTES)
+            .map((id) => new Types.ObjectId(id)),
+        },
+      })
+      .select('_id')
+      .lean()
+      .exec();
+    return [
+      ...noteIds,
+      ...existing.map((note) => (note._id as Types.ObjectId).toHexString()),
+    ];
+  }
+
   /** Hybrid retrieval over note text and attachments (not chat transcripts). */
   private retrieveNotePassages(
     userId: string,
@@ -459,6 +510,8 @@ export class SearchService {
       vector: options.vector,
       space: options.space,
       minSimilarity: options.minSimilarity,
+      // Notes asked about are used whole, even where no word matches.
+      fillFromScope: Boolean(options.noteIds?.length),
     });
   }
 
@@ -797,6 +850,8 @@ function toReference(
         ? 'both'
         : chunk.similarity !== null
           ? 'semantic'
-          : 'keyword',
+          : chunk.keywordMatch
+            ? 'keyword'
+            : 'pinned',
   };
 }

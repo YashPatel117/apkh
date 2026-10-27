@@ -123,6 +123,12 @@ export class RetrievalService {
       space?: EmbeddingSpace | null;
       /** Semantic matches below this similarity are dropped; null keeps all */
       minSimilarity?: number | null;
+      /**
+       * Notes the user asked about (scope.noteIds): passages that matched
+       * neither way still fill the remaining room, in the notes' own order,
+       * so a question about a note can use all of it.
+       */
+      fillFromScope?: boolean;
     },
   ): Promise<RetrievedChunk[]> {
     const filter = scopeFilter(new Types.ObjectId(userId), options.scope);
@@ -159,9 +165,44 @@ export class RetrievalService {
     semantic.forEach(({ doc, similarity }, i) => add(doc, i + 1, similarity));
     keyword.forEach((doc, i) => add(doc, i + 1, null));
 
-    return [...fused.values()]
+    const ranked = [...fused.values()]
       .sort((a, b) => b.score - a.score)
       .slice(0, options.limit);
+    const noteIds = options.scope.noteIds;
+    if (
+      !options.fillFromScope ||
+      !noteIds?.length ||
+      ranked.length >= options.limit
+    ) {
+      return ranked;
+    }
+
+    // Matched neither way: no similarity and no keyword match ("pinned").
+    const taken = new Set(ranked.map((chunk) => chunk.id));
+    const takenText = new Set(fused.keys());
+    const order = new Map(noteIds.map((id, i) => [id, i]));
+    const rest = await this.chunkModel
+      .find(filter)
+      .select(`${CANDIDATE_FIELDS} chunkIndex`)
+      .lean<(CandidateDoc & { chunkIndex?: number })[]>()
+      .exec();
+    const fill = rest
+      .filter((doc) => !taken.has(String(doc._id)))
+      .filter(
+        (doc) =>
+          !takenText.has(
+            `${String(doc.noteId)}:${doc.textHash ?? String(doc._id)}`,
+          ),
+      )
+      .sort(
+        (a, b) =>
+          (order.get(String(a.noteId)) ?? 0) -
+            (order.get(String(b.noteId)) ?? 0) ||
+          (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0),
+      )
+      .slice(0, options.limit - ranked.length)
+      .map(toRetrievedChunk);
+    return [...ranked, ...fill];
   }
 
   /**

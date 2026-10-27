@@ -885,6 +885,8 @@ const en = {
   "links.noOutgoing": "This note doesn't link to other notes. Type [[ while editing to add one.",
   "links.backlinksFailed": "Couldn't load the notes that link here.",
   "links.unavailable": "Deleted note",
+  "match.pinned": "From your note",
+  "match.pinnedHint": "Part of a note you asked about, or a note it links to",
 };
 export type MessageKey = keyof typeof en;
 export default en;

@@ -850,5 +850,7 @@ const hi: Partial<Record<MessageKey, string>> = {
   "links.noOutgoing": "यह नोट किसी दूसरे नोट से लिंक नहीं करता। जोड़ने के लिए संपादन करते समय [[ टाइप करें।",
   "links.backlinksFailed": "इससे लिंक करने वाले नोट लोड नहीं हो सके।",
   "links.unavailable": "हटाया गया नोट",
+  "match.pinned": "आपके नोट से",
+  "match.pinnedHint": "जिस नोट के बारे में आपने पूछा उसका हिस्सा, या उससे लिंक किए नोट का",
 };
 export default hi;

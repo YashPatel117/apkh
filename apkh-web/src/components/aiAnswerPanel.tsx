@@ -30,6 +30,7 @@ const confidenceTone: Record<string, { label: MessageKey; classes: string }> = {
 function matchLabel(reference: Reference, t: Translate) {
   const similarity = `${Math.round(reference.similarity_score * 100)}%`;
   if (reference.match === "keyword") return t("match.keywords");
+  if (reference.match === "pinned") return t("match.pinned");
   if (reference.match === "both") return t("match.both", { similarity });
   return similarity;
 }
@@ -167,7 +168,7 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onCont
                   </p>
                 ) : (
                   answer.references.map((reference, index) => {
-                    const matched = reference.match === "semantic" ? [] : matchedTerms(reference.excerpt, terms);
+                    const matched = reference.match === "keyword" || reference.match === "both" ? matchedTerms(reference.excerpt, terms) : [];
                     return (
                     <button
                       key={`${reference.note_id}-${reference.source_name ?? "note"}-${index}`}
@@ -188,7 +189,13 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onCont
                             <span
                               className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.7rem] font-semibold text-accent-fg"
                               title={t(
-                                reference.match === "keyword" ? "match.keywordsHint" : reference.match === "both" ? "match.bothHint" : "match.semanticHint",
+                                reference.match === "keyword"
+                                  ? "match.keywordsHint"
+                                  : reference.match === "both"
+                                    ? "match.bothHint"
+                                    : reference.match === "pinned"
+                                      ? "match.pinnedHint"
+                                      : "match.semanticHint",
                               )}
                             >
                               {matchLabel(reference, t)}
