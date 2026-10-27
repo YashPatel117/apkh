@@ -141,6 +141,11 @@
   .rich-content a {
     @apply text-accent-fg underline decoration-1 underline-offset-2 hover:decoration-2;
   }
+  /* Links to other notes ("[[" in the editor) read as note references, not web links */
+  .rich-content a[href^="/notes/"],
+  .note-editor .ql-editor a[href^="/notes/"] {
+    @apply rounded-md bg-accent-soft px-1 font-medium text-accent-fg no-underline decoration-dotted hover:underline;
+  }
   .rich-content blockquote {
     @apply rounded-r-lg border-l-3 border-indigo-300 bg-accent-soft py-1.5 pl-3 dark:border-indigo-500/60;
   }

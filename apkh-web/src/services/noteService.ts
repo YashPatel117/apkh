@@ -100,6 +100,21 @@ export async function getNoteById(id: string) {
   return res.data;
 }
 
+export interface IBacklink {
+  id: string;
+  title: string;
+  category: string;
+  updatedAt: string;
+  /** The text around the link */
+  snippet: string;
+}
+
+/** Notes that link to this one, most recently changed first. */
+export async function getBacklinks(id: string) {
+  const res = await webApi.get(`/notes/${id}/backlinks`);
+  return res.data.data as IBacklink[];
+}
+
 export async function createNote(note: INoteDto) {
   const formData = new FormData();
 

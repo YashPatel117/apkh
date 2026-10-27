@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { FormAlert } from "@/components/authShell";
 import { useSlashCommands } from "@/components/slashCommands";
+import { useNoteLinkPicker } from "@/components/noteLinkPicker";
 import { useT } from "@/i18n";
 import { errorText } from "@/lib/localizedError";
 
@@ -65,6 +66,7 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
 
   const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
   const slash = useSlashCommands(quillRef, openFilePicker);
+  const linkPicker = useNoteLinkPicker(quillRef, initialNote?.id);
 
   const plainText = note.content.replace(/<[^>]+>/g, "").trim();
   const hasTokens = note.content.includes("file-token");
@@ -166,7 +168,13 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
           />
         </div>
 
-        <div className="mt-4" onKeyDownCapture={slash.onKeyDownCapture}>
+        <div
+          className="mt-4"
+          onKeyDownCapture={(e) => {
+            linkPicker.onKeyDownCapture(e);
+            if (!e.isPropagationStopped()) slash.onKeyDownCapture(e);
+          }}
+        >
           <ReactQuill
             ref={quillRef}
             className="note-editor"
@@ -177,6 +185,7 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
             modules={modules}
           />
           {slash.menu}
+          {linkPicker.menu}
         </div>
         <input type="file" multiple ref={fileInputRef} className="hidden" onChange={handleFileChange} />
       </div>

@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AtSign, ChevronDown, Clock, FileArchive, FileDown, FolderInput, History, Layers, MoreHorizontal, Paperclip, Printer, Sparkles, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AtSign, ChevronDown, Clock, ExternalLink, FileArchive, FileDown, FolderInput, History, Layers, Link2, MoreHorizontal, Paperclip, Printer, Sparkles, Trash2 } from "lucide-react";
 import { INote, NoteIndexState } from "@/models/note";
 import { IndexBadge } from "@/components/indexBadge";
 import { NoteSummaryPanel } from "@/components/noteSummaryPanel";
@@ -24,6 +26,7 @@ import { useAppSelector } from "@/store/hook";
 import { activeAi } from "@/models/user";
 import { cn } from "@/lib/cn";
 import { displayFileName } from "@/lib/fileName";
+import { noteHref, noteLinkClick } from "@/lib/noteLinks";
 
 const PREVIEW_MAX_HEIGHT = 168; // px
 
@@ -93,6 +96,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const { openNote } = useNotes();
+  const router = useRouter();
   const toast = useToast();
   const t = useT();
   // A note saved offline exists only in this browser until it syncs.
@@ -139,7 +143,23 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
     onEdit?.();
   };
 
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${noteHref(note.id)}`);
+      toast(t("links.copied"), "success");
+    } catch {
+      toast(t("links.copyFailed"), "error");
+    }
+  };
+
   const handleContentClick = (e: React.MouseEvent) => {
+    const linked = noteLinkClick(e);
+    if (linked) {
+      e.preventDefault();
+      e.stopPropagation();
+      router.push(noteHref(linked));
+      return;
+    }
     const target = e.target as HTMLElement;
     const token = target.closest<HTMLElement>(".file-token");
     if (token?.dataset.id) {
@@ -235,6 +255,13 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
                     };
                     return (
                       <>
+                        <MenuItem icon={<ExternalLink />} onClick={then(() => router.push(noteHref(note.id)))}>
+                          {t("links.openPage")}
+                        </MenuItem>
+                        <MenuItem icon={<Link2 />} onClick={then(() => void copyLink())}>
+                          {t("links.copy")}
+                        </MenuItem>
+                        <div className="my-1 h-px bg-line" />
                         <MenuItem icon={<FolderInput />} onClick={then(() => setMoveOpen(true))}>
                           {t("card.move")}
                         </MenuItem>
@@ -263,7 +290,13 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
         </div>
 
         <h2 className="mt-3 text-[1.05rem] leading-snug font-semibold tracking-tight break-words text-fg">
-          {note.title || t("ai.untitled")}
+          {synced ? (
+            <Link href={noteHref(note.id)} onClick={(e) => e.stopPropagation()} className="hover:text-accent-fg hover:underline">
+              {note.title || t("ai.untitled")}
+            </Link>
+          ) : (
+            note.title || t("ai.untitled")
+          )}
         </h2>
 
         {/* Content preview */}

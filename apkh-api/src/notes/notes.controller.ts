@@ -256,6 +256,12 @@ export class NotesController {
     return this.notesService.similar(userId, id);
   }
 
+  /** BACKLINKS: notes that link to this one */
+  @Get(':id/backlinks')
+  backlinks(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    return this.notesService.backlinks(userId, id);
+  }
+
   /** RE-INDEX one note */
   @Post(':id/reindex')
   @HttpCode(HttpStatus.ACCEPTED)

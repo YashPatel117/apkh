@@ -31,6 +31,7 @@ import { errorMessage, toHttpException } from 'src/common/utils/http-error';
 import { IndexingService } from 'src/indexing/indexing.service';
 import { FoldersService } from 'src/folders/folders.service';
 import { RealtimeService } from 'src/realtime/realtime.service';
+import { htmlToPlainText } from 'src/common/utils/html';
 import { TrashService } from './trash.service';
 
 export interface NotesPageQuery {
@@ -53,6 +54,19 @@ export interface NotesPage {
 
 // Versions kept per note; the oldest go first.
 const MAX_VERSIONS_PER_NOTE = 50;
+// Backlinks listed under a note
+const MAX_BACKLINKS = 50;
+// Characters of text shown either side of a link in a backlink
+const BACKLINK_CONTEXT_CHARS = 80;
+
+export interface Backlink {
+  id: string;
+  title: string;
+  category: string;
+  updatedAt: string;
+  /** The text around the link, or the start of the note */
+  snippet: string;
+}
 
 @Injectable()
 export class NotesService {
@@ -688,6 +702,36 @@ export class NotesService {
     return this.searchService.similarNotes(userId, _id);
   }
 
+  /**
+   * Notes that link to this one: their HTML holds a link to `/notes/<id>`
+   * (what `[[` inserts in the editor). Each comes with the text around its
+   * first link to the note.
+   */
+  async backlinks(userId: string, _id: string) {
+    await this.requireNote(userId, _id);
+    const href = `/notes/${_id}`;
+    const linking = await this.noteModel
+      .find({
+        userId,
+        _id: { $ne: _id },
+        content: { $regex: escapeRegExp(href) },
+      })
+      .select('title category content contentPlain updatedAt')
+      .sort({ updatedAt: -1 })
+      .limit(MAX_BACKLINKS)
+      .lean()
+      .exec();
+    return new ApiResponseDto<Backlink[]>().ok(
+      linking.map((note) => ({
+        id: (note._id as Types.ObjectId).toHexString(),
+        title: note.title,
+        category: note.category,
+        updatedAt: note.updatedAt,
+        snippet: linkContext(note.content, note.contentPlain ?? '', href),
+      })),
+    );
+  }
+
   /** Queue a note for re-indexing (e.g. to retry an attachment). */
   async reindex(userId: string, _id: string, force = false) {
     await this.requireNote(userId, _id);
@@ -768,6 +812,23 @@ function decodeCursor(
     throw new HttpException('Invalid cursor', HttpStatus.BAD_REQUEST);
   }
   return { updatedAt, id: new Types.ObjectId(id) };
+}
+
+/** The plain text around a note's first link to `href`, or its first line. */
+function linkContext(html: string, plain: string, href: string): string {
+  const anchor = new RegExp(
+    `<a\\b[^>]*href=["']${escapeRegExp(href)}["'][^>]*>(.*?)</a>`,
+    'i',
+  ).exec(html);
+  const linkText = anchor ? htmlToPlainText(anchor[1]).trim() : '';
+  const at = linkText ? plain.indexOf(linkText) : -1;
+  if (at === -1) return plain.slice(0, BACKLINK_CONTEXT_CHARS * 2).trim();
+  const start = Math.max(0, at - BACKLINK_CONTEXT_CHARS);
+  const end = Math.min(
+    plain.length,
+    at + linkText.length + BACKLINK_CONTEXT_CHARS,
+  );
+  return `${start > 0 ? '…' : ''}${plain.slice(start, end).replace(/\s+/g, ' ').trim()}${end < plain.length ? '…' : ''}`;
 }
 
 function escapeRegExp(text: string): string {

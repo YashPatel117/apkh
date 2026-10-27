@@ -46,8 +46,8 @@ Claude keys, Claude Code and OpenRouter keys without credit only got keyword sea
 **Done when:** a Claude Code user's search finds a note by meaning ("trip costs" → a note titled "Goa budget").
 
 ### 2.2 Notes that link to each other
-- [ ] A URL per note (`/notes/<id>`), so notes, search results and MCP answers can link straight to one
-- [ ] `[[Note title]]` links with autocomplete in the editor, and a **Backlinks** section under each note
+- [x] A page per note (`/notes/<id>`): read it, follow its links, attachments, summary, and actions (title links on cards, "Open page" / "Copy link" in the card menu)
+- [x] `[[` in the editor links another note (searches all notes), and a **Linked from** section under each note page lists backlinks
 - [ ] Tags: suggested by the AI when a note is saved, editable, filterable in the sidebar; categories stay as they are
 - [ ] The graph view (`/graph`) drawn from real links and tags instead of categories only
 
