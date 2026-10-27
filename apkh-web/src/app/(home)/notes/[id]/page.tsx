@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowUpRight,
   Clock,
   FileArchive,
   FileDown,
@@ -28,7 +29,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { cacheNotes, deleteNote as deleteNoteAction } from "@/store/slices/noteSlice";
 import { useNotes } from "@/context/notesContext";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "@/lib/noteLinkUtils";
-import { noteHref, noteLinkClick } from "@/lib/noteLinks";
+import { linkedNoteIds, noteHref, noteLinkClick } from "@/lib/noteLinks";
 import { displayFileName } from "@/lib/fileName";
 import { isOfflineId } from "@/lib/offlineQueue";
 import { NoteSummaryPanel } from "@/components/noteSummaryPanel";
@@ -58,6 +59,10 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
   const aiOn = useAppSelector((state) => Boolean(activeAi(state.auth.user)));
   const [missing, setMissing] = useState(false);
   const [backlinks, setBacklinks] = useState<IBacklink[] | null>(null);
+  const [backlinksFailed, setBacklinksFailed] = useState(false);
+  const byId = useAppSelector((state) => state.note.byId);
+  // Linked notes that couldn't be loaded (deleted, or in Trash)
+  const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [similarOpen, setSimilarOpen] = useState(false);
@@ -89,15 +94,43 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
     let cancelled = false;
     getBacklinks(id)
       .then((links) => {
-        if (!cancelled) setBacklinks(links);
+        if (cancelled) return;
+        setBacklinks(links);
+        setBacklinksFailed(false);
       })
       .catch(() => {
-        if (!cancelled) setBacklinks([]);
+        if (cancelled) return;
+        setBacklinks([]);
+        setBacklinksFailed(true);
       });
     return () => {
       cancelled = true;
     };
   }, [id, updatedAt]);
+
+  // Notes this one links to, in the order they appear; any not loaded yet are fetched.
+  const content = note?.content;
+  const outgoing = useMemo(() => linkedNoteIds(content).filter((linked) => linked !== id), [content, id]);
+  useEffect(() => {
+    const missing = outgoing.filter((linked) => !byId[linked] && !unavailable.has(linked));
+    if (!missing.length) return;
+    let cancelled = false;
+    Promise.all(
+      missing.map((linked) =>
+        getNoteById(linked)
+          .then((res) => res.data as INote)
+          .catch(() => linked),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      dispatch(cacheNotes(results.filter((r): r is INote => typeof r !== "string")));
+      const gone = results.filter((r): r is string => typeof r === "string");
+      if (gone.length) setUnavailable((prev) => new Set([...prev, ...gone]));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [outgoing, byId, unavailable, dispatch]);
 
   const html = useMemo(
     () => ({ __html: note ? normalizeNoteLinksInHtml(stripLegacyFileTokenStyles(note.content)) : "" }),
@@ -292,6 +325,41 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
       </article>
 
       {synced && (
+        <>
+        <section className="mt-6" aria-labelledby="outgoing-title">
+          <h2 id="outgoing-title" className="flex items-center gap-2 text-sm font-semibold text-fg">
+            <ArrowUpRight className="size-4 text-fg-subtle" />
+            {t("links.outgoing")}
+            {outgoing.length > 0 && <span className="text-fg-subtle tabular-nums">{outgoing.length}</span>}
+          </h2>
+          {outgoing.length === 0 ? (
+            <p className="mt-2 text-sm text-fg-subtle">{t("links.noOutgoing")}</p>
+          ) : (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {outgoing.map((linked) => {
+                const target = byId[linked];
+                if (unavailable.has(linked)) {
+                  return (
+                    <li key={linked} className="rounded-xl border border-dashed border-line px-3 py-1.5 text-sm text-fg-subtle">
+                      {t("links.unavailable")}
+                    </li>
+                  );
+                }
+                return (
+                  <li key={linked}>
+                    <Link
+                      href={noteHref(linked)}
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:border-indigo-200 dark:hover:border-indigo-400/30"
+                    >
+                      {target ? <span className="truncate">{target.title || t("ai.untitled")}</span> : <Spinner className="size-3.5 text-accent" />}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
         <section className="mt-6" aria-labelledby="backlinks-title">
           <h2 id="backlinks-title" className="flex items-center gap-2 text-sm font-semibold text-fg">
             <Link2 className="size-4 text-fg-subtle" />
@@ -300,6 +368,8 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
           </h2>
           {backlinks === null ? (
             <Spinner className="mt-3 size-4 text-accent" />
+          ) : backlinksFailed ? (
+            <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{t("links.backlinksFailed")}</p>
           ) : backlinks.length === 0 ? (
             <p className="mt-2 text-sm text-fg-subtle">{t("links.noBacklinks")}</p>
           ) : (
@@ -318,6 +388,7 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
             </ul>
           )}
         </section>
+        </>
       )}
 
       {historyOpen && <NoteHistoryModal note={note} open onClose={() => setHistoryOpen(false)} />}

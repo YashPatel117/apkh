@@ -807,7 +807,7 @@ const hi: Partial<Record<MessageKey, string>> = {
   "links.copyFailed": "लिंक कॉपी नहीं हो सका।",
   "links.openPage": "पेज खोलें",
   "links.backlinks": "इनसे लिंक है",
-  "links.noBacklinks": "अभी कोई दूसरा नोट यहाँ लिंक नहीं करता। इसे लिंक करने के लिए किसी नोट में [[ टाइप करें।",
+  "links.noBacklinks": "अभी कोई दूसरा नोट इससे लिंक नहीं करता।",
   "notePage.back": "वापस",
   "notePage.edit": "संपादित करें",
   "notePage.updated": "{date} को अपडेट",
@@ -846,5 +846,9 @@ const hi: Partial<Record<MessageKey, string>> = {
   "admin.feedbackNone": "पिछले 30 दिनों में कोई वोट नहीं।",
   "admin.feedbackChat": "चैट",
   "admin.feedbackSearch": "AI खोज",
+  "links.outgoing": "इनसे लिंक करता है",
+  "links.noOutgoing": "यह नोट किसी दूसरे नोट से लिंक नहीं करता। जोड़ने के लिए संपादन करते समय [[ टाइप करें।",
+  "links.backlinksFailed": "इससे लिंक करने वाले नोट लोड नहीं हो सके।",
+  "links.unavailable": "हटाया गया नोट",
 };
 export default hi;

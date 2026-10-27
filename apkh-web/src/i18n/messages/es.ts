@@ -808,7 +808,7 @@ const es: Partial<Record<MessageKey, string>> = {
   "links.copyFailed": "No se pudo copiar el enlace.",
   "links.openPage": "Abrir página",
   "links.backlinks": "Enlazada desde",
-  "links.noBacklinks": "Ninguna otra nota enlaza aquí todavía. Escribe [[ en una nota para enlazar esta.",
+  "links.noBacklinks": "Ninguna otra nota enlaza a esta todavía.",
   "notePage.back": "Volver",
   "notePage.edit": "Editar",
   "notePage.updated": "Actualizada {date}",
@@ -847,5 +847,9 @@ const es: Partial<Record<MessageKey, string>> = {
   "admin.feedbackNone": "No hay votos en los últimos 30 días.",
   "admin.feedbackChat": "Chat",
   "admin.feedbackSearch": "Búsqueda con IA",
+  "links.outgoing": "Enlaza a",
+  "links.noOutgoing": "Esta nota no enlaza a otras notas. Escribe [[ al editar para añadir uno.",
+  "links.backlinksFailed": "No se pudieron cargar las notas que enlazan aquí.",
+  "links.unavailable": "Nota eliminada",
 };
 export default es;

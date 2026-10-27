@@ -842,7 +842,7 @@ const en = {
   "links.copyFailed": "Couldn't copy the link.",
   "links.openPage": "Open page",
   "links.backlinks": "Linked from",
-  "links.noBacklinks": "No other note links here yet. Type [[ in a note to link to this one.",
+  "links.noBacklinks": "No other note links to this one yet.",
   "notePage.back": "Back",
   "notePage.edit": "Edit",
   "notePage.updated": "Updated {date}",
@@ -881,6 +881,10 @@ const en = {
   "admin.feedbackNone": "No votes in the last 30 days.",
   "admin.feedbackChat": "Chat",
   "admin.feedbackSearch": "AI search",
+  "links.outgoing": "Links to",
+  "links.noOutgoing": "This note doesn't link to other notes. Type [[ while editing to add one.",
+  "links.backlinksFailed": "Couldn't load the notes that link here.",
+  "links.unavailable": "Deleted note",
 };
 export type MessageKey = keyof typeof en;
 export default en;
