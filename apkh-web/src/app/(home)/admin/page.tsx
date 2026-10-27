@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Ban, Check, ChevronLeft, ChevronRight, Copy, HardDrive, ListChecks, NotebookText, Plus, RefreshCw, Search, ShieldAlert, Ticket, Users } from "lucide-react";
 import { useAppSelector } from "@/store/hook";
 import {
+  AdminFeedback,
+  getAdminFeedback,
   AdminOverview,
   AdminUser,
   AdminVoucher,
@@ -89,6 +91,7 @@ export default function AdminPage() {
       </div>
       <Overview />
       <UsersSection />
+      <FeedbackSection />
       <VouchersSection />
     </div>
   );
@@ -339,6 +342,73 @@ function UsersSection() {
             <ChevronRight className="size-4" />
           </Button>
         </div>
+      )}
+    </Section>
+  );
+}
+
+function FeedbackSection() {
+  const t = useT();
+  const [filter, setFilter] = useState<"unhelpful" | "all">("unhelpful");
+  const [data, setData] = useState<AdminFeedback | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAdminFeedback(filter)
+      .then((result) => !cancelled && setData(result))
+      .catch(() => !cancelled && setData({ helpful: 0, unhelpful: 0, recent: [] }));
+    return () => {
+      cancelled = true;
+    };
+  }, [filter]);
+
+  const total = (data?.helpful ?? 0) + (data?.unhelpful ?? 0);
+  return (
+    <Section
+      title={t("admin.feedback")}
+      action={
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as "unhelpful" | "all")}
+          aria-label={t("admin.feedbackFilter")}
+          className={cn(fieldClass, "h-8 w-40 cursor-pointer px-2")}
+        >
+          <option value="unhelpful">{t("admin.feedbackUnhelpful")}</option>
+          <option value="all">{t("admin.feedbackAll")}</option>
+        </select>
+      }
+    >
+      {!data ? (
+        <Spinner className="size-5 text-accent" />
+      ) : (
+        <>
+          <p className="text-sm text-fg-muted">
+            {total
+              ? t("admin.feedbackTotals", { helpful: data.helpful, unhelpful: data.unhelpful, share: Math.round((100 * data.helpful) / total) })
+              : t("admin.feedbackNone")}
+          </p>
+          {data.recent.length > 0 && (
+            <ul className="mt-4 space-y-3">
+              {data.recent.map((f) => (
+                <li key={f.id} className="rounded-2xl border border-line p-3.5">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-subtle">
+                    <span className={cn("font-semibold", f.helpful ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
+                      {f.helpful ? t("feedback.helpful") : t("feedback.notHelpful")}
+                    </span>
+                    <span>· {f.kind === "chat" ? t("admin.feedbackChat") : t("admin.feedbackSearch")}</span>
+                    {f.model && <span>· {f.model}</span>}
+                    <span>· {t("ai.sourceCount", { count: f.sourceCount })}</span>
+                    {f.email && <span>· {f.email}</span>}
+                    <span>· {timeFormat.format(new Date(f.at))}</span>
+                  </div>
+                  <p className="mt-1.5 text-sm font-medium text-fg">{f.query || "—"}</p>
+                  <p className="mt-1 line-clamp-3 text-sm text-fg-muted">{f.answer}</p>
+                  {f.comment && <p className="mt-2 rounded-xl bg-surface-2 px-3 py-2 text-sm text-fg">“{f.comment}”</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </Section>
   );

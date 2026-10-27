@@ -27,6 +27,7 @@ import {
 import { useNotes } from "@/context/notesContext";
 import { Avatar } from "@/components/sidebar";
 import { CitedMarkdown } from "@/components/citedMarkdown";
+import { AnswerFeedback } from "@/components/answerFeedback";
 import { useSourceViewer } from "@/components/sourceViewer";
 import { useSaveAnswerAsNote } from "@/hooks/useSaveAnswerAsNote";
 import { CHAT_UPDATED_EVENT } from "@/hooks/useRealtime";
@@ -499,6 +500,21 @@ function AssistantBubble({ message, question, streaming = false }: { message: IC
                 {shown.length ? t("chat.moreSources", { count: sources.length - shown.length }) : t("ai.sourceCount", { count: sources.length })}
               </button>
             )}
+          </div>
+        )}
+        {!streaming && message.id && message.id !== "streaming" && (
+          <div className="mt-2 -mb-1 flex justify-end">
+            <AnswerFeedback
+              compact
+              answer={{
+                kind: "chat",
+                answerKey: message.id,
+                query: question,
+                answer: message.content,
+                sourceCount: sources.length,
+                sessionId: message.sessionId,
+              }}
+            />
           </div>
         )}
       </div>

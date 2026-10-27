@@ -20,6 +20,10 @@ import { Note, NoteDocument } from 'src/common/schema/note';
 import { UsageEvent, UsageEventDocument } from 'src/common/schema/usage-event';
 import { User, UserDocument } from 'src/common/schema/user';
 import { Voucher, VoucherDocument } from 'src/common/schema/voucher';
+import {
+  AnswerFeedback,
+  AnswerFeedbackDocument,
+} from 'src/common/schema/answer-feedback';
 import { correlationHeaders } from 'src/common/request-context';
 import { errorMessage } from 'src/common/utils/http-error';
 import { planOf, type PlanId } from 'src/users/plans';
@@ -43,10 +47,61 @@ export class AdminService {
     @InjectModel(Voucher.name) private voucherModel: Model<VoucherDocument>,
     @InjectModel(UsageEvent.name)
     private usageModel: Model<UsageEventDocument>,
+    @InjectModel(AnswerFeedback.name)
+    private feedbackModel: Model<AnswerFeedbackDocument>,
     private readonly http: HttpService,
     private readonly jwt: JwtService,
     private readonly realtime: RealtimeService,
   ) {}
+
+  /**
+   * Votes on AI answers: totals for the last 30 days, and the latest votes
+   * (unhelpful only by default) with their question, answer and comment.
+   */
+  async feedback(filter: 'unhelpful' | 'all') {
+    const since = new Date(Date.now() - 30 * 86_400_000);
+    const [totals, recent] = await Promise.all([
+      this.feedbackModel
+        .aggregate<{
+          _id: boolean;
+          count: number;
+        }>([
+          { $match: { updatedAt: { $gte: since } } },
+          { $group: { _id: '$helpful', count: { $sum: 1 } } },
+        ])
+        .exec(),
+      this.feedbackModel
+        .find(filter === 'unhelpful' ? { helpful: false } : {})
+        .sort({ updatedAt: -1 })
+        .limit(50)
+        .lean()
+        .exec(),
+    ]);
+    const users = await this.userModel
+      .find({ _id: { $in: [...new Set(recent.map((f) => String(f.userId)))] } })
+      .select('email')
+      .lean()
+      .exec();
+    const emails = new Map(
+      users.map((u) => [(u._id as Types.ObjectId).toHexString(), u.email]),
+    );
+    return {
+      helpful: totals.find((t) => t._id === true)?.count ?? 0,
+      unhelpful: totals.find((t) => t._id === false)?.count ?? 0,
+      recent: recent.map((f) => ({
+        id: (f._id as Types.ObjectId).toHexString(),
+        kind: f.kind,
+        helpful: f.helpful,
+        query: f.query,
+        answer: f.answer,
+        comment: f.comment ?? null,
+        sourceCount: f.sourceCount,
+        model: f.model ?? null,
+        email: emails.get(String(f.userId)) ?? null,
+        at: f.updatedAt,
+      })),
+    };
+  }
 
   /** System health: users, content, the indexing queue and recent AI use. */
   async overview() {

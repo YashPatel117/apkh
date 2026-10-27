@@ -52,8 +52,8 @@ Claude keys, Claude Code and OpenRouter keys without credit only got keyword sea
 - [x] The graph view (`/graph`) draws links between notes as its brightest lines (stars stay grouped by category)
 
 ### 2.3 Trustworthy answers
-- [ ] **Why this matched**: show the matched words and the passage similarity on each search result and citation
-- [ ] **Answer feedback** (helpful / not helpful). `apkh-search` already has `/feedback`; wire the buttons and store the vote with the question, so bad answers can be found and fixed
+- [x] **Why this matched**: each source shows its similarity (meaning), and the question's words are highlighted in its excerpt and listed (keywords)
+- [x] **Answer feedback**: helpful / not helpful (with an optional comment) on AI search answers and chat replies, stored with the question and answer (`answerfeedback`); Admin > Answer feedback lists the unhelpful ones
 - [ ] A small retrieval test set (30–50 questions over sample notes) that runs in CI and reports hit rate, so threshold or model changes can be compared instead of guessed
 - [ ] Re-rank the top passages before answering (the built-in model, or the user's model in one short call)
 

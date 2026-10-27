@@ -17,6 +17,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminModule } from './admin/admin.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
     AnalyticsModule,
     AdminModule,
     IntegrationsModule,
+    FeedbackModule,
   ],
   controllers: [HealthController],
 })

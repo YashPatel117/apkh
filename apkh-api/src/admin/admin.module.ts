@@ -7,6 +7,10 @@ import { Note, NoteSchema } from 'src/common/schema/note';
 import { UsageEvent, UsageEventSchema } from 'src/common/schema/usage-event';
 import { User, UserSchema } from 'src/common/schema/user';
 import { Voucher, VoucherSchema } from 'src/common/schema/voucher';
+import {
+  AnswerFeedback,
+  AnswerFeedbackSchema,
+} from 'src/common/schema/answer-feedback';
 import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
@@ -21,6 +25,7 @@ import { AdminService } from './admin.service';
       { name: IndexJob.name, schema: IndexJobSchema },
       { name: Voucher.name, schema: VoucherSchema },
       { name: UsageEvent.name, schema: UsageEventSchema },
+      { name: AnswerFeedback.name, schema: AnswerFeedbackSchema },
     ]),
   ],
   controllers: [AdminController],

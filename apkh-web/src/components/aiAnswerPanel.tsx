@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowUpRight, BookmarkPlus, Check, CircleAlert, FileText, Hourglass, MessageSquarePlus, Paperclip, Settings, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { AiSearchResponse } from "@/services/noteService";
@@ -12,7 +12,10 @@ import { fromAiReference, sourceLocation } from "@/components/sources";
 import { useSaveAnswerAsNote } from "@/hooks/useSaveAnswerAsNote";
 import { useToast } from "@/components/ui/Toast";
 import { getErrorMessage } from "@/services/axios";
-import { MessageKey, useT } from "@/i18n";
+import { MessageKey, Translate, useT } from "@/i18n";
+import { AnswerFeedback } from "@/components/answerFeedback";
+import { answerKeyOf } from "@/services/feedbackService";
+import { Highlighted, matchedTerms, queryTerms } from "@/lib/matchTerms";
 
 type Reference = AiSearchResponse["references"][number];
 
@@ -24,10 +27,10 @@ const confidenceTone: Record<string, { label: MessageKey; classes: string }> = {
 };
 
 /** Why a source matched: by meaning (with its similarity), by the query's words, or both. */
-function matchLabel(reference: Reference) {
+function matchLabel(reference: Reference, t: Translate) {
   const similarity = `${Math.round(reference.similarity_score * 100)}%`;
-  if (reference.match === "keyword") return "Keywords";
-  if (reference.match === "both") return `${similarity} · keywords`;
+  if (reference.match === "keyword") return t("match.keywords");
+  if (reference.match === "both") return t("match.both", { similarity });
   return similarity;
 }
 
@@ -51,6 +54,8 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onCont
   const toast = useToast();
   const t = useT();
   const [saving, setSaving] = useState(false);
+  // Words of the question (and of the rewritten search) that explain keyword matches
+  const terms = useMemo(() => queryTerms(answer?.query || query, answer?.searchedFor), [answer?.query, answer?.searchedFor, query]);
   // The answer already saved, so the same one isn't saved twice
   const [savedAnswer, setSavedAnswer] = useState<string | null>(null);
 
@@ -161,7 +166,9 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onCont
                     {t("ai.noSources")}
                   </p>
                 ) : (
-                  answer.references.map((reference, index) => (
+                  answer.references.map((reference, index) => {
+                    const matched = reference.match === "semantic" ? [] : matchedTerms(reference.excerpt, terms);
+                    return (
                     <button
                       key={`${reference.note_id}-${reference.source_name ?? "note"}-${index}`}
                       type="button"
@@ -180,25 +187,29 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onCont
                             <p className="truncate font-semibold text-fg">{reference.note_title || t("ai.untitled")}</p>
                             <span
                               className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.7rem] font-semibold text-accent-fg"
-                              title={
-                                reference.match === "keyword"
-                                  ? "Matched the words of your question"
-                                  : "Similarity in meaning to your question"
-                              }
+                              title={t(
+                                reference.match === "keyword" ? "match.keywordsHint" : reference.match === "both" ? "match.bothHint" : "match.semanticHint",
+                              )}
                             >
-                              {matchLabel(reference)}
+                              {matchLabel(reference, t)}
                             </span>
                           </div>
                           <p className="truncate text-xs text-fg-subtle">
                             {sourceLocation(fromAiReference(reference), t)}
                             {reference.cited && <span className="font-semibold text-accent-fg"> · {t("ai.cited")}</span>}
                           </p>
-                          <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-fg-muted">{reference.excerpt}</p>
+                          <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-fg-muted">
+                            <Highlighted text={reference.excerpt} terms={matched} />
+                          </p>
+                          {matched.length > 0 && (
+                            <p className="mt-1.5 text-xs text-fg-subtle">{t("match.words", { words: matched.join(", ") })}</p>
+                          )}
                         </div>
                         <ArrowUpRight className="size-4 shrink-0 text-fg-subtle transition-colors group-hover:text-accent" />
                       </div>
                     </button>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -206,6 +217,20 @@ export function AiAnswerPanel({ query, answer, isSearching, errorMessage, onCont
         )}
       </div>
 
+      {finished && answer && !answer.isError && answer.answer && (
+        <div className="shrink-0 border-t border-line px-5 pt-3 sm:px-6">
+          <AnswerFeedback
+            key={answerKeyOf(answer.query || query, answer.answer)}
+            answer={{
+              kind: "search",
+              answerKey: answerKeyOf(answer.query || query, answer.answer),
+              query: answer.query || query,
+              answer: answer.answer,
+              sourceCount: answer.references.length,
+            }}
+          />
+        </div>
+      )}
       {finished && answer && (
         <div className="flex shrink-0 gap-2 border-t border-line bg-surface px-5 py-4 sm:px-6">
           <Button

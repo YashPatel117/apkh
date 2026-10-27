@@ -50,6 +50,12 @@ class VouchersQueryDto {
   status?: 'all' | 'unused' | 'redeemed';
 }
 
+class FeedbackQueryDto {
+  @IsOptional()
+  @IsIn(['unhelpful', 'all'])
+  filter?: 'unhelpful' | 'all';
+}
+
 class CreateVouchersDto {
   @Type(() => Number)
   @IsInt()
@@ -81,6 +87,13 @@ export class AdminController {
   @Patch('users/:id/plan')
   async setPlan(@Param('id') id: string, @Body() dto: SetPlanDto) {
     return new ApiResponseDto().ok(await this.admin.setPlan(id, dto.plan));
+  }
+
+  @Get('feedback')
+  async feedback(@Query() query: FeedbackQueryDto) {
+    return new ApiResponseDto().ok(
+      await this.admin.feedback(query.filter ?? 'unhelpful'),
+    );
   }
 
   @Get('vouchers')

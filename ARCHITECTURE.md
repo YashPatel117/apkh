@@ -72,6 +72,7 @@ scripts/init-env.mjs   creates missing env files (used by setup-all.bat)
 | `users` | account, plan (`type`), AI configs (key name, **encrypted** API key, model, active flag), token totals, built-in AI usage (all-time and this session) |
 | `notes` | `userId`, `title`, `content` (Quill HTML), `contentPlain` (one line per paragraph), `category` |
 | `notefiles` | attachment names per note (the bytes live in `apkh-storage`) |
+| `answerfeedback` | votes on AI answers (search or chat): helpful or not, the question, the answer, an optional comment and the active model; one per user and answer |
 | `trashednotes` | deleted notes waiting in Trash (`TRASH_RETENTION_DAYS`, 30 by default). Deleting moves a note here and out of the index; its files and versions stay until it is restored (same id, indexed again) or purged hourly once expired |
 | `knowledgechunks` | the search index, one document per passage |
 | `index_jobs` | one job per note or chat: its indexing status, doubling as the queue |

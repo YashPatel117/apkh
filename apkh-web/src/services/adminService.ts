@@ -40,6 +40,29 @@ export interface AdminVoucher {
   createdAt: string | null;
 }
 
+export interface AdminFeedback {
+  helpful: number;
+  unhelpful: number;
+  recent: {
+    id: string;
+    kind: "search" | "chat";
+    helpful: boolean;
+    query: string;
+    answer: string;
+    comment: string | null;
+    sourceCount: number;
+    model: string | null;
+    email: string | null;
+    at: string;
+  }[];
+}
+
+/** Votes on AI answers: 30-day totals and the latest (unhelpful ones by default). */
+export async function getAdminFeedback(filter: "unhelpful" | "all") {
+  const res = await webApi.get("/admin/feedback", { params: { filter } });
+  return res.data.data as AdminFeedback;
+}
+
 export async function getAdminOverview() {
   const res = await webApi.get("/admin/overview");
   return res.data.data as AdminOverview;
