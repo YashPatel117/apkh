@@ -78,6 +78,7 @@ scripts/init-env.mjs   creates missing env files (used by setup-all.bat)
 | `index_jobs` | one job per note or chat: its indexing status, doubling as the queue |
 | `summary` | cached note summaries, one per note and mode |
 | `chatsessions`, `chatmessages` | conversations (assistant messages keep their cited sources) |
+| `noteshares` | read-only links to single notes: `noteId` (one link per note), `userId`, `token` (24 random bytes, base64url), `expiresAt` (null: until revoked; MongoDB's TTL index deletes expired links), `views`, `lastViewedAt` |
 | `vouchers` | one-time Pro plan codes: `code`, `redeemed`, `redeemedAt`, `redeemedBy` |
 | `migrations` | which startup migrations have run |
 
@@ -231,11 +232,25 @@ plus the last 10 messages. A short follow-up that leans on the conversation ("an
 
 Each mode is cached separately. A cached summary costs no tokens; otherwise the note's chunks (text + attachments, in order) are sent to `/ai-search/summarize`. While the note is being re-indexed its current text is used and the result isn't cached. Failures are never cached, and editing or deleting the note clears its summaries.
 
-## 10. Token usage
+## 10. Import, voice notes and share links
 
-`apkh-search` reports tokens for answers, summaries, image reads and embeddings (embedding tokens are counted locally, as the SDKs don't return them); the API adds them to the active config's and the user's totals.
+**Import** (`POST /notes/import`, Profile → Import notes) takes one export file (`IMPORT_MAX_MB`, 300 by default) and parses it in the API (`notes/import/`):
 
-## 11. Startup migrations
+- **ZIP**: an Obsidian vault, a Notion "Markdown & CSV" export (also its ZIP of ZIPs), a NotebookLM / Google Takeout folder, this app's own "Download everything", or any folders of `.md`, `.html` and `.txt` files. `.enex` files inside become a folder per notebook. A ZIP with a single top folder imports that folder; Notion's 32-hex page ids are stripped from names.
+- **`.enex`** (Evernote): ENML bodies become note HTML; `<en-media>` resources become attachments where they were embedded (matched by MD5), checkboxes become ☐ / ☑.
+- **One `.md` / `.html` / `.txt` file**: one note at the top level.
+
+Every note gets its id before anything is saved, so `[[wiki links]]`, `[[note|alias]]` and relative Markdown/HTML links point straight at `/notes/<id>`. Embedded or linked files (`![[x.png]]`, `![](x.png)`, Base64 images in HTML) become attachment chips, uploaded with a service token in batches of `MAX_FILES_PER_UPLOAD`. Files no note refers to (NotebookLM sources, loose PDFs) become notes of their own with the file attached. Front matter supplies `title`, `category`, `tags` and `created` / `updated`, and Obsidian `#tags` are added; notes keep the source's dates. Markdown goes through `marked`, then lists are rewritten in Quill's format (one flat `<ol>`, `data-list`, `ql-indent-N`), tables become rows of `a | b`, and the result is sanitised to the editor's tags. Everything goes into a new top-level folder named after the export (`Name (2)` on a second import), with its folders below (up to the depth limit). A refused attachment (storage full, too large) is listed as skipped and its chip removed. The notes are queued for indexing behind interactive work (`enqueueNotes`), and the response counts notes, folders, attachments and skipped items. Limits: `IMPORT_MAX_NOTES` (2000) notes and `IMPORT_MAX_UNPACKED_MB` (2048) unpacked.
+
+**Voice notes.** The editor's **Record** button records with `MediaRecorder` (WebM/Opus, MP4 on Safari; 15 minutes at most) and sends the recording to `POST /notes/transcribe`, which passes it to `apkh-search /transcribe` (`services/transcriber.py`). OpenAI keys use OpenAI's transcription model (`OPENAI_TRANSCRIBE_MODEL`), Gemini keys send the audio to the user's Gemini model, and everyone else uses local Whisper (`faster-whisper`, if installed). When nothing can transcribe (`available: false`) or the call fails, the browser's own speech recognition, which listened while recording (Chrome, Edge), supplies the text. The recording is attached to the note with the transcript as a paragraph under it. Audio attachments (`.mp3 .m4a .wav .webm .ogg .opus .flac .aac`) are transcribed the same way while indexing, so recordings uploaded as files are searchable too; without a transcriber their status is `no_audio`, and they are retried on the next run like `no_vision` images.
+
+**Share links.** `POST /notes/:id/share` (optional `expiresInDays`, 1–365) makes a note's read-only link, replacing any earlier one; `GET` shows it and `DELETE` revokes it. `GET /notes/shares` lists every live link (Profile → Shared links). The public `GET /shared/:token` (no sign-in) returns the note with its HTML sanitised again and links to the owner's other notes turned into plain text; `GET /shared/:token/files/:name` streams an attachment of that note from storage with a service token for the owner (images, audio, video and PDFs inline, everything else as a download, `nosniff`). Expired links answer 410, unknown or revoked ones 404. A note in Trash keeps its link, which works again if the note is restored; purging the note deletes it. The web page is `/share/<token>`, marked `noindex`.
+
+## 11. Token usage
+
+`apkh-search` reports tokens for answers, summaries, image reads, Gemini transcriptions and embeddings (embedding tokens are counted locally, as the SDKs don't return them); the API adds them to the active config's and the user's totals.
+
+## 12. Startup migrations
 
 Before serving requests the API runs any migration not yet recorded in `migrations` (each is idempotent; `RUN_MIGRATIONS=off` skips them):
 
@@ -246,7 +261,7 @@ Before serving requests the API runs any migration not yet recorded in `migratio
 
 Notes indexed before the queue existed get their jobs the first time the user opens the app (a background "reconcile" also queues anything missing or in the wrong space).
 
-## 12. Short version
+## 13. Short version
 
 ```text
 Indexing:   note save -> index_jobs -> worker -> extract (new files only) -> chunk -> embed (new text only) -> knowledgechunks

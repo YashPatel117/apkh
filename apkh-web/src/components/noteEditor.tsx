@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import "@/lib/fileTokenBlot";
-import { Paperclip, Type } from "lucide-react";
+import { Mic, Paperclip, Type } from "lucide-react";
 import { INote, INoteDto } from "@/models/note";
 import FileDisplay from "@/components/fileDisplay";
 import { CategoryInput } from "@/components/categoryInput";
@@ -19,6 +19,7 @@ import { Modal } from "@/components/ui/Modal";
 import { FormAlert } from "@/components/authShell";
 import { useSlashCommands } from "@/components/slashCommands";
 import { useNoteLinkPicker } from "@/components/noteLinkPicker";
+import { VoiceRecorder } from "@/components/voiceRecorder";
 import { useT } from "@/i18n";
 import { errorText } from "@/lib/localizedError";
 
@@ -56,6 +57,7 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
   const [files, setFiles] = useState<FileItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ file?: File; fileName: string } | null>(null);
+  const [recording, setRecording] = useState(false);
   const t = useT();
   const tagOptions = useAppSelector((state) => state.note.tags.map((tag) => tag.name));
   const aiOn = useAppSelector((state) => Boolean(activeAi(state.auth.user)));
@@ -77,14 +79,14 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
   const plainText = note.content.replace(/<[^>]+>/g, "").trim();
   const hasTokens = note.content.includes("file-token");
   const isEmpty = !note.title.trim() && !plainText && !hasTokens;
+  // Recording needs a microphone API (HTTPS or localhost).
+  const [canRecord, setCanRecord] = useState(false);
+  useEffect(() => setCanRecord(typeof MediaRecorder !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia)), []);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = Array.from(e.target.files ?? []);
-    e.target.value = "";
-    if (!picked.length) return;
-
+  /** Attachment chips at the cursor, then (voice notes) the transcript below them. */
+  const insertFiles = useCallback((picked: File[], transcript = "") => {
     const quill = quillRef.current?.getEditor();
-    if (!quill) return;
+    if (!quill || !picked.length) return;
     const range = quill.getSelection(true) ?? { index: quill.getLength(), length: 0 };
     let index = range.index;
 
@@ -95,9 +97,30 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
       index += 2;
       return { id, name: file.name, file };
     });
+    if (transcript) {
+      const text = `
+${transcript}
+`;
+      quill.insertText(index, text, "user");
+      index += text.length;
+    }
     quill.setSelection(index, 0);
     setFiles((prev) => [...prev, ...added]);
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    insertFiles(picked);
   };
+
+  const addVoiceNote = useCallback(
+    (file: File, transcript: string) => {
+      setRecording(false);
+      insertFiles([file], transcript);
+    },
+    [insertFiles],
+  );
 
   const save = async () => {
     const quill = quillRef.current?.getEditor();
@@ -210,6 +233,11 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
         <Button variant="secondary" onClick={() => fileInputRef.current?.click()} icon={<Paperclip className="size-4" />} disabled={saving}>
           {t("editor.attach")}
         </Button>
+        {canRecord && (
+          <Button variant="secondary" onClick={() => setRecording(true)} icon={<Mic className="size-4" />} disabled={saving}>
+            {t("voice.record")}
+          </Button>
+        )}
         <span className="hidden text-xs text-fg-subtle md:inline">
           <kbd className="rounded border border-line px-1 font-mono">Ctrl</kbd> + <kbd className="rounded border border-line px-1 font-mono">Enter</kbd> {t("editor.toSave")}
         </span>
@@ -222,6 +250,8 @@ export default function NoteEditor({ initialNote = null, categoryOptions = [], s
           </Button>
         </div>
       </div>
+
+      <VoiceRecorder open={recording} onClose={() => setRecording(false)} onDone={addVoiceNote} />
 
       <Modal open={Boolean(preview)} onClose={() => setPreview(null)} title={preview?.file?.name ?? (preview ? displayFileName(preview.fileName) : "")} size="xl">
         {preview && <FileDisplay fileName={preview.fileName} noteId={preview.file ? undefined : initialNote?.id} file={preview.file} />}

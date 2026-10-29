@@ -64,9 +64,10 @@ Claude keys, Claude Code and OpenRouter keys without credit only got keyword sea
 - [ ] **Saved searches and smart filters** (e.g. "has open tasks", "has attachments", "edited this week") in the sidebar
 
 ### 2.5 Getting notes in and out
-- [ ] Import: Markdown folders (Obsidian), Notion export ZIP, Evernote `.enex`, keeping folders and attachments
-- [ ] Voice notes: record in the app, transcribe, and index the transcript like any attachment
-- [ ] Read-only share links for a single note (revocable, optional expiry)
+- [x] **Import** (Profile → Import notes): Obsidian vaults, Notion exports, Evernote `.enex`, NotebookLM / Takeout folders and plain Markdown / HTML / text ZIPs, keeping folders, tags, dates, `[[links]]` and attachments
+- [x] **Voice notes**: **Record** in the editor attaches the recording with its transcript (OpenAI or Gemini key, local Whisper, or the browser's speech recognition); audio attachments are transcribed and indexed
+- [x] **Read-only share links** for a single note (note menu → Share link…): revocable, optional expiry, view count, listed in Profile → Shared links
+- [ ] Verify the three above against the live stack (real exports from each app, transcription with each provider)
 
 ### 2.6 Claude Code follow-ups
 - [ ] Reuse one CLI process per conversation (`--resume`) for chat, so long chats don't resend the whole history every turn

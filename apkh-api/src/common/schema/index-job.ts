@@ -19,7 +19,8 @@ export type IndexJobStatus =
 
 /**
  * ok: text extracted · empty: nothing readable · unsupported: file type not
- * handled · no_vision: needs a model that reads images · missing: not in
+ * handled · no_vision: needs a model that reads images · no_audio: nothing
+ * can transcribe recordings for the provider · missing: not in
  * storage · failed: download/read error (retried)
  */
 export type IndexedFileStatus =
@@ -27,6 +28,7 @@ export type IndexedFileStatus =
   | 'empty'
   | 'unsupported'
   | 'no_vision'
+  | 'no_audio'
   | 'missing'
   | 'failed';
 

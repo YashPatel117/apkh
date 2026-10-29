@@ -12,6 +12,7 @@ const FILE_PROBLEMS: Record<Exclude<IndexedFileStatus, "ok">, MessageKey> = {
   empty: "index.empty",
   unsupported: "index.unsupported",
   no_vision: "index.noVision",
+  no_audio: "index.noAudio",
   missing: "index.missing",
   failed: "index.failedFile",
 };
@@ -83,7 +84,7 @@ export function IndexBadge({ state, onRetry }: { state?: NoteIndexState; onRetry
 
   const problems = attachmentProblems(state, t);
   if (!problems.length) return null;
-  const retryable = state.files.some((file) => file.status === "failed" || file.status === "no_vision");
+  const retryable = state.files.some((file) => file.status === "failed" || file.status === "no_vision" || file.status === "no_audio");
   return (
     <Tooltip label={problems.join(" · ")}>
       <span className={cn(pill, warnTone)}>

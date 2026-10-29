@@ -1,8 +1,9 @@
 """
 File content extractor.
-Handles PDF, images, docx, xlsx, csv, txt, md files.
+Handles PDF, images, audio, docx, xlsx, csv, txt, md files.
 Extracts text content for embedding. Images and scanned PDF pages are read by
-the user's own multimodal model (OCR + description) through an ImageReader.
+the user's own multimodal model (OCR + description) through an ImageReader;
+recordings are transcribed through an AudioReader (see transcriber.py).
 """
 
 import asyncio
@@ -14,6 +15,8 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 from PIL import Image, ImageOps
+
+from services.transcriber import AUDIO_EXTENSIONS, AudioReader
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +40,13 @@ async def extract_text_from_bytes(
     file_bytes: bytes,
     file_name: str,
     read_image: ImageReader | None = None,
+    read_audio: AudioReader | None = None,
 ) -> dict:
     """
     Extract text from file bytes based on file extension.
     Returns a dict with extracted_text, extraction_method, page_count.
-    Without read_image, images are skipped and scanned PDF pages stay empty.
+    Without read_image, images are skipped and scanned PDF pages stay empty;
+    without read_audio, recordings are skipped.
     """
     ext = Path(file_name).suffix.lower()
 
@@ -50,6 +55,8 @@ async def extract_text_from_bytes(
             return await _extract_pdf(file_bytes, file_name, read_image)
         elif ext in IMAGE_EXTENSIONS:
             return await _extract_image(file_bytes, file_name, read_image)
+        elif ext in AUDIO_EXTENSIONS:
+            return await _extract_audio(file_bytes, file_name, read_audio)
         elif ext in (".txt", ".md"):
             return await asyncio.to_thread(_extract_text_file, file_bytes, file_name)
         elif ext == ".docx":
@@ -197,6 +204,37 @@ async def _extract_image(
     return {
         "file_name": file_name,
         "extracted_text": text,
+        "extraction_method": method,
+        "page_count": 0,
+    }
+
+
+async def _extract_audio(
+    file_bytes: bytes,
+    file_name: str,
+    read_audio: AudioReader | None,
+) -> dict:
+    """Transcribe a recording (voice note, meeting audio)."""
+    if read_audio is None:
+        logger.warning(f"Nothing can transcribe audio for this provider, skipping {file_name}")
+        return {
+            "file_name": file_name,
+            "extracted_text": "",
+            "extraction_method": "audio_no_transcriber",
+            "page_count": 0,
+        }
+
+    text = ""
+    method = "audio_transcript"
+    try:
+        text = (await read_audio(file_bytes, file_name)).strip()
+    except Exception as e:
+        logger.error(f"Transcription failed for {file_name}: {e}")
+        method = "audio_transcript_failed"
+
+    return {
+        "file_name": file_name,
+        "extracted_text": f"[Transcript]\n{text}" if text else "",
         "extraction_method": method,
         "page_count": 0,
     }

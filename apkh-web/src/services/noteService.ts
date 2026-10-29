@@ -340,3 +340,37 @@ export async function getSimilarNotes(noteId: string) {
   const res = await webApi.get(`/notes/${noteId}/similar`);
   return res.data as SimilarNotes;
 }
+
+export type ImportSource = "obsidian" | "notion" | "evernote" | "notebooklm" | "markdown";
+
+export interface ImportResult {
+  source: ImportSource;
+  /** Folder the notes went into (null: top level) */
+  folderId: string | null;
+  folderName: string | null;
+  notes: number;
+  folders: number;
+  attachments: number;
+  skipped: { name: string; reason: string }[];
+  skippedCount: number;
+}
+
+/** Imports an export (ZIP, .enex, Markdown / HTML / text); `onProgress` gets the upload's 0–1. */
+export async function importNotes(file: File, onProgress?: (fraction: number) => void) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await webApi.post("/notes/import", formData, {
+    onUploadProgress: (event) => {
+      if (event.total) onProgress?.(event.loaded / event.total);
+    },
+  });
+  return res.data.data as ImportResult;
+}
+
+/** A voice note's transcript; `available` false when the server can't transcribe for this AI. */
+export async function transcribeRecording(recording: File) {
+  const formData = new FormData();
+  formData.append("file", recording);
+  const res = await webApi.post("/notes/transcribe", formData);
+  return res.data.data as { available: boolean; text: string };
+}

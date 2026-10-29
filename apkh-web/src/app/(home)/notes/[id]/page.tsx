@@ -18,6 +18,7 @@ import {
   Paperclip,
   Pencil,
   Printer,
+  Share2,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import { TagChips } from "@/components/tagInput";
 import { SimilarNotesModal } from "@/components/similarNotes";
 import { NoteHistoryModal } from "@/components/noteHistory";
 import { MoveNoteModal } from "@/components/moveNoteModal";
+import { ShareNoteModal } from "@/components/shareNoteModal";
 import FileDisplay from "@/components/fileDisplay";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -68,6 +70,7 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
   const [similarOpen, setSimilarOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Notes not loaded yet (a link from elsewhere) are fetched on their own.
@@ -229,6 +232,9 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
                   <>
                     <MenuItem icon={<Link2 />} onClick={then(() => void copyLink())}>
                       {t("links.copy")}
+                    </MenuItem>
+                    <MenuItem icon={<Share2 />} onClick={then(() => setShareOpen(true))}>
+                      {t("share.menu")}
                     </MenuItem>
                     <MenuItem icon={<Layers />} onClick={then(() => setSimilarOpen(true))}>
                       {t("card.similar")}
@@ -393,6 +399,7 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
 
       {historyOpen && <NoteHistoryModal note={note} open onClose={() => setHistoryOpen(false)} />}
       {moveOpen && <MoveNoteModal note={note} open onClose={() => setMoveOpen(false)} />}
+      <ShareNoteModal noteId={note.id} noteTitle={note.title} open={shareOpen} onClose={() => setShareOpen(false)} />
       <SimilarNotesModal
         noteId={note.id}
         noteTitle={note.title}

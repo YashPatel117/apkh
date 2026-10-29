@@ -10,10 +10,12 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFiles,
+  UploadedFile,
   Query,
   HttpCode,
   HttpStatus,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { sendSse } from 'src/common/utils/sse';
@@ -39,12 +41,17 @@ import { IndexingService } from 'src/indexing/indexing.service';
 import { SearchService } from 'src/search/search.service';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtToken, JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
 import {
+  IMPORT_UPLOAD_OPTIONS,
+  TRANSCRIBE_UPLOAD_OPTIONS,
   MAX_FILES_PER_UPLOAD,
   UPLOAD_OPTIONS,
 } from 'src/common/constant/upload';
+import { ShareService, type ShareView } from './share.service';
+import { CreateShareDto } from './dto/share.dto';
+import { ImportService, type ImportResult } from './import/import.service';
 
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
@@ -55,6 +62,8 @@ export class NotesController {
     private readonly searchService: SearchService,
     private readonly indexing: IndexingService,
     private readonly trash: TrashService,
+    private readonly shares: ShareService,
+    private readonly importer: ImportService,
   ) {}
 
   /** CREATE */
@@ -114,6 +123,51 @@ export class NotesController {
     @Res() res: Response,
   ) {
     await this.notesService.exportAll(token, userId, res);
+  }
+
+  /**
+   * IMPORT another app's export: an Obsidian vault, Notion or NotebookLM
+   * export (ZIP), an Evernote .enex file, or Markdown / HTML / text files.
+   */
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file', IMPORT_UPLOAD_OPTIONS))
+  @ApiConsumes('multipart/form-data')
+  async importNotes(
+    @JwtTokenUserId() userId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return new ApiResponseDto<ImportResult>().ok(
+      await this.importer.import(userId, file),
+    );
+  }
+
+  /** TRANSCRIBE a voice note recorded in the editor */
+  @Post('transcribe')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file', TRANSCRIBE_UPLOAD_OPTIONS))
+  @ApiConsumes('multipart/form-data')
+  async transcribe(
+    @JwtToken() token: string,
+    @JwtTokenUserId() userId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('The recording is empty.');
+    }
+    return new ApiResponseDto<{ available: boolean; text: string }>().ok(
+      await this.searchService.transcribe(
+        token,
+        userId,
+        file.buffer,
+        file.originalname || 'voice-note.webm',
+      ),
+    );
+  }
+
+  /** Every read-only link the user has shared */
+  @Get('shares')
+  async listShares(@JwtTokenUserId() userId: string) {
+    return new ApiResponseDto<ShareView[]>().ok(await this.shares.list(userId));
   }
 
   /** UPDATE */
@@ -336,6 +390,32 @@ export class NotesController {
     @Param('versionId') versionId: string,
   ) {
     return this.notesService.restoreVersion(userId, id, versionId);
+  }
+
+  /** SHARE LINK of a note (null when it has none) */
+  @Get(':id/share')
+  async getShare(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    return new ApiResponseDto<ShareView | null>().ok(
+      await this.shares.get(userId, id),
+    );
+  }
+
+  /** A new read-only link (replaces the old one) */
+  @Post(':id/share')
+  async createShare(
+    @JwtTokenUserId() userId: string,
+    @Param('id') id: string,
+    @Body() dto: CreateShareDto,
+  ) {
+    return new ApiResponseDto<ShareView>().ok(
+      await this.shares.create(userId, id, dto.expiresInDays ?? null),
+    );
+  }
+
+  /** Stop the link working */
+  @Delete(':id/share')
+  async revokeShare(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    return new ApiResponseDto().ok(await this.shares.revoke(userId, id));
   }
 
   /** MOVE a note into a folder (null: out of every folder) */

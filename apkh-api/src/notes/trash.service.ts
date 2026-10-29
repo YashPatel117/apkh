@@ -25,6 +25,7 @@ import { FoldersService } from 'src/folders/folders.service';
 import { IndexingService } from 'src/indexing/indexing.service';
 import { ServiceTokenService } from 'src/indexing/service-token.service';
 import { RealtimeService } from 'src/realtime/realtime.service';
+import { ShareService } from './share.service';
 
 const DEFAULT_RETENTION_DAYS = 30;
 // How often expired notes are purged
@@ -71,6 +72,7 @@ export class TrashService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly indexing: IndexingService,
     private readonly serviceTokens: ServiceTokenService,
     private readonly realtime: RealtimeService,
+    private readonly shares: ShareService,
   ) {}
 
   onApplicationBootstrap() {
@@ -232,6 +234,7 @@ export class TrashService implements OnApplicationBootstrap, OnModuleDestroy {
     await Promise.all([
       this.versionModel.deleteMany({ noteId: trashed.noteId }),
       this.trashModel.deleteOne({ noteId: trashed.noteId }),
+      this.shares.removeForNote(trashed.noteId),
     ]);
   }
 

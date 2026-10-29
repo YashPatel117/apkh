@@ -74,6 +74,7 @@ const EXTRACT_TIMEOUT_MS = 10 * 60_000;
 const EMBED_TIMEOUT_MS = 2 * 60_000;
 const EMBED_BATCH_SIZE = 256;
 const ANSWER_TIMEOUT_MS = 90_000;
+const TRANSCRIBE_TIMEOUT_MS = 5 * 60_000;
 // The built-in AI runs on the host's CPU and serves one call at a time, so
 // calls can wait behind other users' as well as run slower.
 const BUILTIN_AI_TIMEOUT_FACTOR = 4;
@@ -413,6 +414,39 @@ export class SearchApiClient {
       text: data.summary ?? '',
       actions: data.actions ?? null,
       error: Boolean(data.error),
+      tokensUsed: data.tokens_used ?? 0,
+    };
+  }
+
+  /**
+   * Transcribe one recording with the user's provider (or Whisper on the
+   * search service). `available` is false when nothing there can do it.
+   */
+  async transcribe(
+    token: string,
+    llm: ActiveLlmSettings | null,
+    audio: Buffer,
+    fileName: string,
+  ): Promise<{ available: boolean; text: string; tokensUsed: number }> {
+    const data = await this.post<{
+      available: boolean;
+      text?: string;
+      tokens_used?: number;
+    }>(
+      '/transcribe',
+      {
+        audio: audio.toString('base64'),
+        file_name: fileName,
+        api_key: llm?.apiKey ?? '',
+        model: llm?.model ?? 'builtin',
+      },
+      token,
+      // Local Whisper on a CPU runs at about real time for long recordings.
+      TRANSCRIBE_TIMEOUT_MS,
+    );
+    return {
+      available: data.available,
+      text: data.text ?? '',
       tokensUsed: data.tokens_used ?? 0,
     };
   }

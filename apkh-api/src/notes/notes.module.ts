@@ -12,6 +12,10 @@ import { FileModule } from 'src/file/file.module';
 import { SearchModule } from 'src/search/search.module';
 import { IndexingModule } from 'src/indexing/indexing.module';
 import { TrashService } from './trash.service';
+import { NoteShare, NoteShareSchema } from 'src/common/schema/note-share';
+import { ShareService } from './share.service';
+import { SharedController } from './shared.controller';
+import { ImportService } from './import/import.service';
 
 @Module({
   imports: [
@@ -21,14 +25,15 @@ import { TrashService } from './trash.service';
       { name: Summary.name, schema: SummarySchema },
       { name: NoteVersion.name, schema: NoteVersionSchema },
       { name: TrashedNote.name, schema: TrashedNoteSchema },
+      { name: NoteShare.name, schema: NoteShareSchema },
     ]),
     FoldersModule,
     FileModule,
     SearchModule,
     IndexingModule,
   ],
-  controllers: [NotesController],
-  providers: [NotesService, TrashService],
+  controllers: [NotesController, SharedController],
+  providers: [NotesService, TrashService, ShareService, ImportService],
   exports: [NotesService],
 })
 export class NotesModule {}

@@ -123,6 +123,11 @@ export class IndexingService {
     );
   }
 
+  /** Index many new notes (an import) behind notes being edited now. */
+  enqueueNotes(userId: string, noteIds: string[]) {
+    return this.queue.enqueueMany('note', userId, noteIds);
+  }
+
   /** Retry notes whose indexing failed. */
   async retryFailed(userId: string) {
     const failed = await this.jobModel

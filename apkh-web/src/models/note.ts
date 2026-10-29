@@ -50,7 +50,7 @@ export interface INoteVersion {
 /** queued / processing: being indexed · ready: searchable · failed / skipped: not indexed */
 export type IndexJobStatus = "queued" | "processing" | "ready" | "failed" | "skipped";
 
-export type IndexedFileStatus = "ok" | "empty" | "unsupported" | "no_vision" | "missing" | "failed";
+export type IndexedFileStatus = "ok" | "empty" | "unsupported" | "no_vision" | "no_audio" | "missing" | "failed";
 
 /** Search-index state of one note. `files` lists only attachments with a problem. */
 export interface NoteIndexState {

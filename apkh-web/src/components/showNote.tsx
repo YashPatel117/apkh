@@ -3,13 +3,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AtSign, ChevronDown, Clock, ExternalLink, FileArchive, FileDown, FolderInput, History, Layers, Link2, MoreHorizontal, Paperclip, Printer, Sparkles, Trash2 } from "lucide-react";
+import { AtSign, ChevronDown, Clock, ExternalLink, FileArchive, FileDown, FolderInput, History, Layers, Link2, MoreHorizontal, Paperclip, Printer, Share2, Sparkles, Trash2 } from "lucide-react";
 import { INote, NoteIndexState } from "@/models/note";
 import { IndexBadge } from "@/components/indexBadge";
 import { NoteSummaryPanel } from "@/components/noteSummaryPanel";
 import { SimilarNotesModal } from "@/components/similarNotes";
 import { NoteHistoryModal } from "@/components/noteHistory";
 import { MoveNoteModal } from "@/components/moveNoteModal";
+import { ShareNoteModal } from "@/components/shareNoteModal";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import { exportNote } from "@/services/noteService";
@@ -96,6 +97,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
   const [similarOpen, setSimilarOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const { openNote, setActiveTag } = useNotes();
   const router = useRouter();
   const toast = useToast();
@@ -262,6 +264,9 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
                         <MenuItem icon={<Link2 />} onClick={then(() => void copyLink())}>
                           {t("links.copy")}
                         </MenuItem>
+                        <MenuItem icon={<Share2 />} onClick={then(() => setShareOpen(true))}>
+                          {t("share.menu")}
+                        </MenuItem>
                         <div className="my-1 h-px bg-line" />
                         <MenuItem icon={<FolderInput />} onClick={then(() => setMoveOpen(true))}>
                           {t("card.move")}
@@ -346,6 +351,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
 
       {historyOpen && <NoteHistoryModal note={note} open onClose={() => setHistoryOpen(false)} />}
       {moveOpen && <MoveNoteModal note={note} open onClose={() => setMoveOpen(false)} />}
+      {shareOpen && <ShareNoteModal noteId={note.id} noteTitle={note.title} open onClose={() => setShareOpen(false)} />}
 
       <SimilarNotesModal
         noteId={note.id}

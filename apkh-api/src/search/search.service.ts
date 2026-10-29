@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -586,6 +586,48 @@ export class SearchService {
           tags: [],
           error: this.normalizeSearchServiceMessage(error.message),
         };
+      }
+      throw error;
+    }
+  }
+
+  /** Transcribe a voice note; `available` false when nothing can for this provider. */
+  async transcribe(
+    token: string,
+    userId: string,
+    audio: Buffer,
+    fileName: string,
+  ): Promise<{ available: boolean; text: string }> {
+    const llm = await this.usersService.getActiveLlmSettings(userId);
+    try {
+      const result = await this.searchApi.transcribe(
+        token,
+        llm,
+        audio,
+        fileName,
+      );
+      if (llm && result.available) {
+        // Counted like reading an attachment: never against the question allowance.
+        this.usersService
+          .addTokenUsage(userId, result.tokensUsed, llm, {
+            interactive: false,
+            kind: 'index',
+          })
+          .catch((err) =>
+            this.logger.error(
+              `Failed to track token usage for user ${userId}: ${errorMessage(err)}`,
+            ),
+          );
+      }
+      return { available: result.available, text: result.text };
+    } catch (error) {
+      if (error instanceof SearchApiError) {
+        throw new HttpException(
+          this.normalizeSearchServiceMessage(error.message),
+          error.status && error.status < 500
+            ? error.status
+            : HttpStatus.BAD_GATEWAY,
+        );
       }
       throw error;
     }

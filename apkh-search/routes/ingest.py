@@ -32,6 +32,7 @@ from services.limits import (
     MAX_ID_CHARS,
     MAX_TEXT_CHARS,
 )
+from services.transcriber import AudioReader, TranscribeUsage, build_audio_reader
 from services.vision import VisionUsage, build_image_reader
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ router = APIRouter(prefix="/ingest", tags=["Ingestion"])
 # Same variable (and format) as apkh-api, e.g. https://apkh-storage.onrender.com/
 STORAGE_BASE_URL = os.getenv("STORAGE_API_URL", "http://localhost:3001").rstrip("/")
 
-FileStatus = Literal["ok", "empty", "unsupported", "no_vision", "missing", "failed"]
+FileStatus = Literal["ok", "empty", "unsupported", "no_vision", "no_audio", "missing", "failed"]
 
 Id = Annotated[str, Field(max_length=MAX_ID_CHARS)]
 LongText = Annotated[str, Field(max_length=MAX_TEXT_CHARS)]
@@ -61,7 +62,8 @@ class ExtractRequest(BaseModel):
 class ExtractedFile(BaseModel):
     file_name: str
     # ok: text extracted · empty: nothing to read · unsupported: file type not
-    # handled · no_vision: needs a model that reads images · missing: not in
+    # handled · no_vision: needs a model that reads images · no_audio: nothing
+    # here can transcribe recordings for this provider · missing: not in
     # storage · failed: download or read error (worth retrying)
     status: FileStatus
     method: str | None = None
@@ -93,13 +95,17 @@ async def extract_files(body: ExtractRequest, request: Request):
             body.model,
         )
 
+    audio_usage = TranscribeUsage()
+    read_audio = build_audio_reader(body.api_key, body.model, usage=audio_usage)
+
     files = await _fetch_and_extract_files(
         request.headers.get("Authorization", ""),
         body.note_id,
         body.files,
         read_image,
+        read_audio,
     )
-    return ExtractResponse(files=files, tokens_used=usage.tokens_used)
+    return ExtractResponse(files=files, tokens_used=usage.tokens_used + audio_usage.tokens_used)
 
 
 async def _fetch_and_extract_files(
@@ -107,6 +113,7 @@ async def _fetch_and_extract_files(
     note_id: str,
     filenames: list[str],
     read_image: ImageReader | None,
+    read_audio: AudioReader | None = None,
 ) -> list[ExtractedFile]:
     """Fetch files from the storage service and extract text from each."""
     if not filenames:
@@ -134,7 +141,7 @@ async def _fetch_and_extract_files(
                             status="unsupported",
                             error=f"File is larger than {MAX_FILE_BYTES // (1024 * 1024)} MB.",
                         )
-                    extraction = await extract_text_from_bytes(response.content, filename, read_image)
+                    extraction = await extract_text_from_bytes(response.content, filename, read_image, read_audio)
                     return _to_extracted_file(extraction, can_read_images=read_image is not None)
             except Exception as exc:
                 logger.error("Error processing file %s: %s", filename, exc)
@@ -159,6 +166,11 @@ def _to_extracted_file(extraction: dict, can_read_images: bool) -> ExtractedFile
         result.status = "unsupported"
     elif method == "image_no_vision":
         result.status = "no_vision"
+    elif method == "audio_no_transcriber":
+        result.status = "no_audio"
+    elif method == "audio_transcript_failed":
+        result.status = "failed"
+        result.error = "The recording could not be transcribed."
     elif method in ("error", "image_vision_failed"):
         result.status = "failed"
         result.error = "The file could not be read."

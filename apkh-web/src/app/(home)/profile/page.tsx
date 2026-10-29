@@ -12,6 +12,8 @@ import LlmSettingsCard from "./LlmSettingsCard";
 import PlanCard from "./PlanCard";
 import SearchIndexCard from "./SearchIndexCard";
 import DataCard from "./DataCard";
+import ImportCard from "./ImportCard";
+import SharedLinksCard from "./SharedLinksCard";
 import IntegrationsCard from "./IntegrationsCard";
 import LanguageCard from "./LanguageCard";
 import { useT } from "@/i18n";
@@ -120,6 +122,8 @@ export default function ProfilePage() {
           <LanguageCard />
           <SearchIndexCard />
           <DataCard />
+          <ImportCard />
+          <SharedLinksCard />
           <IntegrationsCard />
         </div>
       </div>
