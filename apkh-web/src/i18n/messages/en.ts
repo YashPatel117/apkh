@@ -470,6 +470,12 @@ const en = {
   "profile.keywordOnlyText": "{model} can answer and summarize, but Claude has no embedding model and this server doesn't run the built-in AI that would embed for it, so notes and attachments are found by keywords rather than meaning. Use a Gemini or OpenAI key for semantic search.",
   "profile.aiOffText": "Add an API key and test the connection to enable Ask AI, summaries and chat.",
   "profile.sourceNotes": "{count} {count|note|notes} available as source material",
+  "profile.tab.overview": "Overview",
+  "profile.tab.ai": "AI & search",
+  "profile.tab.data": "Data",
+  "profile.tab.integrations": "Integrations",
+  "profile.tab.preferences": "Preferences",
+  "profile.sections": "Profile sections",
 
   // Profile: plan and upgrade
   "plan.title": "Plan",

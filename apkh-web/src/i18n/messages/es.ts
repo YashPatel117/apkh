@@ -450,6 +450,12 @@ const es: Partial<Record<MessageKey, string>> = {
   "profile.keywordOnlyText": "{model} puede responder y resumir, pero Claude no tiene modelo de embeddings y este servidor no ejecuta la IA integrada que lo haría por él, así que las notas y los adjuntos se encuentran por palabras clave y no por significado. Usa una clave de Gemini u OpenAI para la búsqueda semántica.",
   "profile.aiOffText": "Añade una clave de API y prueba la conexión para activar las preguntas a la IA, los resúmenes y el chat.",
   "profile.sourceNotes": "{count} {count|nota disponible|notas disponibles} como fuente",
+  "profile.tab.overview": "Resumen",
+  "profile.tab.ai": "IA y búsqueda",
+  "profile.tab.data": "Datos",
+  "profile.tab.integrations": "Integraciones",
+  "profile.tab.preferences": "Preferencias",
+  "profile.sections": "Secciones del perfil",
 
   "plan.title": "Plan",
   "plan.yours": "Tu plan",

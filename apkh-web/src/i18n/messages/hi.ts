@@ -449,6 +449,12 @@ const hi: Partial<Record<MessageKey, string>> = {
   "profile.keywordOnlyText": "{model} जवाब और सारांश दे सकता है, पर Claude में एम्बेडिंग मॉडल नहीं है और यह सर्वर बिल्ट-इन AI नहीं चलाता जो उसकी जगह एम्बेड करे, इसलिए नोट और अटैचमेंट अर्थ से नहीं, कीवर्ड से खोजे जाते हैं। अर्थ आधारित खोज के लिए Gemini/OpenAI कुंजी इस्तेमाल करें।",
   "profile.aiOffText": "AI से पूछें, सारांश और चैट चालू करने के लिए API कुंजी जोड़ें और कनेक्शन जाँचें।",
   "profile.sourceNotes": "स्रोत के रूप में {count} नोट उपलब्ध",
+  "profile.tab.overview": "अवलोकन",
+  "profile.tab.ai": "AI और खोज",
+  "profile.tab.data": "डेटा",
+  "profile.tab.integrations": "इंटीग्रेशन",
+  "profile.tab.preferences": "प्राथमिकताएँ",
+  "profile.sections": "प्रोफ़ाइल अनुभाग",
 
   "plan.title": "प्लान",
   "plan.yours": "आपका प्लान",

@@ -1,22 +1,44 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Coins, Cpu, FolderOpen, Folders, Mail, MessagesSquare, NotebookText, ShieldCheck, TriangleAlert } from "lucide-react";
+import {
+  Coins,
+  Database,
+  Folders,
+  LayoutDashboard,
+  Mail,
+  MessagesSquare,
+  NotebookText,
+  Plug,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+} from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
 import { profile } from "@/services/authService";
 import { Avatar } from "@/components/sidebar";
-import { activeAi, supportsSemanticSearch } from "@/models/user";
+import { cn } from "@/lib/cn";
 import LlmSettingsCard from "./LlmSettingsCard";
 import PlanCard from "./PlanCard";
 import SearchIndexCard from "./SearchIndexCard";
+import SearchStatusCard from "./SearchStatusCard";
 import DataCard from "./DataCard";
 import ImportCard from "./ImportCard";
 import SharedLinksCard from "./SharedLinksCard";
 import IntegrationsCard from "./IntegrationsCard";
 import LanguageCard from "./LanguageCard";
 import { useT } from "@/i18n";
+
+const TABS = [
+  { id: "overview", Icon: LayoutDashboard, label: "profile.tab.overview" },
+  { id: "ai", Icon: Sparkles, label: "profile.tab.ai" },
+  { id: "data", Icon: Database, label: "profile.tab.data" },
+  { id: "integrations", Icon: Plug, label: "profile.tab.integrations" },
+  { id: "preferences", Icon: SlidersHorizontal, label: "profile.tab.preferences" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
 
 function Stat({ Icon, label, value, href }: { Icon: typeof Coins; label: string; value: string | number; href?: string }) {
   const body = (
@@ -44,6 +66,7 @@ export default function ProfilePage() {
   const sessionsCount = useAppSelector((state) => state.chat.sessions.length);
   const dispatch = useAppDispatch();
   const t = useT();
+  const [tab, setTab] = useState<TabId>("overview");
 
   // Token counts and the session allowance change with every question; show current ones.
   useEffect(() => {
@@ -52,12 +75,22 @@ export default function ProfilePage() {
       .catch(() => {});
   }, [dispatch]);
 
+  // Deep links like /profile#ai open that section.
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    const match = TABS.find((x) => x.id === hash);
+    if (match) setTab(match.id);
+  }, []);
+
+  const selectTab = (id: TabId) => {
+    setTab(id);
+    window.history.replaceState(null, "", id === "overview" ? window.location.pathname : `#${id}`);
+  };
+
   if (!user) return null; // the (home) layout renders the loading state
 
-  const ai = activeAi(user);
-
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 pt-6 pb-12 sm:px-6 lg:px-8 lg:pt-8">
+    <div className="mx-auto w-full max-w-7xl px-4 pt-6 pb-12 sm:px-6 lg:px-8 lg:pt-8">
       {/* Identity */}
       <section className="relative overflow-hidden rounded-3xl border border-line bg-surface">
         <div aria-hidden className="h-24 bg-linear-to-r from-blue-500 via-indigo-500 to-violet-500 opacity-90 sm:h-28" />
@@ -75,56 +108,73 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      {/* Stats */}
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" aria-label={t("profile.stats")}>
-        <Stat Icon={NotebookText} label={t("profile.notes")} value={totalNotes.toLocaleString()} href="/notes" />
-        <Stat Icon={MessagesSquare} label={t("profile.conversations")} value={sessionsCount} href="/chat" />
-        <Stat Icon={Folders} label={t("profile.categories", { count: folders.length })} value={categories.length} />
-        <Stat Icon={Coins} label={t("profile.tokens")} value={(user.totalTokensUsed ?? 0).toLocaleString()} />
-      </section>
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
+        {/* Section nav: a sticky sidebar on desktop, a scrollable pill row on small screens */}
+        <nav
+          aria-label={t("profile.sections")}
+          className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:sticky lg:top-6 lg:mx-0 lg:flex-col lg:overflow-visible lg:rounded-3xl lg:border lg:border-line lg:bg-surface lg:p-2"
+        >
+          {TABS.map(({ id, Icon, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => selectTab(id)}
+              aria-current={tab === id ? "page" : undefined}
+              className={cn(
+                "flex shrink-0 items-center gap-2.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors lg:rounded-2xl lg:py-2.5",
+                tab === id
+                  ? "bg-accent-soft text-accent-fg"
+                  : "text-fg-muted hover:bg-accent-soft/60 hover:text-fg max-lg:border max-lg:border-line",
+              )}
+            >
+              <Icon className="size-4" /> {t(label)}
+            </button>
+          ))}
+        </nav>
 
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <LlmSettingsCard user={user} />
-
-        <div className="space-y-6">
-          <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
-            <h2 className="font-semibold text-fg">{t("profile.searchStatus")}</h2>
-            {ai && (ai.kind === "builtin" || supportsSemanticSearch(ai.model, Boolean(user.builtinAi))) ? (
-              <div className="mt-4 flex items-start gap-3 rounded-2xl bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
-                <Cpu className="mt-0.5 size-4 shrink-0" />
-                <div className="min-w-0 text-sm">
-                  <p className="font-semibold">{t("profile.ready")}</p>
-                  <p className="mt-0.5 truncate opacity-90">{t("profile.using", { name: ai.name, model: ai.model })}</p>
-                </div>
+        <div className="min-w-0">
+          {tab === "overview" && (
+            <div className="space-y-6">
+              <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label={t("profile.stats")}>
+                <Stat Icon={NotebookText} label={t("profile.notes")} value={totalNotes.toLocaleString()} href="/notes" />
+                <Stat Icon={MessagesSquare} label={t("profile.conversations")} value={sessionsCount} href="/chat" />
+                <Stat Icon={Folders} label={t("profile.categories", { count: folders.length })} value={categories.length} />
+                <Stat Icon={Coins} label={t("profile.tokens")} value={(user.totalTokensUsed ?? 0).toLocaleString()} />
+              </section>
+              <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+                <PlanCard user={user} />
+                <SearchStatusCard user={user} totalNotes={totalNotes} />
               </div>
-            ) : ai ? (
-              <div className="mt-4 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                <div className="min-w-0 text-sm">
-                  <p className="font-semibold">{t("profile.keywordOnly")}</p>
-                  <p className="mt-0.5 opacity-90">{t("profile.keywordOnlyText", { model: ai.model })}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                <div className="text-sm">
-                  <p className="font-semibold">{t("card.aiOff")}</p>
-                  <p className="mt-0.5 opacity-90">{t("profile.aiOffText")}</p>
-                </div>
-              </div>
-            )}
-            <div className="mt-4 flex items-center gap-2 text-xs text-fg-subtle">
-              <FolderOpen className="size-3.5" /> {t("profile.sourceNotes", { count: totalNotes })}
             </div>
-          </section>
-          <PlanCard user={user} />
-          <LanguageCard />
-          <SearchIndexCard />
-          <DataCard />
-          <ImportCard />
-          <SharedLinksCard />
-          <IntegrationsCard />
+          )}
+
+          {tab === "ai" && (
+            <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+              <LlmSettingsCard user={user} />
+              <div className="space-y-6">
+                <SearchStatusCard user={user} totalNotes={totalNotes} />
+                <SearchIndexCard />
+              </div>
+            </div>
+          )}
+
+          {tab === "data" && (
+            <div className="grid items-start gap-6 xl:grid-cols-2">
+              <div className="space-y-6">
+                <DataCard />
+                <SharedLinksCard />
+              </div>
+              <ImportCard />
+            </div>
+          )}
+
+          {tab === "integrations" && <IntegrationsCard />}
+
+          {tab === "preferences" && (
+            <div className="max-w-2xl">
+              <LanguageCard />
+            </div>
+          )}
         </div>
       </div>
     </div>
