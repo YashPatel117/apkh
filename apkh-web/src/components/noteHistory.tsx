@@ -6,8 +6,9 @@ import { History, RotateCcw } from "lucide-react";
 import { INote, INoteVersion } from "@/models/note";
 import { getNoteVersion, getNoteVersions, restoreNoteVersion } from "@/services/noteService";
 import { getErrorMessage } from "@/services/axios";
-import { useAppDispatch } from "@/store/hook";
-import { addNote, markNoteIndexing } from "@/store/slices/noteSlice";
+import { useAppDispatch, useAppSelector } from "@/store/hook";
+import { canEditRole, isOwnNote, useNoteRole } from "@/lib/sharing";
+import { addNote, markNoteIndexing, sharedNoteSaved } from "@/store/slices/noteSlice";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -40,6 +41,9 @@ function htmlToLines(html: string) {
 /** Earlier versions of a note: compare one with the current text, and bring it back. */
 export function NoteHistoryModal({ note, open, onClose }: { note: INote; open: boolean; onClose: () => void }) {
   const dispatch = useAppDispatch();
+  const userId = useAppSelector((state) => state.auth.user?.id);
+  // Viewers of a shared folder can look through the history but not restore.
+  const canRestore = canEditRole(useNoteRole(note));
   const toast = useToast();
   const t = useT();
   const [versions, setVersions] = useState<INoteVersion[] | null>(null);
@@ -93,8 +97,12 @@ export function NoteHistoryModal({ note, open, onClose }: { note: INote; open: b
     setRestoring(true);
     try {
       const restored = await restoreNoteVersion(note.id, selected.id);
-      dispatch(addNote(restored));
-      dispatch(markNoteIndexing(restored.id));
+      if (isOwnNote(restored, userId)) {
+        dispatch(addNote(restored));
+        dispatch(markNoteIndexing(restored.id));
+      } else {
+        dispatch(sharedNoteSaved(restored));
+      }
       toast(t("history.restored"), "success");
       onClose();
     } catch (err) {
@@ -137,6 +145,7 @@ export function NoteHistoryModal({ note, open, onClose }: { note: INote; open: b
                       {timeFormat.format(new Date(version.savedAt))}
                     </span>
                     <span className="block truncate text-xs text-fg-subtle">{version.title || t("ai.untitled")}</span>
+                    {version.editedByName && <span className="block truncate text-xs text-fg-subtle">{t("sharedNote.editedBy", { name: version.editedByName })}</span>}
                   </button>
                 </li>
               ))}
@@ -190,9 +199,11 @@ export function NoteHistoryModal({ note, open, onClose }: { note: INote; open: b
               <Button variant="secondary" onClick={onClose} disabled={restoring}>
                 {t("common.close")}
               </Button>
-              <Button onClick={() => void restore()} loading={restoring} icon={<RotateCcw className="size-4" />}>
-                {t("history.restore")}
-              </Button>
+              {canRestore && (
+                <Button onClick={() => void restore()} loading={restoring} icon={<RotateCcw className="size-4" />}>
+                  {t("history.restore")}
+                </Button>
+              )}
             </div>
           )}
         </div>

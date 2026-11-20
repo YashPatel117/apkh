@@ -24,6 +24,13 @@ export class NoteVersion {
   @Prop({ required: true })
   content: string;
 
+  /** Who wrote this version (the note's lastEditedBy at the time), when known */
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', default: null })
+  editedBy: Types.ObjectId | null;
+
+  @Prop({ type: String, default: null })
+  editedByName: string | null;
+
   /** When this version was current: the note's updatedAt at the time */
   @Prop({ required: true })
   savedAt: Date;

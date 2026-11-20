@@ -1,5 +1,6 @@
 "use client";
 
+import { NotificationsBell } from "@/components/notificationsBell";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -136,6 +137,7 @@ export function Sidebar({
           <LogoMark size={34} />
           <Wordmark />
         </Link>
+        <NotificationsBell />
       </div>
 
       <div className="px-3">

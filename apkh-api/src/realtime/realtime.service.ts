@@ -10,7 +10,11 @@ export type RealtimeEvent =
   | 'index:changed'
   | 'chat:updated'
   | 'trash:changed'
-  | 'profile:changed';
+  | 'profile:changed'
+  /** The bell: a notification arrived or was read */
+  | 'notifications:changed'
+  /** Folder sharing changed: invites, members, roles */
+  | 'shares:changed';
 
 @Injectable()
 export class RealtimeService {
@@ -23,5 +27,14 @@ export class RealtimeService {
     } catch {
       // Live updates are best-effort; the app also reloads on focus.
     }
+  }
+
+  /** emit() to several users (e.g. everyone in a shared folder). */
+  emitMany(
+    userIds: Iterable<string>,
+    event: RealtimeEvent,
+    data: unknown = {},
+  ) {
+    for (const userId of new Set(userIds)) this.emit(userId, event, data);
   }
 }

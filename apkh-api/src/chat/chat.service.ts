@@ -92,6 +92,7 @@ const OTHER_CHATS_CONTEXT_LIMIT = 3;
 // Messages saved in the same millisecond keep their insertion order via _id.
 const MESSAGE_ORDER = { createdAt: 1, _id: 1 } as const;
 
+import { AccessService } from 'src/collab/access.service';
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -107,6 +108,7 @@ export class ChatService {
     private readonly indexing: IndexingService,
     private readonly queryRewrite: QueryRewriteService,
     private readonly realtime: RealtimeService,
+    private readonly access: AccessService,
   ) {}
 
   /**
@@ -547,9 +549,12 @@ export class ChatService {
     }
 
     const { min } = similarityThresholds(activeLlm.provider);
+    // Folders shared with the user count as their notes here.
+    const shared = await this.access.sharedNotePartitions(userId);
     const [notes, currentChat, otherChats] = await Promise.all([
       this.retrieval.retrieve(userId, searchText, {
         scope: { sourceTypes: ['note', 'file'] },
+        shared,
         limit: NOTE_CONTEXT_LIMIT,
         vector,
         space,

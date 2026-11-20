@@ -5,7 +5,7 @@ import { Check, Copy, Globe, Link2Off, RefreshCw } from "lucide-react";
 import { createNoteShare, getNoteShare, NoteShare, revokeNoteShare, shareUrl } from "@/services/shareService";
 import { getErrorMessage } from "@/services/axios";
 import { Button } from "@/components/ui/Button";
-import { fieldClass } from "@/components/ui/Input";
+import { fieldClass, SelectBox } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -87,18 +87,13 @@ export function ShareNoteModal({ noteId, noteTitle, open, onClose }: ShareNoteMo
   const expiryPicker = (
     <label className="block">
       <span className="text-sm font-medium text-fg">{share ? t("share.newLinkExpiry") : t("share.expiry")}</span>
-      <select
-        className={cn(fieldClass, "mt-1.5 cursor-pointer")}
-        value={expiresInDays ?? ""}
-        onChange={(e) => setExpiresInDays(e.target.value ? Number(e.target.value) : null)}
+      <SelectBox
+        className="mt-1.5"
+        value={expiresInDays == null ? "" : String(expiresInDays)}
+        onChange={(v) => setExpiresInDays(v ? Number(v) : null)}
         disabled={Boolean(busy)}
-      >
-        {EXPIRY_OPTIONS.map((days) => (
-          <option key={days ?? "never"} value={days ?? ""}>
-            {expiryLabel(days)}
-          </option>
-        ))}
-      </select>
+        options={EXPIRY_OPTIONS.map((days) => ({ value: days == null ? "" : String(days), label: expiryLabel(days) }))}
+      />
     </label>
   );
 

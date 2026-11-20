@@ -63,6 +63,8 @@ export default function NotesPage() {
     [folders, activeFolder],
   );
   const t = useT();
+  // "3 of 12" compares with your own notes, which means nothing inside a folder shared with you.
+  const inSharedFolder = Boolean(activeFolder && folders.find((f) => f.id === activeFolder)?.role && folders.find((f) => f.id === activeFolder)?.role !== "owner");
   const folderName = activeFolder === "root" ? t("folders.unfiled") : breadcrumbs.at(-1)?.name;
   const indexStatus = useAppSelector((state) => state.note.indexStatus);
   const indexByNote = useMemo(() => new Map(indexStatus?.notes.map((n) => [n.noteId, n])), [indexStatus]);
@@ -187,7 +189,7 @@ export default function NotesPage() {
           <p className="mt-1 text-sm text-fg-muted">
             {notesLoaded ? (
               <>
-                {filtering ? t("notes.countOf", { count: filteredTotal, total: totalNotes }) : t("notes.count", { count: filteredTotal })}
+                {filtering && !inSharedFolder ? t("notes.countOf", { count: filteredTotal, total: totalNotes }) : t("notes.count", { count: filteredTotal })}
                 {!hasMore && attachmentCount > 0 && ` · ${t("notes.attachments", { count: attachmentCount })}`}
               </>
             ) : (
@@ -287,7 +289,7 @@ export default function NotesPage() {
       <div className="mt-6">
         {!notesLoaded || resultsLoading ? (
           <NotesSkeleton />
-        ) : totalNotes === 0 ? (
+        ) : totalNotes === 0 && !filtering ? (
           <div className="mx-auto flex max-w-md animate-rise flex-col items-center py-10 text-center">
             <Image
               src="/assets/empty-state.jpg"

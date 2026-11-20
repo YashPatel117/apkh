@@ -78,6 +78,17 @@ const noteSlice = createSlice({
       state.latestUpdatedAt = new Date().toISOString();
       state.revision++;
     },
+    /**
+     * A note from a folder shared with the user changed: updated where it is
+     * shown, but not added to the user's own library.
+     */
+    sharedNoteSaved: (state, action: PayloadAction<INote>) => {
+      const note = action.payload;
+      const index = state.notes.findIndex((n) => n.id === note.id);
+      if (index !== -1) state.notes[index] = note;
+      state.byId[note.id] = note;
+      state.revision++;
+    },
     deleteNote: (state, action: PayloadAction<string>) => {
       const index = state.notes.findIndex((n) => n.id === action.payload);
       if (index !== -1) state.notes.splice(index, 1);
@@ -132,6 +143,7 @@ export const {
   appendPage,
   cacheNotes,
   addNote,
+  sharedNoteSaved,
   deleteNote,
   setCategories,
   setTags,

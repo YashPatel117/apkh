@@ -155,7 +155,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
+      // Autofill / some IME events fire keydown without a key.
+      const key = e.key?.toLowerCase() ?? "";
       if (mod && !e.shiftKey && !e.altKey && key === "k") {
         e.preventDefault();
         setPaletteOpen((open) => !open);

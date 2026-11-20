@@ -75,6 +75,30 @@ Claude keys, Claude Code and OpenRouter keys without credit only got keyword sea
 - [ ] Show in Profile which account Claude Code is logged in with, and the plan's usage limit when the CLI reports it
 - [ ] Let `apkh-mcp` and Claude Code work together in the docs: one setup that both answers in the app and lets Claude Code search the notes
 
+### 2.7 Asking narrower questions
+- [ ] **Scoped Ask**: limit a question (AI search and chat) to a folder (with its subfolders), a tag or a date range, next to the existing `@mention` of single notes. Retrieval already filters chunks, so this is a filter on `noteId` plus UI to pick the scope
+
+### 2.8 Notes that find each other
+- [ ] **Link suggestions while typing**: the editor offers `[[links]]` to notes similar to the paragraph being written (the "similar notes" ranking, applied to the text being edited)
+- [ ] **Duplicate check on save**: a new note that is a near-duplicate (0.95+) of an existing one offers to open or merge it instead
+- [ ] **Unlinked related notes**: on a note page, related notes it doesn't link to yet, each with "Add link"
+
+### 2.9 Writing faster
+- [ ] **Templates**: meeting, journal, project and your own (any note can be saved as a template); placeholders for the date and title
+- [ ] **Daily note**: one tap opens today's note (from a chosen template), linked to yesterday's
+
+### 2.10 Resurfacing
+- [ ] **Spaced resurfacing**: mark a note "keep in mind" and it comes back on a growing schedule (1 day, 3, 7, 21, 60…); "Got it" pushes it further, "Again" brings it back sooner. Shown on a Review page and in the digest (2.4)
+
+### 2.11 Collaboration
+- [x] **Shared folders**: invite another user (by the email of their account) to a folder and its subfolders as viewer or editor; they accept or decline from the in-app notifications (the bell), and it appears under "Shared with me". The owner changes roles or removes people; members can leave
+- [x] Editors create, edit, move and delete notes inside it (to the owner's Trash); viewers read, export and ask AI questions about it
+- [x] Shared notes in AI search and chat for members (vectors stay in the owner's embedding space: members in another space get keyword matches for them)
+- [x] Live updates and "who edited last" on shared notes; version history shows the author
+- [ ] Email invites for people without an account (needs the email sender from 1.4)
+- [ ] Copy one of your notes into a shared folder (moving would hand it to the owner, so it is refused today)
+- [ ] Two people editing the same note at once: today the last save wins (the earlier one stays in the history)
+
 ## 3. Integrations (MCP)
 - [ ] More tools: `list_notes`, `list_folders`, `summarize_note`, `similar_notes`, `append_to_note` (keeps a version)
 - [ ] GitHub and Jira: `list_issues`, `get_issue`, `search_jira`, `get_jira_issue`, `save_issue_as_note`

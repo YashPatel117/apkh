@@ -15,6 +15,7 @@ import { DatabaseModule } from './database/database.module';
 import { IndexingModule } from './indexing/indexing.module';
 import { FoldersModule } from './folders/folders.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { CollabModule } from './collab/collab.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminModule } from './admin/admin.module';
 import { IntegrationsModule } from './integrations/integrations.module';
@@ -78,6 +79,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     IndexingModule,
     FoldersModule,
     RealtimeModule,
+    CollabModule,
     AnalyticsModule,
     AdminModule,
     IntegrationsModule,

@@ -9,7 +9,9 @@ import { getIndexStatus, getNotesPage } from "@/services/noteService";
 import { useAppDispatch } from "@/store/hook";
 import { setUser } from "@/store/slices/authSlice";
 import { setSessions } from "@/store/slices/chatSlice";
-import { addNote, deleteNote, setFirstPage, setIndexStatus } from "@/store/slices/noteSlice";
+import { addNote, deleteNote, setFirstPage, setIndexStatus, sharedNoteSaved } from "@/store/slices/noteSlice";
+import { useAppSelector } from "@/store/hook";
+import { isOwnNote } from "@/lib/sharing";
 import { refreshLibraryMeta } from "@/hooks/useAuth";
 import type { INote } from "@/models/note";
 
@@ -17,6 +19,10 @@ import type { INote } from "@/models/note";
 export const CHAT_UPDATED_EVENT = "kh:chat-updated";
 /** Fired on window when the trash changes; the trash page reloads. */
 export const TRASH_CHANGED_EVENT = "kh:trash-changed";
+/** Fired on window when a notification arrives or is read; the bell reloads. */
+export const NOTIFICATIONS_CHANGED_EVENT = "kh:notifications-changed";
+/** Fired on window when folder sharing changes (invites, members, roles). */
+export const SHARES_CHANGED_EVENT = "kh:shares-changed";
 
 /** Runs `fn` once, `ms` after the last call (bursts of events become one reload). */
 function debounce(fn: () => void, ms: number) {
@@ -38,6 +44,10 @@ export function useRealtime(enabled: boolean) {
   const dispatch = useAppDispatch();
   const [connected, setConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+  // Read inside socket handlers, which are set up once.
+  const userId = useAppSelector((state) => state.auth.user?.id);
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
 
   useEffect(() => {
     if (!enabled) return;
@@ -87,7 +97,8 @@ export function useRealtime(enabled: boolean) {
     });
     socket.on("disconnect", () => setConnected(false));
     socket.on("note:saved", (note: INote) => {
-      dispatch(addNote(note));
+      // Notes of folders shared with the user stay out of their own library.
+      dispatch(isOwnNote(note, userIdRef.current) ? addNote(note) : sharedNoteSaved(note));
       refreshMeta();
     });
     socket.on("note:deleted", ({ id }: { id: string }) => {
@@ -99,6 +110,11 @@ export function useRealtime(enabled: boolean) {
     socket.on("index:changed", refreshIndex);
     socket.on("profile:changed", refreshProfile);
     socket.on("trash:changed", () => window.dispatchEvent(new Event(TRASH_CHANGED_EVENT)));
+    socket.on("notifications:changed", () => window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT)));
+    socket.on("shares:changed", () => {
+      refreshMeta();
+      window.dispatchEvent(new Event(SHARES_CHANGED_EVENT));
+    });
     socket.on("chat:updated", (detail: { sessionId: string; deleted?: boolean }) => {
       refreshSessions();
       window.dispatchEvent(new CustomEvent(CHAT_UPDATED_EVENT, { detail }));

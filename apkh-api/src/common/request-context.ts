@@ -7,7 +7,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  */
 export const REQUEST_ID_HEADER = 'x-request-id';
 
-const storage = new AsyncLocalStorage<{ requestId: string }>();
+const storage = new AsyncLocalStorage<{
+  requestId: string;
+  actorId?: string;
+}>();
 
 export function runWithRequestId<T>(requestId: string, fn: () => T): T {
   return storage.run({ requestId }, fn);
@@ -21,4 +24,18 @@ export function currentRequestId(): string | undefined {
 export function correlationHeaders(): Record<string, string> {
   const requestId = currentRequestId();
   return requestId ? { [REQUEST_ID_HEADER]: requestId } : {};
+}
+
+/**
+ * The signed-in user making this request (set by AuthGuard). In a shared
+ * folder the services act as the folder's owner; this says who really did
+ * it, for "edited by" and the version history.
+ */
+export function setActor(userId: string) {
+  const store = storage.getStore();
+  if (store) store.actorId = userId;
+}
+
+export function currentActorId(): string | undefined {
+  return storage.getStore()?.actorId;
 }

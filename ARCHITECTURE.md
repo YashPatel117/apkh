@@ -100,6 +100,8 @@ scripts/init-env.mjs   creates missing env files (used by setup-all.bat)
 | `chatsessions`, `chatmessages` | conversations (assistant messages keep their cited sources) |
 | `noteshares` | read-only links to single notes: `noteId` (one link per note), `userId`, `token` (24 random bytes, base64url), `expiresAt` (null: until revoked; MongoDB's TTL index deletes expired links), `views`, `lastViewedAt` |
 | `vouchers` | one-time Pro plan codes: `code`, `redeemed`, `redeemedAt`, `redeemedBy` |
+| `foldermembers` | who a folder is shared with: `folderId`, `ownerId`, `userId`, `role` (`viewer` / `editor`), `status` (`pending` until accepted) |
+| `notifications` | the in-app bell: `userId`, `kind` (invite, accepted, declined, role changed, removed, left, folder deleted), actor and folder names copied in, `readAt`; deleted after 90 days |
 | `migrations` | which startup migrations have run |
 
 **A chunk** has `userId` plus `noteId` (note and file passages) or `sessionId` (chat passages); `sourceType` (`note`, `file`, `chat`) with `sourceName` / `sourcePage` for attachments; `noteTitle`, `chunkIndex`, `text`; `textHash` (sha256 of the text, so an unchanged passage keeps its vector); `embeddingModel`, the **embedding space** of the vector (e.g. `gemini-embedding-001@1536`, unset for keyword-only chunks); and `vector`, stored as a BSON binary float32 vector (about 6 KB at 1536 dimensions instead of about 21 KB as an array). The text is kept on purpose: the index can be rebuilt for another provider without reading attachments again.
@@ -266,11 +268,21 @@ Every note gets its id before anything is saved, so `[[wiki links]]`, `[[note|al
 
 **Share links.** `POST /notes/:id/share` (optional `expiresInDays`, 1–365) makes a note's read-only link, replacing any earlier one; `GET` shows it and `DELETE` revokes it. `GET /notes/shares` lists every live link (Profile → Shared links). The public `GET /shared/:token` (no sign-in) returns the note with its HTML sanitised again and links to the owner's other notes turned into plain text; `GET /shared/:token/files/:name` streams an attachment of that note from storage with a service token for the owner (images, audio, video and PDFs inline, everything else as a download, `nosniff`). Expired links answer 410, unknown or revoked ones 404. A note in Trash keeps its link, which works again if the note is restored; purging the note deletes it. The web page is `/share/<token>`, marked `noindex`.
 
-## 11. Token usage
+## 11. Shared folders
+
+A folder can be shared with other users as **viewer** (read, export, ask AI about it) or **editor** (also create, edit, move and delete notes and subfolders inside it). The owner invites by the email of an existing account; the invitee gets an in-app notification (the bell in the sidebar) and accepts or declines. The owner changes roles and removes people; members can leave. Only the owner renames, moves, deletes or shares the shared folder itself.
+
+**Everything stays the owner's.** Notes and subfolders created by members in a shared folder are the owner's (`userId`), as are their files, versions, index and Trash. `collab/access.service.ts` decides access: a member's role comes from an accepted `foldermembers` row on the folder or any folder above it (the stronger one wins). The notes, folders and file controllers check it first (read or write), then call the existing owner-scoped services *as the owner*; storage calls for a member use a 15-minute token signed for the owner. Anything the user can't see answers "not found". Members can only move notes and subfolders within the folder shared with them, and can't move their own notes into it.
+
+**Who did what.** The signed-in user is kept in the request context (`setActor`, by AuthGuard). Saves record `lastEditedBy` / `lastEditedByName` on the note, and each version keeps who wrote it, so shared notes show "Edited by". Realtime events about a note or folder go to its audience: the owner plus the accepted members of its folder and every folder above it.
+
+**AI.** Members ask with their own AI and tokens (summaries are cached per reader). AI search and chat search the member's own chunks plus one partition per owner, limited to the shared notes (`sharedNotePartitions`); the partitions join the rank fusion like another ranking. Vectors stay in the owner's embedding space: a member in the same space matches them by meaning, anyone else by keywords. Indexing a member's edit runs on the owner's AI, like any of the owner's notes. Similar notes aren't offered on shared notes (they would rank the owner's whole library), and backlinks only list notes the reader can open.
+
+## 12. Token usage
 
 `apkh-search` reports tokens for answers, summaries, image reads, Gemini transcriptions and embeddings (embedding tokens are counted locally, as the SDKs don't return them); the API adds them to the active config's and the user's totals.
 
-## 12. Startup migrations
+## 13. Startup migrations
 
 Before serving requests the API runs any migration not yet recorded in `migrations` (each is idempotent; `RUN_MIGRATIONS=off` skips them):
 
@@ -281,7 +293,7 @@ Before serving requests the API runs any migration not yet recorded in `migratio
 
 Notes indexed before the queue existed get their jobs the first time the user opens the app (a background "reconcile" also queues anything missing or in the wrong space).
 
-## 13. Short version
+## 14. Short version
 
 ```text
 Indexing:   note save -> index_jobs -> worker -> extract (new files only) -> chunk -> embed (new text only) -> knowledgechunks

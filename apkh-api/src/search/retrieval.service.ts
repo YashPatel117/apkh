@@ -20,6 +20,15 @@ export interface RetrievalScope {
   excludeSessionId?: string;
 }
 
+/**
+ * Notes of a folder shared with the user: their chunks carry the owner's
+ * userId, so they are searched as a separate partition limited to these notes.
+ */
+export interface SharedPartition {
+  ownerId: string;
+  noteIds: string[];
+}
+
 export interface RetrievedChunk {
   id: string;
   noteId?: string;
@@ -129,21 +138,33 @@ export class RetrievalService {
        * so a question about a note can use all of it.
        */
       fillFromScope?: boolean;
+      /**
+       * Notes shared with the user (note and file passages only). Each runs
+       * as its own partition and joins the fusion like another ranking; a
+       * partition embedded in another space only matches by keywords.
+       */
+      shared?: SharedPartition[];
     },
   ): Promise<RetrievedChunk[]> {
-    const filter = scopeFilter(new Types.ObjectId(userId), options.scope);
+    const own = scopeFilter(new Types.ObjectId(userId), options.scope);
+    const filters = [own, ...sharedFilters(options.scope, options.shared)];
+    const filter = filters.length > 1 ? { $or: filters } : own;
 
-    const [semantic, keyword] = await Promise.all([
-      options.vector && options.space
-        ? this.semanticLeg(
-            filter,
-            options.vector,
-            options.space,
-            options.minSimilarity ?? null,
-          )
-        : Promise.resolve([]),
-      this.keywordLeg(filter, query),
-    ]);
+    const legs = await Promise.all(
+      filters.map((partition) =>
+        Promise.all([
+          options.vector && options.space
+            ? this.semanticLeg(
+                partition,
+                options.vector,
+                options.space,
+                options.minSimilarity ?? null,
+              )
+            : Promise.resolve([]),
+          this.keywordLeg(partition, query),
+        ]),
+      ),
+    );
 
     const fused = new Map<string, RetrievedChunk>();
     const add = (
@@ -162,8 +183,10 @@ export class RetrievalService {
       }
       fused.set(key, chunk);
     };
-    semantic.forEach(({ doc, similarity }, i) => add(doc, i + 1, similarity));
-    keyword.forEach((doc, i) => add(doc, i + 1, null));
+    for (const [semantic, keyword] of legs) {
+      semantic.forEach(({ doc, similarity }, i) => add(doc, i + 1, similarity));
+      keyword.forEach((doc, i) => add(doc, i + 1, null));
+    }
 
     const ranked = [...fused.values()]
       .sort((a, b) => b.score - a.score)
@@ -579,6 +602,30 @@ export function mergeRankings(
 function atlasIndexName(setting: string | undefined): string | null {
   const name = setting?.trim() || 'chunk_vectors';
   return name.toLowerCase() === 'off' ? null : name;
+}
+
+/** One filter per shared partition, within the scope (pinned notes, types). */
+function sharedFilters(
+  scope: RetrievalScope,
+  shared: SharedPartition[] | undefined,
+): FilterQuery<KnowledgeChunkDocument>[] {
+  if (!shared?.length || scope.sessionId || scope.excludeSessionId) return [];
+  const sourceTypes = scope.sourceTypes.filter((t) => t !== 'chat');
+  if (!sourceTypes.length) return [];
+  const pinned = scope.noteIds?.length ? new Set(scope.noteIds) : null;
+  return shared
+    .map((partition) => ({
+      ownerId: partition.ownerId,
+      noteIds: pinned
+        ? partition.noteIds.filter((id) => pinned.has(id))
+        : partition.noteIds,
+    }))
+    .filter((partition) => partition.noteIds.length)
+    .map((partition) => ({
+      userId: new Types.ObjectId(partition.ownerId),
+      sourceType: { $in: sourceTypes },
+      noteId: { $in: partition.noteIds.map((id) => new Types.ObjectId(id)) },
+    }));
 }
 
 function scopeFilter(

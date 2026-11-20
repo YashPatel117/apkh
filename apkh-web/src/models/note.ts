@@ -12,6 +12,10 @@ export interface INote {
   createdAt: string;
   updatedAt: string;
   files: string[];
+  /** Whose note it is; in a folder shared with you, someone else's */
+  ownerId?: string;
+  /** Who saved it last (shown on shared notes) */
+  lastEditedBy?: { id: string; name: string } | null;
 }
 
 /** One page of notes (GET /notes?limit=…). */
@@ -26,12 +30,24 @@ export interface ICategoryCount {
   count: number;
 }
 
+/** What you may do in a folder: your own, or one shared with you. */
+export type FolderRole = "owner" | "editor" | "viewer";
+
 export interface IFolder {
   id: string;
   name: string;
   parentId: string | null;
   /** Notes filed directly in this folder */
   noteCount: number;
+  /** Missing from older servers: treated as your own */
+  role?: FolderRole;
+  /** Your folders: how many people it is shared with (or offered to) */
+  sharedWith?: number;
+  /** Shared with you: whose it is */
+  ownerId?: string;
+  ownerName?: string;
+  /** Shared with you: the folder that was shared (shown under "Shared with me") */
+  shareRoot?: boolean;
 }
 
 /** An earlier version of a note (content only when fetched on its own). */
@@ -45,6 +61,8 @@ export interface INoteVersion {
   replacedAt: string;
   size?: number;
   content?: string;
+  /** Who wrote this version, when known */
+  editedByName?: string | null;
 }
 
 /** queued / processing: being indexed · ready: searchable · failed / skipped: not indexed */

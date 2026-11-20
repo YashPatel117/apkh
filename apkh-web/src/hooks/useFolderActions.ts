@@ -5,7 +5,8 @@ import { createFolder, deleteFolder, updateFolder } from "@/services/folderServi
 import { moveNote as moveNoteRequest } from "@/services/noteService";
 import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch, useAppStore } from "@/store/hook";
-import { addNote } from "@/store/slices/noteSlice";
+import { addNote, sharedNoteSaved } from "@/store/slices/noteSlice";
+import { isOwnNote } from "@/lib/sharing";
 import { refreshLibraryMeta } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/Toast";
 import { folderAndDescendants } from "@/lib/folders";
@@ -47,7 +48,11 @@ export function useFolderActions() {
       const note = store.getState().note.byId[noteId];
       if (note && (note.folderId ?? null) === folderId) return Promise.resolve(true);
       return run(
-        async () => dispatch(addNote(await moveNoteRequest(noteId, folderId))),
+        async () => {
+          const moved = await moveNoteRequest(noteId, folderId);
+          // A note of a shared folder stays out of the user's own library.
+          dispatch(isOwnNote(moved, store.getState().auth.user?.id) ? addNote(moved) : sharedNoteSaved(moved));
+        },
         "move.failed",
         folderId ? t("move.moved", { name: folderName(folderId) }) : t("move.out"),
       );

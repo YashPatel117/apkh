@@ -27,6 +27,7 @@ import { activeAi } from "@/models/user";
 import { deleteNote, exportNote, getBacklinks, getNoteById, IBacklink } from "@/services/noteService";
 import { getErrorMessage } from "@/services/axios";
 import { useAppDispatch, useAppSelector } from "@/store/hook";
+import { canEditRole, useNoteRole } from "@/lib/sharing";
 import { cacheNotes, deleteNote as deleteNoteAction } from "@/store/slices/noteSlice";
 import { useNotes } from "@/context/notesContext";
 import { normalizeNoteLinksInHtml, stripLegacyFileTokenStyles } from "@/lib/noteLinkUtils";
@@ -72,6 +73,10 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
   const [moveOpen, setMoveOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // A note of a folder shared with the user: editable (editor) or read-only (viewer).
+  const role = useNoteRole(note);
+  const own = role === "owner";
+  const editable = canEditRole(role);
 
   // Notes not loaded yet (a link from elsewhere) are fetched on their own.
   const loaded = Boolean(note);
@@ -212,9 +217,11 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
           {t("notePage.back")}
         </Button>
         <div className="flex items-center gap-1.5">
-          <Button size="sm" onClick={() => openNote(note.id)} icon={<Pencil className="size-3.5" />}>
-            {t("notePage.edit")}
-          </Button>
+          {editable && (
+            <Button size="sm" onClick={() => openNote(note.id)} icon={<Pencil className="size-3.5" />}>
+              {t("notePage.edit")}
+            </Button>
+          )}
           {synced && (
             <Menu
               trigger={({ toggle, open }) => (
@@ -233,15 +240,21 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
                     <MenuItem icon={<Link2 />} onClick={then(() => void copyLink())}>
                       {t("links.copy")}
                     </MenuItem>
-                    <MenuItem icon={<Share2 />} onClick={then(() => setShareOpen(true))}>
-                      {t("share.menu")}
-                    </MenuItem>
-                    <MenuItem icon={<Layers />} onClick={then(() => setSimilarOpen(true))}>
-                      {t("card.similar")}
-                    </MenuItem>
-                    <MenuItem icon={<FolderInput />} onClick={then(() => setMoveOpen(true))}>
-                      {t("card.move")}
-                    </MenuItem>
+                    {own && (
+                      <MenuItem icon={<Share2 />} onClick={then(() => setShareOpen(true))}>
+                        {t("share.menu")}
+                      </MenuItem>
+                    )}
+                    {own && (
+                      <MenuItem icon={<Layers />} onClick={then(() => setSimilarOpen(true))}>
+                        {t("card.similar")}
+                      </MenuItem>
+                    )}
+                    {editable && (
+                      <MenuItem icon={<FolderInput />} onClick={then(() => setMoveOpen(true))}>
+                        {t("card.move")}
+                      </MenuItem>
+                    )}
                     <MenuItem icon={<History />} onClick={then(() => setHistoryOpen(true))}>
                       {t("card.history")}
                     </MenuItem>
@@ -257,10 +270,14 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
                     <MenuItem icon={<Printer />} onClick={then(() => window.open(`/print/${note.id}`, "_blank", "noopener"))}>
                       {t("card.print")}
                     </MenuItem>
-                    <div className="my-1 h-px bg-line" />
-                    <MenuItem icon={<Trash2 />} onClick={then(() => setConfirmDelete(true))}>
-                      {t("card.delete")}
-                    </MenuItem>
+                    {editable && (
+                      <>
+                        <div className="my-1 h-px bg-line" />
+                        <MenuItem icon={<Trash2 />} onClick={then(() => setConfirmDelete(true))}>
+                          {t("card.delete")}
+                        </MenuItem>
+                      </>
+                    )}
                   </>
                 );
               }}
@@ -282,7 +299,13 @@ export default function NotePage({ params }: { params: Promise<{ id: string }> }
             <Clock className="size-3" />
             {t("notePage.updated", { date: dateFormat.format(new Date(note.updatedAt)) })}
           </span>
+          {!own && note.lastEditedBy?.name && <span className="text-fg-subtle">· {t("sharedNote.editedBy", { name: note.lastEditedBy.name })}</span>}
         </div>
+        {role === "viewer" && (
+          <p className="mt-3 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-400/10 dark:text-sky-200">
+            {t("sharedNote.readOnly", { owner: folders.find((f) => f.id === note.folderId)?.ownerName || "" })}
+          </p>
+        )}
 
         <h1 className="mt-3 text-2xl font-bold tracking-tight break-words text-fg sm:text-3xl">{note.title || t("ai.untitled")}</h1>
         <TagChips

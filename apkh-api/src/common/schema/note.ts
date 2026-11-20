@@ -29,6 +29,16 @@ export class Note {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Folder', default: null })
   folderId: Types.ObjectId | null;
 
+  /**
+   * Who saved the note last, when it lives in a shared folder and may be
+   * changed by members (the owner otherwise). The name is copied in.
+   */
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', default: null })
+  lastEditedBy: Types.ObjectId | null;
+
+  @Prop({ type: String, default: null })
+  lastEditedByName: string | null;
+
   createdAt: string;
   updatedAt: string;
 }

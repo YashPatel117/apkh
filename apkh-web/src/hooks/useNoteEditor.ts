@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import { INote, INoteDto } from "@/models/note";
 import { createNote, getNoteById, updateNote } from "@/services/noteService";
 import { useAppDispatch, useAppStore } from "@/store/hook";
-import { addNote, cacheNotes, markNoteIndexing } from "@/store/slices/noteSlice";
+import { addNote, cacheNotes, markNoteIndexing, sharedNoteSaved } from "@/store/slices/noteSlice";
+import { isOwnNote, noteRole } from "@/lib/sharing";
+import { noteHref } from "@/lib/noteLinks";
 import { useToast } from "@/components/ui/Toast";
 import { useT } from "@/i18n";
 import { enqueueSave, isNetworkError, isOfflineId, newOfflineId } from "@/lib/offlineQueue";
@@ -17,6 +20,7 @@ import { refreshLibraryMeta } from "@/hooks/useAuth";
 export function useNoteEditor() {
   const dispatch = useAppDispatch();
   const store = useAppStore();
+  const router = useRouter();
   const toast = useToast();
   const t = useT();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -41,10 +45,16 @@ export function useNoteEditor() {
         toast(t("notes.missing"), "error");
         return;
       }
+      // A note of a folder shared with the user for viewing opens read-only.
+      const state = store.getState();
+      if (noteRole(note, state.note.folders, state.auth.user?.id) === "viewer") {
+        router.push(noteHref(note.id));
+        return;
+      }
       setEditNote(note);
       setEditorOpen(true);
     },
-    [dispatch, store, toast, t],
+    [dispatch, store, router, toast, t],
   );
 
   /** A new note, filed in `folderId` when given. */
@@ -61,7 +71,10 @@ export function useNoteEditor() {
       try {
         if (id && isOfflineId(id)) throw Object.assign(new Error("offline"), { offlineNote: true });
         const res = id ? await updateNote(id, payload) : await createNote(payload);
-        if (res) {
+        if (res && !isOwnNote(res, store.getState().auth.user?.id)) {
+          // A note of a folder shared with the user: not added to their library.
+          dispatch(sharedNoteSaved(res));
+        } else if (res) {
           dispatch(addNote(res));
           dispatch(markNoteIndexing(res.id));
         }

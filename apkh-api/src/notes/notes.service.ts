@@ -34,6 +34,8 @@ import { RealtimeService } from 'src/realtime/realtime.service';
 import { htmlToPlainText } from 'src/common/utils/html';
 import { normalizeTags } from './utils/tags';
 import { TrashService } from './trash.service';
+import { AccessService } from 'src/collab/access.service';
+import { currentActorId } from 'src/common/request-context';
 
 export interface NotesPageQuery {
   limit: number;
@@ -86,6 +88,7 @@ export class NotesService {
     private readonly folders: FoldersService,
     private readonly realtime: RealtimeService,
     private readonly trash: TrashService,
+    private readonly access: AccessService,
   ) {}
 
   /** CREATE */
@@ -114,6 +117,7 @@ export class NotesService {
         tags: normalizeTags(createNoteDto.tags),
         folderId,
         userId,
+        ...(await this.editedBy()),
       });
       await note.save();
       const result = toNoteResponse(note, []);
@@ -131,7 +135,12 @@ export class NotesService {
 
       // Index in the background; the queue retries until it succeeds
       this.queueIndexing(userId, String(note._id));
-      this.realtime.emit(userId, 'note:saved', result);
+      await this.emitNote(
+        userId,
+        folderId ? (folderId as Types.ObjectId).toHexString() : null,
+        'note:saved',
+        result,
+      );
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error: unknown) {
@@ -315,6 +324,7 @@ export class NotesService {
     files: Express.Multer.File[],
   ) {
     const note = await this.requireNote(userId, _id);
+    const folderBefore = note.folderId ? String(note.folderId) : null;
 
     try {
       const existingCategories = await this.noteModel.distinct('category', {
@@ -344,6 +354,7 @@ export class NotesService {
       note.title = resolvedMetadata.title;
       note.content = nextContent;
       note.category = resolvedMetadata.category;
+      Object.assign(note, await this.editedBy());
       if (updateNoteDto.tags !== undefined) {
         note.tags = normalizeTags(updateNoteDto.tags);
       }
@@ -381,7 +392,12 @@ export class NotesService {
 
       // Re-index in the background: only what changed is re-read and re-embedded
       this.queueIndexing(userId, _id);
-      this.realtime.emit(userId, 'note:saved', result);
+      await this.emitNote(
+        userId,
+        [folderBefore, note.folderId ? String(note.folderId) : null],
+        'note:saved',
+        result,
+      );
 
       return new ApiResponseDto<NoteResponse>().ok(result);
     } catch (error) {
@@ -392,6 +408,7 @@ export class NotesService {
   /** File a note in a folder (null: take it out of every folder). */
   async move(userId: string, _id: string, folderId: string | null) {
     const note = await this.requireNote(userId, _id);
+    const folderBefore = note.folderId ? String(note.folderId) : null;
     note.folderId = folderId
       ? ((await this.folders.require(userId, folderId))._id as Types.ObjectId)
       : null;
@@ -399,8 +416,15 @@ export class NotesService {
     await note.save({ timestamps: false });
     const files = await this.fileService.getNoteFiles(_id);
     const result = toNoteResponse(note, files?.files ?? []);
-    this.realtime.emit(userId, 'note:saved', result);
-    this.realtime.emit(userId, 'folders:changed');
+    const folders = [folderBefore, folderId];
+    await this.emitNote(userId, folders, 'note:saved', result);
+    await this.emitNote(userId, folders, 'folders:changed');
+    // Members who could see it before but not now drop it.
+    const now = new Set(await this.access.audience(userId, folderId));
+    const lost = (await this.access.audience(userId, folderBefore)).filter(
+      (id) => !now.has(id),
+    );
+    this.realtime.emitMany(lost, 'note:deleted', { id: _id });
     return new ApiResponseDto<NoteResponse>().ok(result);
   }
 
@@ -437,7 +461,7 @@ export class NotesService {
     const versions = await this.versionModel
       .find({ noteId: note._id })
       .sort({ savedAt: -1 })
-      .select('title category savedAt createdAt content')
+      .select('title category savedAt createdAt content editedByName')
       .lean()
       .exec();
     return new ApiResponseDto().ok(
@@ -448,6 +472,7 @@ export class NotesService {
         savedAt: v.savedAt,
         replacedAt: v.createdAt,
         size: v.content.length,
+        editedByName: v.editedByName ?? null,
       })),
     );
   }
@@ -462,6 +487,7 @@ export class NotesService {
       content: version.content,
       savedAt: version.savedAt,
       replacedAt: version.createdAt,
+      editedByName: version.editedByName ?? null,
     });
   }
 
@@ -473,12 +499,18 @@ export class NotesService {
     note.title = version.title;
     note.category = version.category || note.category;
     note.content = version.content;
+    Object.assign(note, await this.editedBy());
     await note.save();
     await this.clearSummaryCache(_id, userId);
     this.queueIndexing(userId, _id);
     const files = await this.fileService.getNoteFiles(_id);
     const result = toNoteResponse(note, files?.files ?? []);
-    this.realtime.emit(userId, 'note:saved', result);
+    await this.emitNote(
+      userId,
+      note.folderId ? String(note.folderId) : null,
+      'note:saved',
+      result,
+    );
     return new ApiResponseDto<NoteResponse>().ok(result);
   }
 
@@ -501,6 +533,8 @@ export class NotesService {
       category: note.category,
       content: note.content,
       savedAt: note.updatedAt ?? new Date(),
+      editedBy: note.lastEditedBy ?? null,
+      editedByName: note.lastEditedByName ?? null,
     });
     const stale = await this.versionModel
       .find({ noteId: note._id })
@@ -675,11 +709,17 @@ export class NotesService {
 
   // ── AI ───────────────────────────────────────────────────────────────────
 
+  /**
+   * `userId` owns the note; `aiUserId` asks (their AI answers and their
+   * tokens count; a member of a shared folder asks with their own AI), and
+   * `token` is theirs.
+   */
   async summarize(
     token: string,
     userId: string,
     _id: string,
     mode: SummaryMode = 'brief',
+    aiUserId: string = userId,
   ) {
     try {
       const note = await this.requireNote(userId, _id);
@@ -689,7 +729,7 @@ export class NotesService {
       // One cached summary per mode; editing the note clears them all.
       const cacheKey = {
         noteId: new Types.ObjectId(_id),
-        userId: new Types.ObjectId(userId),
+        userId: new Types.ObjectId(aiUserId),
         mode,
       };
       const cachedSummary = await this.summaryModel.findOne(cacheKey).exec();
@@ -713,7 +753,7 @@ export class NotesService {
 
       const generated = await this.searchService.generateNoteSummary(
         token,
-        userId,
+        aiUserId,
         note,
         attachedFiles,
         mode,
@@ -760,7 +800,7 @@ export class NotesService {
    * (what `[[` inserts in the editor). Each comes with the text around its
    * first link to the note.
    */
-  async backlinks(userId: string, _id: string) {
+  async backlinks(userId: string, _id: string, readerId: string = userId) {
     await this.requireNote(userId, _id);
     const href = `/notes/${_id}`;
     const linking = await this.noteModel
@@ -774,8 +814,23 @@ export class NotesService {
       .limit(MAX_BACKLINKS)
       .lean()
       .exec();
+    // A member sees links from notes shared with them, not the owner's others.
+    const visible =
+      readerId === userId
+        ? linking
+        : await this.access
+            .readableNoteIds(
+              readerId,
+              linking.map((n) => (n._id as Types.ObjectId).toHexString()),
+            )
+            .then((ids) => {
+              const ok = new Set(ids);
+              return linking.filter((n) =>
+                ok.has((n._id as Types.ObjectId).toHexString()),
+              );
+            });
     return new ApiResponseDto<Backlink[]>().ok(
-      linking.map((note) => ({
+      visible.map((note) => ({
         id: (note._id as Types.ObjectId).toHexString(),
         title: note.title,
         category: note.category,
@@ -828,11 +883,45 @@ export class NotesService {
     });
   }
 
-  private async clearSummaryCache(noteId: string, userId: string) {
+  /** An edit makes every cached summary of the note stale, members' too. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async clearSummaryCache(noteId: string, _userId: string) {
     await this.summaryModel.deleteMany({
       noteId: new Types.ObjectId(noteId),
-      userId: new Types.ObjectId(userId),
     });
+  }
+
+  /** Who is saving the note (lastEditedBy), from the request's signed-in user. */
+  private async editedBy(): Promise<{
+    lastEditedBy: Types.ObjectId | null;
+    lastEditedByName: string | null;
+  }> {
+    const actorId = currentActorId();
+    if (!actorId) return { lastEditedBy: null, lastEditedByName: null };
+    const name = (await this.access.userNames([actorId])).get(actorId) ?? null;
+    return {
+      lastEditedBy: new Types.ObjectId(actorId),
+      lastEditedByName: name,
+    };
+  }
+
+  /**
+   * Push a note event to everyone who can see it: the owner, plus the members
+   * of a shared folder it is (or was, for a move) in.
+   */
+  private async emitNote(
+    ownerId: string,
+    folderIds: string | null | Types.ObjectId | (string | null)[],
+    event: 'note:saved' | 'folders:changed',
+    data: unknown = {},
+  ) {
+    const list = Array.isArray(folderIds) ? folderIds : [folderIds];
+    const audiences = await Promise.all(
+      [...new Set(list.map((f) => (f ? String(f) : null)))].map((f) =>
+        this.access.audience(ownerId, f),
+      ),
+    );
+    this.realtime.emitMany(audiences.flat(), event, data);
   }
 }
 
@@ -847,6 +936,10 @@ function toNoteResponse(note: NoteDocument, files: string[]): NoteResponse {
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
     files,
+    ownerId: String(note.userId),
+    lastEditedBy: note.lastEditedBy
+      ? { id: String(note.lastEditedBy), name: note.lastEditedByName ?? '' }
+      : null,
   };
 }
 

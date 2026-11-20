@@ -1,3 +1,4 @@
+import { AccessService } from 'src/collab/access.service';
 import {
   HttpException,
   HttpStatus,
@@ -73,6 +74,7 @@ export class TrashService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly serviceTokens: ServiceTokenService,
     private readonly realtime: RealtimeService,
     private readonly shares: ShareService,
+    private readonly access: AccessService,
   ) {}
 
   onApplicationBootstrap() {
@@ -110,12 +112,18 @@ export class TrashService implements OnApplicationBootstrap, OnModuleDestroy {
       noteUpdatedAt: note.updatedAt,
       deletedAt: new Date(),
     });
+    // Members of a shared folder it was in see it go too.
+    const audience = await this.access.audience(
+      userId,
+      note.folderId ? String(note.folderId) : null,
+    );
     await this.noteModel.deleteOne({ _id: note._id });
     await Promise.all([
       this.indexing.removeNote(noteId),
       this.summaryModel.deleteMany({ noteId: note._id }),
     ]);
-    this.realtime.emit(userId, 'note:deleted', { id: noteId });
+    this.realtime.emitMany(audience, 'note:deleted', { id: noteId });
+    this.realtime.emitMany(audience, 'folders:changed');
     this.realtime.emit(userId, 'trash:changed');
   }
 
@@ -182,8 +190,12 @@ export class TrashService implements OnApplicationBootstrap, OnModuleDestroy {
       updatedAt: note.updatedAt,
       files: files?.files ?? [],
     };
-    this.realtime.emit(userId, 'note:saved', restored);
-    this.realtime.emit(userId, 'folders:changed');
+    const audience = await this.access.audience(
+      userId,
+      folderId ? String(folderId) : null,
+    );
+    this.realtime.emitMany(audience, 'note:saved', restored);
+    this.realtime.emitMany(audience, 'folders:changed');
     this.realtime.emit(userId, 'trash:changed');
     return restored;
   }

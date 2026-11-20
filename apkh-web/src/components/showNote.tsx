@@ -3,7 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AtSign, ChevronDown, Clock, ExternalLink, FileArchive, FileDown, FolderInput, History, Layers, Link2, MoreHorizontal, Paperclip, Printer, Share2, Sparkles, Trash2 } from "lucide-react";
+import { AtSign, ChevronDown, Clock, ExternalLink, FileArchive, FileDown, FolderInput, History, Layers, Link2, MoreHorizontal, Paperclip, Printer, Share2, Sparkles, Trash2, Users } from "lucide-react";
+import { canEditRole, useNoteRole } from "@/lib/sharing";
 import { INote, NoteIndexState } from "@/models/note";
 import { IndexBadge } from "@/components/indexBadge";
 import { NoteSummaryPanel } from "@/components/noteSummaryPanel";
@@ -104,6 +105,12 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
   const t = useT();
   // A note saved offline exists only in this browser until it syncs.
   const synced = !isOfflineId(note.id);
+  // In a folder shared with the user: they may only read it (viewer), or not own it.
+  const role = useNoteRole(note);
+  const own = role === "owner";
+  const editable = canEditRole(role);
+  // Viewers open the note's page instead of the editor.
+  const open = () => (editable ? onEdit?.() : router.push(noteHref(note.id)));
 
   const download = async (format: "md" | "zip") => {
     try {
@@ -143,7 +150,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
     }
     // Don't hijack text selection or link clicks.
     if (window.getSelection()?.toString()) return;
-    onEdit?.();
+    open();
   };
 
   const copyLink = async () => {
@@ -185,7 +192,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
         )}
         style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
         onClick={handleCardClick}
-        draggable={synced}
+        draggable={synced && editable}
         onDragStart={(e) => {
           e.dataTransfer.setData(DRAG_NOTE, note.id);
           e.dataTransfer.setData("text/plain", note.title || "Untitled note");
@@ -193,7 +200,7 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
         }}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
-          if (e.key === "Enter") onEdit?.();
+          if (e.key === "Enter") open();
           else if (e.key.toLowerCase() === "x" && (aiOn || selected)) onToggleSelect?.();
         }}
         data-note-card
@@ -213,6 +220,15 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
               </span>
             )}
             <IndexBadge state={indexState} onRetry={onReindex} />
+            {!own && (
+              <span
+                className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-[0.7rem] font-medium text-sky-700 dark:bg-sky-400/10 dark:text-sky-300"
+                title={note.lastEditedBy?.name ? t("sharedNote.editedBy", { name: note.lastEditedBy.name }) : undefined}
+              >
+                <Users className="size-3" />
+                {t("sharedNote.badge")}
+              </span>
+            )}
           </div>
           <div
             className={cn(
@@ -236,12 +252,16 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
             >
               <Sparkles />
             </IconAction>
-            <IconAction label={t("card.similar")} onClick={() => setSimilarOpen(true)}>
-              <Layers />
-            </IconAction>
-            <IconAction label={t("card.delete")} danger onClick={() => onDelete?.()}>
-              <Trash2 />
-            </IconAction>
+            {own && (
+              <IconAction label={t("card.similar")} onClick={() => setSimilarOpen(true)}>
+                <Layers />
+              </IconAction>
+            )}
+            {editable && (
+              <IconAction label={t("card.delete")} danger onClick={() => onDelete?.()}>
+                <Trash2 />
+              </IconAction>
+            )}
             {synced && (
               <div onClick={(e) => e.stopPropagation()}>
                 <Menu
@@ -264,13 +284,17 @@ export const ShowNote: React.FC<NoteProps> = ({ note, index = 0, selected = fals
                         <MenuItem icon={<Link2 />} onClick={then(() => void copyLink())}>
                           {t("links.copy")}
                         </MenuItem>
-                        <MenuItem icon={<Share2 />} onClick={then(() => setShareOpen(true))}>
-                          {t("share.menu")}
-                        </MenuItem>
+                        {own && (
+                          <MenuItem icon={<Share2 />} onClick={then(() => setShareOpen(true))}>
+                            {t("share.menu")}
+                          </MenuItem>
+                        )}
                         <div className="my-1 h-px bg-line" />
-                        <MenuItem icon={<FolderInput />} onClick={then(() => setMoveOpen(true))}>
-                          {t("card.move")}
-                        </MenuItem>
+                        {editable && (
+                          <MenuItem icon={<FolderInput />} onClick={then(() => setMoveOpen(true))}>
+                            {t("card.move")}
+                          </MenuItem>
+                        )}
                         <MenuItem icon={<History />} onClick={then(() => setHistoryOpen(true))}>
                           {t("card.history")}
                         </MenuItem>

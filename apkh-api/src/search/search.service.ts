@@ -141,6 +141,8 @@ const SUMMARY_CONTEXT_CHAR_LIMIT = 24000;
 const SUMMARY_CONTEXT_MAX_CHUNKS = 36;
 
 /** AI search answers and note summaries, built on the chunk index. */
+import { AccessService } from 'src/collab/access.service';
+import type { SharedPartition } from './retrieval.service';
 @Injectable()
 export class SearchService {
   private readonly logger = new Logger(SearchService.name);
@@ -154,6 +156,7 @@ export class SearchService {
     private readonly retrieval: RetrievalService,
     private readonly indexing: IndexingService,
     private readonly queryRewrite: QueryRewriteService,
+    private readonly access: AccessService,
   ) {}
 
   /**
@@ -305,9 +308,13 @@ export class SearchService {
     const { vector } = embedded;
 
     const pinned = Boolean(referencedNoteIds?.length);
-    const noteIds = pinned
-      ? await this.withLinkedNotes(userId, referencedNoteIds!)
-      : undefined;
+    const [noteIds, shared] = await Promise.all([
+      pinned
+        ? this.withLinkedNotes(userId, referencedNoteIds!)
+        : Promise.resolve(undefined),
+      // Folders shared with the user are searched too.
+      this.access.sharedNotePartitions(userId),
+    ]);
     const thresholds = similarityThresholds(activeLlm.provider);
     const limit = pinned ? PINNED_NOTES_MAX_CHUNKS : topK;
     const retrieveFor = (text: string, queryVector: Float32Array | null) =>
@@ -317,6 +324,7 @@ export class SearchService {
         vector: queryVector,
         space,
         minSimilarity: pinned ? null : thresholds.min,
+        shared,
       });
 
     const [firstPass, pendingNotes] = await Promise.all([
@@ -461,10 +469,10 @@ export class SearchService {
     userId: string,
     noteIds: string[],
   ): Promise<string[]> {
-    const pinned = noteIds.filter((id) => Types.ObjectId.isValid(id));
+    // Own notes and notes shared with the user.
+    const pinned = await this.access.readableNoteIds(userId, noteIds);
     const notes = await this.noteModel
       .find({
-        userId: new Types.ObjectId(userId),
         _id: { $in: pinned.map((id) => new Types.ObjectId(id)) },
       })
       .select('content')
@@ -473,23 +481,12 @@ export class SearchService {
     const linked = [
       ...new Set(notes.flatMap((note) => linkedNoteIds(note.content))),
     ].filter((id) => !pinned.includes(id));
-    if (!linked.length) return noteIds;
-    const existing = await this.noteModel
-      .find({
-        userId: new Types.ObjectId(userId),
-        _id: {
-          $in: linked
-            .slice(0, MAX_LINKED_NOTES)
-            .map((id) => new Types.ObjectId(id)),
-        },
-      })
-      .select('_id')
-      .lean()
-      .exec();
-    return [
-      ...noteIds,
-      ...existing.map((note) => (note._id as Types.ObjectId).toHexString()),
-    ];
+    if (!linked.length) return pinned;
+    const existing = await this.access.readableNoteIds(
+      userId,
+      linked.slice(0, MAX_LINKED_NOTES),
+    );
+    return [...pinned, ...existing];
   }
 
   /** Hybrid retrieval over note text and attachments (not chat transcripts). */
@@ -502,9 +499,11 @@ export class SearchService {
       vector: Float32Array | null;
       space: EmbeddingSpace | null;
       minSimilarity: number | null;
+      shared?: SharedPartition[];
     },
   ) {
     return this.retrieval.retrieve(userId, text, {
+      shared: options.shared,
       scope: { sourceTypes: ['note', 'file'], noteIds: options.noteIds },
       limit: options.limit,
       vector: options.vector,

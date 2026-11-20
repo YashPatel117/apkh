@@ -6,6 +6,7 @@ import { INote } from "@/models/note";
 import { useAppSelector } from "@/store/hook";
 import { useFolderActions } from "@/hooks/useFolderActions";
 import { flattenTree, folderTree } from "@/lib/folders";
+import { folderRole, isOwnNote } from "@/lib/sharing";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/cn";
@@ -14,7 +15,21 @@ import { useT } from "@/i18n";
 /** Picks the folder a note is filed in. */
 export function MoveNoteModal({ note, open, onClose }: { note: INote; open: boolean; onClose: () => void }) {
   const folders = useAppSelector((state) => state.note.folders);
-  const rows = useMemo(() => flattenTree(folderTree(folders)), [folders]);
+  const userId = useAppSelector((state) => state.auth.user?.id);
+  // Your notes go into your folders; a shared note stays among the folders
+  // of its owner that you can edit.
+  const own = isOwnNote(note, userId);
+  const rows = useMemo(
+    () =>
+      flattenTree(
+        folderTree(
+          folders.filter((f) =>
+            own ? folderRole(f) === "owner" : folderRole(f) === "editor" && f.ownerId === note.ownerId,
+          ),
+        ),
+      ),
+    [folders, own, note.ownerId],
+  );
   const { moveNote } = useFolderActions();
   const [moving, setMoving] = useState<string | null>(null);
   const t = useT();
@@ -55,7 +70,7 @@ export function MoveNoteModal({ note, open, onClose }: { note: INote; open: bool
     <Modal open={open} onClose={onClose} locked={Boolean(moving)} size="sm" title={t("move.title")} description={note.title || t("ai.untitled")}>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
         <ul className="space-y-0.5">
-          {option(null, t("move.none"), 0, FolderX)}
+          {own && option(null, t("move.none"), 0, FolderX)}
           {rows.map((folder) => option(folder.id, folder.name, folder.depth, Folder))}
         </ul>
         {rows.length === 0 && (

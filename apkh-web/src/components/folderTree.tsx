@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Folder, FolderOpen, FolderPlus, FolderX, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ChevronRight, Eye, Folder, FolderOpen, FolderPlus, FolderX, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
 import { useAppSelector } from "@/store/hook";
 import { useFolderActions } from "@/hooks/useFolderActions";
 import type { FolderFilter } from "@/hooks/useNotesFilter";
@@ -9,6 +9,9 @@ import { DRAG_FOLDER, DRAG_NOTE, FolderNode, folderAndDescendants, folderPath, f
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { cn } from "@/lib/cn";
+import { folderRole } from "@/lib/sharing";
+import { ShareFolderModal } from "@/components/shareFolderModal";
+import type { IFolder } from "@/models/note";
 import { useT } from "@/i18n";
 
 const EXPANDED_KEY = "folders-expanded";
@@ -35,13 +38,16 @@ interface FolderTreeProps {
  */
 export function FolderTree({ activeFolder, onFolder }: FolderTreeProps) {
   const folders = useAppSelector((state) => state.note.folders);
-  const tree = useMemo(() => folderTree(folders), [folders]);
+  // Your folders, then the ones shared with you (each shared folder at its top).
+  const tree = useMemo(() => folderTree(folders.filter((f) => folderRole(f) === "owner")), [folders]);
+  const sharedTree = useMemo(() => folderTree(folders.filter((f) => folderRole(f) !== "owner")), [folders]);
   const actions = useFolderActions();
   const t = useT();
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [editing, setEditing] = useState<Editing>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<FolderNode | null>(null);
+  const [sharing, setSharing] = useState<IFolder | null>(null);
   const dragFolder = useRef<string | null>(null);
 
   useEffect(() => setExpanded(readExpanded()), []);
@@ -71,10 +77,18 @@ export function FolderTree({ activeFolder, onFolder }: FolderTreeProps) {
   /** Whether what's being dragged can go into `target` (a folder id, "root" or "top"). */
   const accepts = (e: React.DragEvent, target: string) => {
     const types = e.dataTransfer.types;
+    const targetFolder = folders.find((f) => f.id === target);
+    if (targetFolder && folderRole(targetFolder) === "viewer") return false;
     if (types.includes(DRAG_NOTE)) return target !== "top";
     if (!types.includes(DRAG_FOLDER) || target === "root") return false;
     const dragged = dragFolder.current;
-    return Boolean(dragged) && (target === "top" || !folderAndDescendants(folders, dragged!).has(target));
+    if (!dragged) return false;
+    // Shared folders move only within what is shared; your own only among yours.
+    const draggedFolder = folders.find((f) => f.id === dragged);
+    const draggedOwn = folderRole(draggedFolder) === "owner";
+    if (target === "top") return draggedOwn;
+    if (draggedOwn !== (folderRole(targetFolder) === "owner")) return false;
+    return !folderAndDescendants(folders, dragged).has(target);
   };
 
   const dropProps = (target: string) => ({
@@ -131,6 +145,10 @@ export function FolderTree({ activeFolder, onFolder }: FolderTreeProps) {
     );
 
   const renderNode = (node: FolderNode): React.ReactNode => {
+    const role = folderRole(node);
+    const canEdit = role !== "viewer";
+    // Only the owner changes the shared folder itself.
+    const canChangeSelf = role === "owner" || (role === "editor" && !node.shareRoot);
     const active = activeFolder === node.id;
     const open = expanded.has(node.id);
     const hasChildren = node.children.length > 0;
@@ -143,7 +161,7 @@ export function FolderTree({ activeFolder, onFolder }: FolderTreeProps) {
           <div
             className={rowClass(active, node.id)}
             style={{ paddingLeft: 4 + node.depth * 14 }}
-            draggable
+            draggable={canChangeSelf}
             onDragStart={(e) => {
               dragFolder.current = node.id;
               e.dataTransfer.setData(DRAG_FOLDER, node.id);
@@ -175,10 +193,18 @@ export function FolderTree({ activeFolder, onFolder }: FolderTreeProps) {
               className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
             >
               {active ? <FolderOpen className="size-4 shrink-0 text-accent" /> : <Folder className="size-4 shrink-0" />}
-              <span className="min-w-0 flex-1 truncate">{node.name}</span>
+              <span className="min-w-0 flex-1 truncate" title={node.shareRoot && node.ownerName ? t("folders.sharedBy", { name: node.ownerName }) : undefined}>
+                {node.name}
+              </span>
+              {role === "owner" && node.sharedWith ? (
+                <Users className="size-3.5 shrink-0 text-fg-subtle" aria-label={t("folders.sharedWithCount", { count: node.sharedWith })} />
+              ) : role === "viewer" && node.shareRoot ? (
+                <Eye className="size-3.5 shrink-0 text-fg-subtle" aria-label={t("folders.roleViewer")} />
+              ) : null}
               {node.noteCount > 0 && <span className="text-xs text-fg-subtle tabular-nums group-hover/folder:hidden">{node.noteCount}</span>}
             </button>
-            <Menu
+            {(canEdit || node.shareRoot) && (
+              <Menu
               trigger={({ toggle, open: menuOpen }) => (
                 <button
                   type="button"
@@ -196,38 +222,56 @@ export function FolderTree({ activeFolder, onFolder }: FolderTreeProps) {
             >
               {(close) => (
                 <>
-                  <MenuItem
-                    icon={<FolderPlus />}
-                    onClick={() => {
-                      close();
-                      setOpen(node.id, true);
-                      setEditing({ kind: "create", parentId: node.id });
-                    }}
-                  >
-                    {t("folders.newInside")}
-                  </MenuItem>
-                  <MenuItem
-                    icon={<Pencil />}
-                    onClick={() => {
-                      close();
-                      setEditing({ kind: "rename", id: node.id });
-                    }}
-                  >
-                    {t("folders.rename")}
-                  </MenuItem>
-                  <MenuItem
-                    danger
-                    icon={<Trash2 />}
-                    onClick={() => {
-                      close();
-                      setPendingDelete(node);
-                    }}
-                  >
-                    {t("folders.delete")}
-                  </MenuItem>
+                  {canEdit && (
+                    <MenuItem
+                      icon={<FolderPlus />}
+                      onClick={() => {
+                        close();
+                        setOpen(node.id, true);
+                        setEditing({ kind: "create", parentId: node.id });
+                      }}
+                    >
+                      {t("folders.newInside")}
+                    </MenuItem>
+                  )}
+                  {canChangeSelf && (
+                    <MenuItem
+                      icon={<Pencil />}
+                      onClick={() => {
+                        close();
+                        setEditing({ kind: "rename", id: node.id });
+                      }}
+                    >
+                      {t("folders.rename")}
+                    </MenuItem>
+                  )}
+                  {(role === "owner" || node.shareRoot) && (
+                    <MenuItem
+                      icon={<Users />}
+                      onClick={() => {
+                        close();
+                        setSharing(node);
+                      }}
+                    >
+                      {role === "owner" ? t("folders.share") : t("folders.members")}
+                    </MenuItem>
+                  )}
+                  {canChangeSelf && (
+                    <MenuItem
+                      danger
+                      icon={<Trash2 />}
+                      onClick={() => {
+                        close();
+                        setPendingDelete(node);
+                      }}
+                    >
+                      {t("folders.delete")}
+                    </MenuItem>
+                  )}
                 </>
               )}
-            </Menu>
+              </Menu>
+            )}
           </div>
         )}
         {(open || creatingHere) && (hasChildren || creatingHere) && (
@@ -286,6 +330,24 @@ export function FolderTree({ activeFolder, onFolder }: FolderTreeProps) {
           <li className="px-3 text-xs leading-relaxed text-fg-subtle">{t("folders.emptyHint")}</li>
         )}
       </ul>
+
+      {sharedTree.length > 0 && (
+        <div className="mt-4">
+          <p className="pb-1.5 pl-3 text-[0.68rem] font-semibold tracking-wider text-fg-subtle uppercase">{t("folders.sharedWithMe")}</p>
+          <ul className="space-y-0.5">{sharedTree.map(renderNode)}</ul>
+        </div>
+      )}
+
+      {sharing && (
+        <ShareFolderModal
+          folder={folders.find((f) => f.id === sharing.id) ?? sharing}
+          open
+          onClose={() => setSharing(null)}
+          onLeft={() => {
+            if (activeFolder && activeFolder !== "root" && folderAndDescendants(folders, sharing.id).has(activeFolder)) onFolder(null);
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}

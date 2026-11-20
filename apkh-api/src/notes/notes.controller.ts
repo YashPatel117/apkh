@@ -16,6 +16,7 @@ import {
   HttpStatus,
   Res,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { sendSse } from 'src/common/utils/sse';
@@ -53,6 +54,7 @@ import { ShareService, type ShareView } from './share.service';
 import { CreateShareDto } from './dto/share.dto';
 import { ImportService, type ImportResult } from './import/import.service';
 import { Limits, RateLimit } from 'src/common/rate-limit/rate-limit';
+import { AccessService, type NoteAccess } from 'src/collab/access.service';
 
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
@@ -65,7 +67,33 @@ export class NotesController {
     private readonly trash: TrashService,
     private readonly shares: ShareService,
     private readonly importer: ImportService,
+    private readonly access: AccessService,
   ) {}
+
+  /*
+   * Notes in a folder shared with the user belong to the folder's owner. Each
+   * route below checks the user's access first (read or write), then calls
+   * the service as the owner, with a storage token for the owner when the
+   * user isn't one. AI calls (summaries) still use the user's own AI.
+   */
+
+  /** A member moving a shared note must keep it inside the shared folder. */
+  private async checkMemberMove(
+    userId: string,
+    access: NoteAccess,
+    folderId: string | null | undefined,
+  ) {
+    if (folderId === undefined || access.role === 'owner') return;
+    const inside =
+      Boolean(folderId) &&
+      (await this.access.isWithin(folderId!, access.shareRootId!));
+    if (!inside) {
+      throw new ForbiddenException(
+        'A shared note can only be moved within the folder shared with you.',
+      );
+    }
+    await this.access.requireFolder(userId, folderId!, 'write');
+  }
 
   /** CREATE */
   @Post()
@@ -74,20 +102,43 @@ export class NotesController {
   )
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: CreateNoteDto })
-  create(
+  async create(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,
     @Body() createNoteDto: Omit<CreateNoteDto, 'files'>,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
+    // A note created in a shared folder is the folder owner's.
+    if (createNoteDto.folderId) {
+      const access = await this.access.requireFolder(
+        userId,
+        createNoteDto.folderId,
+        'write',
+      );
+      return this.notesService.create(
+        this.access.tokenFor(access, token),
+        access.ownerId,
+        createNoteDto,
+        files,
+      );
+    }
     return this.notesService.create(token, userId, createNoteDto, files);
   }
 
   /** READ: one page with `limit` (filters: q, category, folderId), else every note */
   @Get()
-  findAll(@JwtTokenUserId() userId: string, @Query() query: ListNotesDto) {
+  async findAll(
+    @JwtTokenUserId() userId: string,
+    @Query() query: ListNotesDto,
+  ) {
     if (!query.limit) return this.notesService.findAll(userId);
-    return this.notesService.findPage(userId, {
+    // A shared folder lists its owner's notes.
+    let ownerId = userId;
+    if (query.folderId && query.folderId !== 'root') {
+      const access = await this.access.folderAccess(userId, query.folderId);
+      if (access) ownerId = access.ownerId;
+    }
+    return this.notesService.findPage(ownerId, {
       ...query,
       limit: Number(query.limit),
     });
@@ -182,14 +233,22 @@ export class NotesController {
   )
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: UpdateNoteDto })
-  update(
+  async update(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,
     @Param('id') id: string,
     @Body() updateNoteDto: UpdateNoteDto,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.notesService.update(token, userId, id, updateNoteDto, files);
+    const access = await this.access.requireNote(userId, id, 'write');
+    await this.checkMemberMove(userId, access, updateNoteDto.folderId);
+    return this.notesService.update(
+      this.access.tokenFor(access, token),
+      access.ownerId,
+      id,
+      updateNoteDto,
+      files,
+    );
   }
 
   // ── Trash (before the ':id' routes, which would match "trash") ─────────
@@ -236,8 +295,9 @@ export class NotesController {
 
   /** DELETE: moves the note to the trash */
   @Delete(':id')
-  remove(@JwtTokenUserId() userId: string, @Param('id') id: string) {
-    return this.notesService.remove(userId, id);
+  async remove(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    const access = await this.access.requireNote(userId, id, 'write');
+    return this.notesService.remove(access.ownerId, id);
   }
 
   /** GET LATEST UPDATED TIME */
@@ -326,36 +386,49 @@ export class NotesController {
   /** SUMMARY of a note: ?mode=brief (default) or ?mode=actions (action items first) */
   @Post(':id/summary')
   @RateLimit(...Limits.ai)
-  summarize(
+  async summarize(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,
     @Param('id') id: string,
     @Query() query: SummaryQueryDto,
   ) {
-    return this.notesService.summarize(token, userId, id, query.mode);
+    const access = await this.access.requireNote(userId, id, 'read');
+    // The reader's own AI answers (and their tokens count).
+    return this.notesService.summarize(
+      token,
+      access.ownerId,
+      id,
+      query.mode,
+      userId,
+    );
   }
 
   /** SIMILAR NOTES: related notes and near-duplicates */
   @Get(':id/similar')
-  similar(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+  async similar(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    const access = await this.access.requireNote(userId, id, 'read');
+    // Similar notes come from the owner's whole library: not for members.
+    if (access.role !== 'owner') return { notes: [], semantic: false };
     return this.notesService.similar(userId, id);
   }
 
   /** BACKLINKS: notes that link to this one */
   @Get(':id/backlinks')
-  backlinks(@JwtTokenUserId() userId: string, @Param('id') id: string) {
-    return this.notesService.backlinks(userId, id);
+  async backlinks(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    const access = await this.access.requireNote(userId, id, 'read');
+    return this.notesService.backlinks(access.ownerId, id, userId);
   }
 
   /** RE-INDEX one note */
   @Post(':id/reindex')
   @HttpCode(HttpStatus.ACCEPTED)
-  reindexNote(
+  async reindexNote(
     @JwtTokenUserId() userId: string,
     @Param('id') id: string,
     @Body() dto: ReindexDto,
   ) {
-    return this.notesService.reindex(userId, id, dto?.force);
+    const access = await this.access.requireNote(userId, id, 'write');
+    return this.notesService.reindex(access.ownerId, id, dto?.force);
   }
 
   /** EXPORT one note: ?format=md (default) or zip (with attachments) */
@@ -367,9 +440,10 @@ export class NotesController {
     @Query() query: ExportNoteDto,
     @Res() res: Response,
   ) {
+    const access = await this.access.requireNote(userId, id, 'read');
     await this.notesService.exportNote(
-      token,
-      userId,
+      this.access.tokenFor(access, token),
+      access.ownerId,
       id,
       query.format ?? 'md',
       res,
@@ -378,32 +452,39 @@ export class NotesController {
 
   /** VERSION HISTORY of a note, newest first */
   @Get(':id/versions')
-  versions(@JwtTokenUserId() userId: string, @Param('id') id: string) {
-    return this.notesService.listVersions(userId, id);
+  async versions(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    const access = await this.access.requireNote(userId, id, 'read');
+    return this.notesService.listVersions(access.ownerId, id);
   }
 
   @Get(':id/versions/:versionId')
-  version(
+  async version(
     @JwtTokenUserId() userId: string,
     @Param('id') id: string,
     @Param('versionId') versionId: string,
   ) {
-    return this.notesService.getVersion(userId, id, versionId);
+    const access = await this.access.requireNote(userId, id, 'read');
+    return this.notesService.getVersion(access.ownerId, id, versionId);
   }
 
   /** RESTORE an earlier version (the current one stays in the history) */
   @Post(':id/versions/:versionId/restore')
-  restoreVersion(
+  async restoreVersion(
     @JwtTokenUserId() userId: string,
     @Param('id') id: string,
     @Param('versionId') versionId: string,
   ) {
-    return this.notesService.restoreVersion(userId, id, versionId);
+    const access = await this.access.requireNote(userId, id, 'write');
+    return this.notesService.restoreVersion(access.ownerId, id, versionId);
   }
 
   /** SHARE LINK of a note (null when it has none) */
   @Get(':id/share')
   async getShare(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    const access = await this.access.requireNote(userId, id, 'read');
+    if (access.role !== 'owner') {
+      return new ApiResponseDto<ShareView | null>().ok(null);
+    }
     return new ApiResponseDto<ShareView | null>().ok(
       await this.shares.get(userId, id),
     );
@@ -429,17 +510,20 @@ export class NotesController {
 
   /** MOVE a note into a folder (null: out of every folder) */
   @Patch(':id/folder')
-  move(
+  async move(
     @JwtTokenUserId() userId: string,
     @Param('id') id: string,
     @Body() dto: MoveNoteDto,
   ) {
-    return this.notesService.move(userId, id, dto.folderId);
+    const access = await this.access.requireNote(userId, id, 'write');
+    await this.checkMemberMove(userId, access, dto.folderId);
+    return this.notesService.move(access.ownerId, id, dto.folderId);
   }
 
   /** READ ONE */
   @Get(':id')
-  findOne(@JwtTokenUserId() userId: string, @Param('id') id: string) {
-    return this.notesService.findOne(userId, id);
+  async findOne(@JwtTokenUserId() userId: string, @Param('id') id: string) {
+    const access = await this.access.requireNote(userId, id, 'read');
+    return this.notesService.findOne(access.ownerId, id);
   }
 }
