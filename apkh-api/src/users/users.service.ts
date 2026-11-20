@@ -16,45 +16,23 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { EncryptionService } from '../common/utils/encryption.service';
 import { planDetails, planOf, sessionHours, type PlanId } from './plans';
 
-export type LlmProvider =
-  | 'builtin'
-  | 'openrouter'
-  | 'gemini'
-  | 'openai'
-  | 'anthropic'
-  | 'claude-code';
-/** Providers used with a user's own key (their models can be listed). */
-export const LLM_PROVIDERS: LlmProvider[] = [
-  'openrouter',
-  'gemini',
-  'openai',
-  'anthropic',
-  'claude-code',
-];
+import {
+  BUILTIN_MODEL_ID,
+  builtinAiEnabled,
+  isClaudeCodeModel,
+  providerOfModel,
+  type LlmProvider,
+} from './providers';
 
-/**
- * Claude Code: the `claude` CLI on the server machine (apkh-search runs it).
- * It uses the CLI's own login, so a key is optional; one given is a token
- * from `claude setup-token`.
- */
-export const CLAUDE_CODE_PREFIX = 'claude-code';
-export function isClaudeCodeModel(model: string): boolean {
-  const normalized = model.trim().toLowerCase();
-  return (
-    normalized === CLAUDE_CODE_PREFIX ||
-    normalized.startsWith(`${CLAUDE_CODE_PREFIX}:`)
-  );
-}
-
-/**
- * The built-in AI: open-source models the host runs (apkh-search picks them),
- * used whenever a user has no active key of their own, within their plan's
- * allowance (see plans.ts). On unless BUILTIN_AI=off.
- */
-export const BUILTIN_MODEL_ID = 'builtin';
-export function builtinAiEnabled(): boolean {
-  return process.env.BUILTIN_AI?.trim().toLowerCase() !== 'off';
-}
+// Kept here too: many modules import them from the users service.
+export {
+  BUILTIN_MODEL_ID,
+  CLAUDE_CODE_PREFIX,
+  LLM_PROVIDERS,
+  builtinAiEnabled,
+  isClaudeCodeModel,
+  type LlmProvider,
+} from './providers';
 
 export interface ActiveLlmSettings {
   keyName: string;
@@ -506,34 +484,13 @@ export class UsersService {
   }
 
   private detectProvider(model: string): LlmProvider {
-    const normalized = model.toLowerCase();
-
-    // Before the "claude" check below: "claude-code:sonnet" is the local CLI
-    if (isClaudeCodeModel(normalized)) {
-      return 'claude-code';
+    const provider = providerOfModel(model);
+    if (!provider) {
+      throw new BadRequestException(
+        `Unsupported model "${model}". Choose an OpenRouter, Gemini, OpenAI or Claude model.`,
+      );
     }
-
-    // OpenRouter ids are "author/model"; native Gemini, OpenAI and Claude ids never contain "/"
-    if (normalized.includes('/')) {
-      return 'openrouter';
-    }
-
-    if (normalized.startsWith('gemini')) {
-      return 'gemini';
-    }
-
-    // gpt-*, chatgpt-* and the o-series (o1, o3, o4-mini, ...)
-    if (/^(gpt|chatgpt|o\d)/.test(normalized)) {
-      return 'openai';
-    }
-
-    if (normalized.startsWith('claude')) {
-      return 'anthropic';
-    }
-
-    throw new BadRequestException(
-      `Unsupported model "${model}". Choose an OpenRouter, Gemini, OpenAI or Claude model.`,
-    );
+    return provider;
   }
 }
 

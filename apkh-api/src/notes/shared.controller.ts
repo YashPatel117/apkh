@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { ApiResponseDto } from 'src/common/dto/api/response';
 import { ShareService, type SharedNoteView } from './share.service';
 import { displayFileName } from './utils/markdown';
+import { Limits, RateLimit } from 'src/common/rate-limit/rate-limit';
 
 /** Shared notes, for anyone with the link: no sign-in. */
 @Controller('shared')
@@ -10,6 +11,7 @@ export class SharedController {
   constructor(private readonly shares: ShareService) {}
 
   @Get(':token')
+  @RateLimit(...Limits.publicShare)
   async open(@Param('token') token: string) {
     return new ApiResponseDto<SharedNoteView>().ok(
       await this.shares.open(token),
@@ -17,6 +19,7 @@ export class SharedController {
   }
 
   @Get(':token/files/:fileName')
+  @RateLimit(...Limits.publicShare)
   async file(
     @Param('token') token: string,
     @Param('fileName') fileName: string,

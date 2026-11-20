@@ -52,6 +52,7 @@ import {
 import { ShareService, type ShareView } from './share.service';
 import { CreateShareDto } from './dto/share.dto';
 import { ImportService, type ImportResult } from './import/import.service';
+import { Limits, RateLimit } from 'src/common/rate-limit/rate-limit';
 
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
@@ -106,6 +107,7 @@ export class NotesController {
 
   /** Tags the AI suggests for a note (saved or still being written) */
   @Post('suggest-tags')
+  @RateLimit(...Limits.ai)
   @HttpCode(HttpStatus.OK)
   suggestTags(
     @JwtToken() token: string,
@@ -117,6 +119,7 @@ export class NotesController {
 
   /** EXPORT every note (Markdown + attachments + JSON) as a ZIP */
   @Get('export')
+  @RateLimit(...Limits.heavy)
   async exportAll(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,
@@ -130,6 +133,7 @@ export class NotesController {
    * export (ZIP), an Evernote .enex file, or Markdown / HTML / text files.
    */
   @Post('import')
+  @RateLimit(...Limits.heavy)
   @UseInterceptors(FileInterceptor('file', IMPORT_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
   async importNotes(
@@ -143,6 +147,7 @@ export class NotesController {
 
   /** TRANSCRIBE a voice note recorded in the editor */
   @Post('transcribe')
+  @RateLimit(...Limits.ai)
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor('file', TRANSCRIBE_UPLOAD_OPTIONS))
   @ApiConsumes('multipart/form-data')
@@ -258,6 +263,7 @@ export class NotesController {
 
   /** REBUILD THE SEARCH INDEX of all notes */
   @Post('reindex')
+  @RateLimit(...Limits.heavy)
   @HttpCode(HttpStatus.ACCEPTED)
   async reindexAll(@JwtTokenUserId() userId: string, @Body() dto: ReindexDto) {
     await this.indexing.reindexAll(userId, { force: dto?.force });
@@ -274,6 +280,7 @@ export class NotesController {
 
   /** AI SEARCH (RAG) */
   @Post('ai-search')
+  @RateLimit(...Limits.ai)
   @ApiBody({ type: AiSearchDto })
   async aiSearch(
     @JwtToken() token: string,
@@ -294,6 +301,7 @@ export class NotesController {
    * each piece of the answer, then `done` with the full result.
    */
   @Post('ai-search/stream')
+  @RateLimit(...Limits.ai)
   @ApiBody({ type: AiSearchDto })
   async aiSearchStream(
     @JwtToken() token: string,
@@ -317,6 +325,7 @@ export class NotesController {
 
   /** SUMMARY of a note: ?mode=brief (default) or ?mode=actions (action items first) */
   @Post(':id/summary')
+  @RateLimit(...Limits.ai)
   summarize(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,

@@ -36,6 +36,23 @@ How the four services work together: what is stored, how notes are indexed and r
 
 **Auth between services.** Users log in to `apkh-api`, which issues a JWT. `apkh-storage` and `apkh-search` verify the same JWT with the shared `JWT_SECRET`. Background indexing jobs call the services with a short-lived token the API signs for the job's user, so no user token is stored with a job. **Integration tokens** (`apkh_…`, Profile → Integrations) are for callers outside the app: only their SHA-256 hash is stored, and their scopes say what they may do: `notes:write` adds notes (webhooks, the clipper), `notes:read` reads and searches them (`/integrations/mcp/*`, used by `apkh-mcp`). Each token gets at most 60 requests a minute.
 
+**Rate limits.** Routes that can be abused carry `@RateLimit` rules (`common/rate-limit/rate-limit.ts`); over a limit the API answers 429 with `Retry-After`:
+
+| Routes | Limit |
+|---|---|
+| Sign-in (password and Google) | 10 a minute per IP, and 20 per 15 minutes per email |
+| Register | 5 an hour per IP |
+| Reset password | 5 per 15 minutes per IP and per email |
+| Redeem a voucher | 10 an hour per user |
+| AI search, chat replies, summaries, tag suggestions, transcription | 30 a minute per user (shared) |
+| Test a key, list a provider's models | 20 a minute per user |
+| Import, export everything, rebuild the index | 5 per 10 minutes per user (shared) |
+| Public share links and their files | 120 a minute per IP |
+
+A rejected request uses up nothing. Counters live in the API process, so with several instances each counts on its own. Behind a proxy, `TRUST_PROXY` (the number of hops; `deploy/hf-space/start.sh` sets 1) makes per-IP limits see the client instead of the proxy.
+
+**Request ids.** Every request gets an id (the caller's `X-Request-Id`, or a new one). It is on every log line of the three services and forwarded to `apkh-search` and `apkh-storage`. Index jobs have no request, so each run gets its own id (`index-<jobId>-<n>`) used the same way.
+
 ## 2. Repository layout
 
 ```text
@@ -63,7 +80,10 @@ apkh-web/src
 apkh-mcp/src     MCP server (stdio) for AI assistants: search_notes, get_note, create_note over /integrations/*
 
 scripts/init-env.mjs   creates missing env files (used by setup-all.bat)
+.github/workflows/ci.yml   lint, type-check and build of every package, API contract check, Space image build
 ```
+
+**API contract.** `apkh-api/openapi.json` describes every route and request body. It is generated from the code (`npm run build && npm run openapi` in `apkh-api`; Nest's preview mode, so no database is needed) and committed. `apkh-web` generates `src/services/api-schema.d.ts` from it (`npm run api:types`), and services type request bodies with `ApiBody<"LoginDto">` (`src/services/api-types.ts`), so a changed DTO breaks the web build instead of failing at run time. CI fails when either file is stale. Responses aren't described yet: controllers don't declare their return types.
 
 ## 3. What is stored
 
@@ -92,7 +112,7 @@ Indexes on the chunks: a MongoDB text index over `text`, `noteTitle` and `source
 
 A user saves one or more AI configs in Profile. When the API needs AI it reads the **active** config, decrypts the key and sends `api_key` + `model` with that single request; `apkh-search` never stores keys. A user with no active config uses the **built-in AI** (below) within their plan, unless the host turned it off (`BUILTIN_AI=off`).
 
-**Providers.** OpenRouter (listed first), Gemini, OpenAI and Anthropic. The provider of a model is recognised from its id: OpenRouter ids are `author/model` (e.g. `qwen/qwen3.8-27b:free`) and no native id contains a `/`; the others are `gemini-*`, `gpt-*` / `chatgpt-*` / `o<N>` and `claude-*`. OpenRouter speaks the OpenAI API, so it is called with the OpenAI client pointed at `https://openrouter.ai/api/v1`.
+**Providers.** OpenRouter (listed first), Gemini, OpenAI and Anthropic. Each service keeps one registry of what every provider can do: `apkh-api/src/users/providers.ts` (whether it needs a key, whose embedding model makes its vectors) and `apkh-search/services/providers.py` (its chat client, whether it reads images, its embedding model, whether calls queue). Nothing else tests provider names, so a new provider is one entry in each. The web app doesn't decide either: the profile response carries each config's `provider` and `semanticSearch`. The provider of a model is recognised from its id: OpenRouter ids are `author/model` (e.g. `qwen/qwen3.8-27b:free`) and no native id contains a `/`; the others are `gemini-*`, `gpt-*` / `chatgpt-*` / `o<N>` and `claude-*`. OpenRouter speaks the OpenAI API, so it is called with the OpenAI client pointed at `https://openrouter.ai/api/v1`.
 
 **Built-in AI.** Open-source models the host runs for everyone, with no key. When no config is active the API sends the model id `builtin` with an empty key, and `apkh-search` (`builtin_ai.py`) calls the OpenAI-compatible server at `BUILTIN_AI_BASE_URL`. That is Ollama on the same machine by default; llama.cpp, vLLM or a hosted endpoint work too.
 

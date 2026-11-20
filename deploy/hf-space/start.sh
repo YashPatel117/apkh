@@ -5,6 +5,9 @@ set -euo pipefail
 
 export STORAGE_API_URL=http://127.0.0.1:3001/
 export SEARCH_API_URL=http://127.0.0.1:8000
+# The Space sits behind Hugging Face's proxy: trust one hop so per-IP rate
+# limits see the real client address.
+export TRUST_PROXY="${TRUST_PROXY:-1}"
 
 (cd apkh-storage && PORT=3001 exec node server.js) &
 (cd apkh-search && exec /opt/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000) &

@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { hostname } from 'os';
 import { Subscription } from 'rxjs';
 import { errorMessage } from 'src/common/utils/http-error';
+import { runWithRequestId } from 'src/common/request-context';
 import { ChatIndexerService } from './chat-indexer.service';
 import { ClaimedJob, IndexQueueService } from './index-queue.service';
 import { NoteIndexerService } from './note-indexer.service';
@@ -112,7 +113,17 @@ export class IndexWorkerService
     }
   }
 
-  private async process(job: ClaimedJob) {
+  /**
+   * Jobs run outside any HTTP request, so each run gets its own id: it is on
+   * the worker's log lines and forwarded to apkh-search / apkh-storage like a
+   * request's, so one run can be followed across the services.
+   */
+  private process(job: ClaimedJob) {
+    const runId = `index-${String(job._id)}-${randomUUID().slice(0, 8)}`;
+    return runWithRequestId(runId, () => this.run(job));
+  }
+
+  private async run(job: ClaimedJob) {
     // Open tabs refresh the index status instead of polling for it.
     const notify = () =>
       this.realtime.emit(String(job.userId), 'index:changed');

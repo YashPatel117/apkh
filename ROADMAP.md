@@ -23,7 +23,8 @@ Not needed for now; every merge is checked by hand. Kept here for later.
 - [ ] Search (pytest): `detect_provider`, `has_credentials`, the chunker, `_normalize_actions`, Claude Code event parsing with a fake CLI script
 - [ ] Storage (node:test + mongodb-memory-server): upload / replace / quota / delete
 - [ ] Web: Playwright smoke run of login → create note → ask AI → export, against the real stack started with `docker compose`
-- [ ] GitHub Actions: lint + type-check + tests for each package on every push and PR
+- [x] GitHub Actions: lint + type-check + build for each package on every push and PR, API contract check, Space image build (`.github/workflows/ci.yml`)
+- [ ] Add the test suites above to that workflow
 
 ### 1.3 Safety nets for user data
 - [x] **Trash.** Deleting moves a note to Trash (sidebar and command palette): restore it, delete it for good, or empty the trash; notes are purged with their files and history after `TRASH_RETENTION_DAYS` (30).

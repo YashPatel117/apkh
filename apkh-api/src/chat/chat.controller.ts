@@ -17,6 +17,7 @@ import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtToken, JwtTokenUserId } from 'src/common/decorator/jwt.decorator';
 import { ApiResponseDto } from 'src/common/dto/api/response';
+import { Limits, RateLimit } from 'src/common/rate-limit/rate-limit';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -59,6 +60,7 @@ export class ChatController {
   }
 
   @Post('session/:id/message')
+  @RateLimit(...Limits.ai)
   async sendMessage(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,
@@ -76,6 +78,7 @@ export class ChatController {
 
   /** SEND MESSAGE, streamed as server-sent events (see ChatService.sendMessageStream) */
   @Post('session/:id/message/stream')
+  @RateLimit(...Limits.ai)
   async sendMessageStream(
     @JwtToken() token: string,
     @JwtTokenUserId() userId: string,

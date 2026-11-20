@@ -18,11 +18,11 @@ import traceback
 from collections.abc import AsyncIterator
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
-from services import builtin_ai, claude_code
+from services import builtin_ai, claude_code, providers
+
+# Provider detection lives in providers.py; has_credentials is re-exported for the routes.
+from services.providers import detect_provider, has_credentials  # noqa: F401
 from services.html_parser import parse_note_html
 from services.langsmith_config import build_langchain_config
 
@@ -126,51 +126,6 @@ _TAGS_INSTRUCTION = (
     'Respond with JSON only: {{"tags": ["...", "..."]}}'
 )
 
-# Models the supported providers serve without image input.
-_TEXT_ONLY_MODEL_PREFIXES = ("gpt-3.5", "o1-mini", "o1-preview", "o3-mini")
-
-# OpenRouter speaks the OpenAI API, so the OpenAI client is pointed at it.
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_HEADERS = {"X-Title": "AI-Powered Personal Knowledge Hub"}
-
-
-def is_openrouter_model(model: str) -> bool:
-    """OpenRouter ids are "author/model"; Gemini, OpenAI and Claude ids never contain "/"."""
-    return "/" in model.strip()
-
-
-def has_credentials(api_key: str | None, model: str | None) -> bool:
-    """A model, plus the user's key unless it is the built-in model or Claude Code (its own login)."""
-    resolved_model = (model or "").strip()
-    return bool(resolved_model) and (
-        bool((api_key or "").strip())
-        or builtin_ai.is_builtin_model(resolved_model)
-        or claude_code.is_claude_code_model(resolved_model)
-    )
-
-
-def detect_provider(model: str) -> str:
-    """Detect provider from model name."""
-    normalized = model.lower()
-    if builtin_ai.is_builtin_model(normalized):
-        return "builtin"
-    if claude_code.is_claude_code_model(normalized):
-        return "claude-code"
-    if is_openrouter_model(normalized):
-        return "openrouter"
-    if normalized.startswith("gemini"):
-        return "gemini"
-    if normalized.startswith(("gpt", "chatgpt")) or re.match(r"o\d", normalized):
-        return "openai"
-    if normalized.startswith("claude"):
-        return "anthropic"
-    raise ValueError(
-        f"Cannot detect provider for model '{model}'. "
-        "Use an OpenRouter 'author/model' id, a 'claude-code:<model>' id, or a model starting "
-        "with 'gemini-', 'gpt-', 'chatgpt-', 'o<N>' or 'claude-'."
-    )
-
-
 # Longest provider error message shown to users; the raw ones can run to pages.
 _MAX_ERROR_MESSAGE = 300
 
@@ -256,46 +211,9 @@ def _failure_message(provider: str, model: str, exc: Exception, default: str) ->
     return default
 
 
-def supports_vision(model: str) -> bool:
-    """Whether the model accepts images (used for OCR and image descriptions)."""
-    normalized = model.strip().lower()
-    if builtin_ai.is_builtin_model(normalized):
-        return builtin_ai.reads_images()
-    if claude_code.is_claude_code_model(normalized):
-        return True
-    return normalized != "gpt-4" and not normalized.startswith(_TEXT_ONLY_MODEL_PREFIXES)
-
-
 def _chat_model(provider: str, api_key: str, model: str, temperature: float = 0.2) -> Any:
     """The LangChain chat model for a provider."""
-    if provider == "builtin":
-        return ChatOpenAI(
-            model=builtin_ai.chat_model(),
-            api_key=builtin_ai.api_key(),
-            base_url=builtin_ai.base_url(),
-            # No thinking: a small model on a CPU can't spare the time, and the
-            # prompts ask for direct answers.
-            reasoning_effort="none",
-            temperature=temperature,
-            stream_usage=True,
-        )
-    if provider == "claude-code":
-        return claude_code.ChatClaudeCode(model=model, token=api_key or "")
-    if provider == "gemini":
-        return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, temperature=temperature)
-    if provider == "openai":
-        return ChatOpenAI(model=model, api_key=api_key, temperature=temperature, stream_usage=True)
-    if provider == "openrouter":
-        return ChatOpenAI(
-            model=model,
-            api_key=api_key,
-            base_url=OPENROUTER_BASE_URL,
-            default_headers=OPENROUTER_HEADERS,
-            temperature=temperature,
-            stream_usage=True,
-        )
-    # The SDK's default output budget cuts long answers short.
-    return ChatAnthropic(model=model, api_key=api_key, max_tokens=2048, temperature=temperature)
+    return providers.get(provider).build_chat(api_key, model, temperature)
 
 
 def _caller_for(provider: str):
@@ -311,8 +229,8 @@ def _caller_for(provider: str):
 
 
 async def _invoke(provider: str, chat: Any, messages: list, config: dict[str, Any] | None) -> Any:
-    """Call a chat model; built-in calls wait for their turn by priority."""
-    if provider != "builtin":
+    """Call a chat model; queued providers (the built-in AI) wait for their turn by priority."""
+    if not providers.get(provider).queued:
         return await chat.ainvoke(messages, config=config or {})
     async with builtin_ai.chat_gate.slot():
         return await chat.ainvoke(messages, config=config or {})
@@ -501,8 +419,8 @@ async def _stream_answer(setup: dict) -> AsyncIterator[dict]:
 
 
 async def _astream(provider: str, chat: Any, messages: list, config: dict[str, Any] | None):
-    """Stream a chat model; built-in calls hold their slot until the answer ends."""
-    if provider != "builtin":
+    """Stream a chat model; queued providers (the built-in AI) hold their slot until the answer ends."""
+    if not providers.get(provider).queued:
         async for chunk in chat.astream(messages, config=config or {}):
             yield chunk
         return

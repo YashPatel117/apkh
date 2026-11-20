@@ -1,0 +1,2792 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "HealthController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/users/profile": {
+      "get": {
+        "operationId": "UsersController_getProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/plan/redeem": {
+      "post": {
+        "operationId": "UsersController_redeemVoucher",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemVoucherDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/llm-settings/test": {
+      "post": {
+        "operationId": "UsersController_testLlmSettings",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestLlmDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/llm-settings/models": {
+      "post": {
+        "operationId": "UsersController_listLlmModels",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListLlmModelsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/llm-configs": {
+      "post": {
+        "operationId": "UsersController_addLlmConfig",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddLlmConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/llm-configs/{keyName}/activate": {
+      "patch": {
+        "operationId": "UsersController_activateLlmConfig",
+        "parameters": [
+          {
+            "name": "keyName",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/llm-configs/use-builtin": {
+      "post": {
+        "operationId": "UsersController_useBuiltinAi",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/users/llm-configs/{keyName}": {
+      "delete": {
+        "operationId": "UsersController_deleteLlmConfig",
+        "parameters": [
+          {
+            "name": "keyName",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/file/{noteId}/{fileName}": {
+      "get": {
+        "operationId": "FileController_getFile",
+        "parameters": [
+          {
+            "name": "noteId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileName",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "File"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/google": {
+      "post": {
+        "operationId": "AuthController_loginWithGoogle",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleLoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "operationId": "AuthController_resetPassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/notes": {
+      "post": {
+        "operationId": "NotesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      },
+      "get": {
+        "operationId": "NotesController_findAll",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Notes per page (1–200)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "nextCursor of the previous page",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Words to find in title, category or text",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "required": false,
+            "in": "query",
+            "description": "Only notes with this tag",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "folderId",
+            "required": false,
+            "in": "query",
+            "description": "A folder id, or \"root\" for unfiled notes",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/categories": {
+      "get": {
+        "operationId": "NotesController_categories",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/tags": {
+      "get": {
+        "operationId": "NotesController_tags",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/suggest-tags": {
+      "post": {
+        "operationId": "NotesController_suggestTags",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestTagsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/export": {
+      "get": {
+        "operationId": "NotesController_exportAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/import": {
+      "post": {
+        "operationId": "NotesController_importNotes",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/transcribe": {
+      "post": {
+        "operationId": "NotesController_transcribe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/shares": {
+      "get": {
+        "operationId": "NotesController_listShares",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}": {
+      "put": {
+        "operationId": "NotesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      },
+      "delete": {
+        "operationId": "NotesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      },
+      "get": {
+        "operationId": "NotesController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/trash": {
+      "get": {
+        "operationId": "NotesController_listTrash",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      },
+      "delete": {
+        "operationId": "NotesController_emptyTrash",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/trash/{id}/restore": {
+      "post": {
+        "operationId": "NotesController_restoreFromTrash",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/trash/{id}": {
+      "delete": {
+        "operationId": "NotesController_purgeFromTrash",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/last-updated": {
+      "get": {
+        "operationId": "NotesController_getLastUpdated",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/search": {
+      "get": {
+        "operationId": "NotesController_searchNotes",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/index-status": {
+      "get": {
+        "operationId": "NotesController_indexStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/reindex": {
+      "post": {
+        "operationId": "NotesController_reindexAll",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReindexDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/index/retry-failed": {
+      "post": {
+        "operationId": "NotesController_retryFailed",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/ai-search": {
+      "post": {
+        "operationId": "NotesController_aiSearch",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/ai-search/stream": {
+      "post": {
+        "operationId": "NotesController_aiSearchStream",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/summary": {
+      "post": {
+        "operationId": "NotesController_summarize",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "required": false,
+            "in": "query",
+            "description": "brief (default) or actions (action items first)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "brief",
+                "actions"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/similar": {
+      "get": {
+        "operationId": "NotesController_similar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/backlinks": {
+      "get": {
+        "operationId": "NotesController_backlinks",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/reindex": {
+      "post": {
+        "operationId": "NotesController_reindexNote",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReindexDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/export": {
+      "get": {
+        "operationId": "NotesController_exportNote",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "md",
+                "zip"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/versions": {
+      "get": {
+        "operationId": "NotesController_versions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/versions/{versionId}": {
+      "get": {
+        "operationId": "NotesController_version",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/versions/{versionId}/restore": {
+      "post": {
+        "operationId": "NotesController_restoreVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/share": {
+      "get": {
+        "operationId": "NotesController_getShare",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      },
+      "post": {
+        "operationId": "NotesController_createShare",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      },
+      "delete": {
+        "operationId": "NotesController_revokeShare",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/notes/{id}/folder": {
+      "patch": {
+        "operationId": "NotesController_move",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Notes"
+        ]
+      }
+    },
+    "/shared/{token}": {
+      "get": {
+        "operationId": "SharedController_open",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Shared"
+        ]
+      }
+    },
+    "/shared/{token}/files/{fileName}": {
+      "get": {
+        "operationId": "SharedController_file",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileName",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Shared"
+        ]
+      }
+    },
+    "/folders": {
+      "get": {
+        "operationId": "FoldersController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Folders"
+        ]
+      },
+      "post": {
+        "operationId": "FoldersController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFolderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Folders"
+        ]
+      }
+    },
+    "/folders/{id}": {
+      "patch": {
+        "operationId": "FoldersController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFolderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Folders"
+        ]
+      },
+      "delete": {
+        "operationId": "FoldersController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Folders"
+        ]
+      }
+    },
+    "/chat/session": {
+      "post": {
+        "operationId": "ChatController_createSession",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/chat/sessions": {
+      "get": {
+        "operationId": "ChatController_listSessions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/chat/session/{id}": {
+      "get": {
+        "operationId": "ChatController_getSessionMessages",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_deleteSession",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/chat/session/{id}/message": {
+      "post": {
+        "operationId": "ChatController_sendMessage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/chat/session/{id}/message/stream": {
+      "post": {
+        "operationId": "ChatController_sendMessageStream",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/analytics": {
+      "get": {
+        "operationId": "AnalyticsController_dashboard",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "description": "Days to cover (7–365), default 30",
+            "schema": {
+              "minimum": 7,
+              "maximum": 365,
+              "type": "number"
+            }
+          },
+          {
+            "name": "tz",
+            "required": false,
+            "in": "query",
+            "description": "IANA time zone for daily totals",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/admin/overview": {
+      "get": {
+        "operationId": "AdminController_overview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "AdminController_users",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/admin/users/{id}/plan": {
+      "patch": {
+        "operationId": "AdminController_setPlan",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPlanDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/admin/feedback": {
+      "get": {
+        "operationId": "AdminController_feedback",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "unhelpful",
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/admin/vouchers": {
+      "get": {
+        "operationId": "AdminController_vouchers",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "unused",
+                "redeemed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin"
+        ]
+      },
+      "post": {
+        "operationId": "AdminController_createVouchers",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVouchersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/admin/vouchers/{code}": {
+      "delete": {
+        "operationId": "AdminController_revokeVoucher",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/integrations": {
+      "get": {
+        "operationId": "IntegrationsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/integrations/tokens": {
+      "post": {
+        "operationId": "IntegrationsController_createToken",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/integrations/tokens/{id}": {
+      "delete": {
+        "operationId": "IntegrationsController_revokeToken",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/integrations/inbox": {
+      "post": {
+        "operationId": "IntegrationsController_rotateInbox",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Integrations"
+        ]
+      },
+      "delete": {
+        "operationId": "IntegrationsController_removeInbox",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/integrations/notes": {
+      "post": {
+        "operationId": "IntegrationsController_addNote",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/integrations/mcp/search": {
+      "post": {
+        "operationId": "IntegrationsController_mcpSearch",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/integrations/mcp/notes/{id}": {
+      "get": {
+        "operationId": "IntegrationsController_mcpNote",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/integrations/email/{key}": {
+      "post": {
+        "operationId": "IntegrationsController_inboundEmail",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/feedback": {
+      "post": {
+        "operationId": "FeedbackController_vote",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Feedback"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "APKH API",
+    "description": "AI-Powered Personal Knowledge Hub: notes, AI search, chat, files and integrations.",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "RedeemVoucherDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "TestLlmDto": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": "string"
+          },
+          "keyName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "ListLlmModelsDto": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openrouter",
+              "gemini",
+              "openai",
+              "anthropic",
+              "claude-code"
+            ]
+          },
+          "apiKey": {
+            "type": "string"
+          },
+          "keyName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "AddLlmConfigDto": {
+        "type": "object",
+        "properties": {
+          "keyName": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": "string",
+            "description": "Optional when updating an existing config: the saved key is kept"
+          },
+          "model": {
+            "type": "string"
+          },
+          "setActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "keyName",
+          "model"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "yash@patel.com"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 6,
+            "example": "32342324"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "GoogleLoginDto": {
+        "type": "object",
+        "properties": {
+          "idToken": {
+            "type": "string",
+            "description": "Firebase ID token from Google sign-in"
+          }
+        },
+        "required": [
+          "idToken"
+        ]
+      },
+      "RegisterDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "John Doe"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          },
+          "password": {
+            "type": "string",
+            "example": "Tr1cky!Pass"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "password"
+        ]
+      },
+      "ResetPasswordDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          },
+          "currentPassword": {
+            "type": "string",
+            "example": "oldpassword123"
+          },
+          "password": {
+            "type": "string",
+            "example": "N3w!Passw0rd"
+          }
+        },
+        "required": [
+          "email",
+          "currentPassword",
+          "password"
+        ]
+      },
+      "CreateNoteDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string",
+            "description": "Tags: a JSON list or \"a, b\" (multipart forms send strings)"
+          },
+          "folderId": {
+            "type": "string",
+            "description": "Folder to file the note in; empty for none"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "binary"
+            }
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "SuggestTagsDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 200000
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        }
+      },
+      "UpdateNoteDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string",
+            "description": "Tags: a JSON list or \"a, b\" (multipart forms send strings)"
+          },
+          "folderId": {
+            "type": "string",
+            "description": "Folder to file the note in; empty for none"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "binary"
+            }
+          },
+          "removedFiles": {
+            "description": "IDs or names of files to remove",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReindexDto": {
+        "type": "object",
+        "properties": {
+          "force": {
+            "type": "boolean",
+            "description": "Download and read every attachment again instead of reusing what was extracted before"
+          }
+        }
+      },
+      "AiSearchDto": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "referencedNoteIds": {
+            "maxItems": 50,
+            "description": "Optional array of note IDs to reference",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "CreateShareDto": {
+        "type": "object",
+        "properties": {
+          "expiresInDays": {
+            "type": "number",
+            "nullable": true,
+            "description": "Days until the link stops working; null or left out: until revoked",
+            "minimum": 1,
+            "maximum": 365
+          }
+        }
+      },
+      "MoveNoteDto": {
+        "type": "object",
+        "properties": {
+          "folderId": {
+            "type": "string",
+            "nullable": true,
+            "description": "null takes the note out of every folder"
+          }
+        }
+      },
+      "CreateFolderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "parentId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateFolderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "parentId": {
+            "type": "string",
+            "nullable": true,
+            "description": "null moves the folder to the top level"
+          }
+        }
+      },
+      "ChatSourceDto": {
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string"
+          },
+          "noteTitle": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "note",
+              "file"
+            ]
+          },
+          "sourceName": {
+            "type": "string"
+          },
+          "sourcePage": {
+            "type": "number"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "cited": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "noteTitle",
+          "sourceType",
+          "excerpt"
+        ]
+      },
+      "CreateSessionDto": {
+        "type": "object",
+        "properties": {
+          "firstMessage": {
+            "type": "string"
+          },
+          "aiResponse": {
+            "type": "string"
+          },
+          "sources": {
+            "description": "Sources of `aiResponse`, so its citations keep working in the chat",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatSourceDto"
+            }
+          }
+        }
+      },
+      "SendMessageDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "SetPlanDto": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "pro"
+            ]
+          }
+        },
+        "required": [
+          "plan"
+        ]
+      },
+      "CreateVouchersDto": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "CreateTokenDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "scopes": {
+            "type": "string",
+            "description": "Default: notes:write only",
+            "enum": [
+              "notes:write",
+              "notes:read"
+            ],
+            "minItems": 1
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ExternalNoteDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 2000000
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "html",
+              "markdown",
+              "text"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2000,
+            "format": "uri"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "McpSearchDto": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "limit": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "noteIds": {
+            "description": "Only search these notes",
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "FeedbackDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "search",
+              "chat"
+            ]
+          },
+          "answerKey": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "A chat message id, or a hash of the answer"
+          },
+          "helpful": {
+            "type": "boolean"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "answer": {
+            "type": "string",
+            "maxLength": 50000
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "sourceCount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "sessionId": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "kind",
+          "answerKey",
+          "helpful"
+        ]
+      }
+    }
+  }
+}

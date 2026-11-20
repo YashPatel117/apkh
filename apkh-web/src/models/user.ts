@@ -14,15 +14,12 @@ export function providerOfModel(model: string): LlmProvider | null {
 }
 
 /**
- * Whether notes are searched by meaning with this model. OpenRouter, Gemini
- * and OpenAI embed with their own models (OpenRouter's is paid: a key without
- * credit falls back to keyword search). Claude has none, so its notes are
- * embedded by the server's built-in AI, when the server runs one.
+ * Whether notes are searched by meaning with the active AI. The server decides
+ * (it knows whether it runs the built-in embedder that Claude borrows); the
+ * built-in AI always embeds.
  */
-export function supportsSemanticSearch(model: string, serverHasBuiltinAi: boolean) {
-  const provider = providerOfModel(model);
-  if (provider === "anthropic" || provider === "claude-code") return serverHasBuiltinAi;
-  return provider === "openrouter" || provider === "gemini" || provider === "openai";
+export function searchesByMeaning(ai: ActiveAi): boolean {
+  return ai.kind === "builtin" || Boolean(ai.config.semanticSearch);
 }
 
 export const BUILTIN_AI_LABEL = "Built-in AI";
@@ -78,6 +75,10 @@ export interface ILlmModel {
 export interface ILlmConfig {
   keyName: string;
   llmModel: string;
+  /** Set by the server from the model id (null for an unrecognised one) */
+  provider?: LlmProvider | null;
+  /** Whether notes are searched by meaning with this config (server-side rule) */
+  semanticSearch?: boolean;
   isActive: boolean;
   tokensUsed: number;
   createdAt: string;

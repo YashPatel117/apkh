@@ -8,6 +8,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { NotesModule } from './notes/notes.module';
 import { JwtSecretKey } from './common/constant/jwt';
 import { requireEnv } from './common/constant/env';
+import { currentRequestId } from './common/request-context';
 import { FileModule } from './file/file.module';
 import { ChatModule } from './chat/chat.module';
 import { DatabaseModule } from './database/database.module';
@@ -25,6 +26,11 @@ import { FeedbackModule } from './feedback/feedback.module';
       pinoHttp: {
         level: process.env.LOG_LEVEL ?? 'info',
         base: { service: 'apkh-api' },
+        // Lines logged outside an HTTP request (index jobs) carry their run id too.
+        mixin: () => {
+          const requestId = currentRequestId();
+          return requestId ? { requestId } : {};
+        },
         // main.ts sets the id (and the X-Request-Id header) first.
         genReqId: (req) => (req as unknown as { id: string }).id,
         autoLogging: {

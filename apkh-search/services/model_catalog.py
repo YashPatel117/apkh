@@ -12,13 +12,14 @@ import time
 
 import httpx
 
-from services import claude_code
+from services import claude_code, providers
 
 logger = logging.getLogger(__name__)
 
-PROVIDERS = ("openrouter", "gemini", "openai", "anthropic", "claude-code")
-# Providers that work without a key (Claude Code uses its own login).
-KEYLESS_PROVIDERS = ("claude-code",)
+# Providers a user can pick with their own config (not the built-in AI), from providers.py.
+PROVIDERS = tuple(p.id for p in providers.PROVIDERS if p.id != "builtin")
+# Those that work without a key (Claude Code uses its own login).
+KEYLESS_PROVIDERS = tuple(p for p in PROVIDERS if not providers.get(p).needs_key)
 REQUEST_TIMEOUT = 15.0
 
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"

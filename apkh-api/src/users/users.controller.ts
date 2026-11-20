@@ -33,6 +33,7 @@ import {
   isClaudeCodeModel,
   type LlmProvider,
 } from './users.service';
+import { providerOfModel, supportsSemanticSearch } from './providers';
 import { planDetails, planOf } from './plans';
 import { AuthGuard } from 'src/common/guard/auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -46,6 +47,7 @@ import { SEARCH_API } from 'src/common/constant/endpoint';
 import { correlationHeaders } from 'src/common/request-context';
 import { RealtimeService } from 'src/realtime/realtime.service';
 import { isAdminEmail } from 'src/admin/admin.guard';
+import { Limits, RateLimit } from 'src/common/rate-limit/rate-limit';
 
 class RedeemVoucherDto {
   @IsString()
@@ -116,6 +118,7 @@ export class UsersController {
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
   @Post('/plan/redeem')
+  @RateLimit(...Limits.redeem)
   @HttpCode(HttpStatus.OK)
   async redeemVoucher(
     @JwtTokenUserId() userId: string,
@@ -130,6 +133,7 @@ export class UsersController {
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
   @Post('/llm-settings/test')
+  @RateLimit(...Limits.providerCheck)
   @HttpCode(HttpStatus.OK)
   async testLlmSettings(
     @Headers('authorization') authHeader: string,
@@ -162,6 +166,7 @@ export class UsersController {
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
   @Post('/llm-settings/models')
+  @RateLimit(...Limits.providerCheck)
   @HttpCode(HttpStatus.OK)
   async listLlmModels(
     @Headers('authorization') authHeader: string,
@@ -301,9 +306,17 @@ export class UsersController {
    */
   private sanitizeUser(user: UserDocument) {
     const obj = user.toObject();
+    // The web app reads what a provider can do from here, not from model names.
     obj.llmConfigs = obj.llmConfigs.map(
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      ({ llmApiKey: _k, ...rest }) => rest,
+      ({ llmApiKey: _k, ...rest }) => {
+        const provider = providerOfModel(String(rest.llmModel));
+        return {
+          ...rest,
+          provider,
+          semanticSearch: supportsSemanticSearch(provider),
+        };
+      },
     );
     const plan = planOf(user.type);
     const allowance = builtinAllowance(user.builtinUsage, plan);

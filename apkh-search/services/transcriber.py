@@ -22,7 +22,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from services.llm import detect_provider
+from services.providers import detect_provider
 
 logger = logging.getLogger(__name__)
 

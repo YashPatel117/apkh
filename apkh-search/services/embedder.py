@@ -28,16 +28,15 @@ import tiktoken
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-from services import builtin_ai
-from services.llm import OPENROUTER_BASE_URL, OPENROUTER_HEADERS, detect_provider, provider_error_message
+from services import builtin_ai, providers
+from services.llm import provider_error_message
+from services.providers import OPENROUTER_BASE_URL, OPENROUTER_HEADERS, detect_provider
 
 logger = logging.getLogger(__name__)
 
+# Each provider's own embedding model (providers.py); Claude has none.
 DEFAULT_EMBEDDING_MODELS = {
-    "builtin": "qwen3-embedding-0.6b",
-    "gemini": "gemini-embedding-001",
-    "openai": "text-embedding-3-small",
-    "openrouter": "text-embedding-3-small",
+    p.id: p.embedding_model for p in providers.PROVIDERS if p.embedding_model
 }
 # OpenRouter's id for the same model
 _OPENROUTER_EMBEDDING_MODELS = {"text-embedding-3-small": "openai/text-embedding-3-small"}

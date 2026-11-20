@@ -33,7 +33,8 @@ import { useT } from "@/i18n";
 // OpenRouter lists its free models. The built-in AI needs no key, so it has a
 // row of its own instead of a place in this form. Claude Code (the CLI on the
 // server machine) uses its own login, so its key is an optional token.
-const PROVIDER_GROUPS: { id: Exclude<LlmProvider, "builtin">; label: string; docsUrl: string; keyless?: boolean }[] = [
+type KeyProvider = Exclude<LlmProvider, "builtin">;
+const PROVIDER_GROUPS: { id: KeyProvider; label: string; docsUrl: string; keyless?: boolean }[] = [
   { id: "openrouter", label: "OpenRouter", docsUrl: "https://openrouter.ai/keys" },
   { id: "gemini", label: "Google Gemini", docsUrl: "https://aistudio.google.com/app/apikey" },
   { id: "openai", label: "OpenAI", docsUrl: "https://platform.openai.com/api-keys" },
@@ -179,7 +180,7 @@ function BuiltinAiRow({
     </div>
   );
 }
-type ModelRequest = { provider: LlmProvider; apiKey?: string; keyName?: string };
+type ModelRequest = { provider: KeyProvider; apiKey?: string; keyName?: string };
 type LoadedModels = { request: ModelRequest; ok: boolean; items: ILlmModel[]; error: string | null };
 
 // ── Saved config row ─────────────────────────────────────────────────────────
@@ -264,8 +265,8 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   const configs: ILlmConfig[] = user.llmConfigs ?? [];
   const builtinAi = builtinAiOf(user);
   // Any saved OpenRouter key, connected or pasted, makes "Connect OpenRouter" redundant
-  const hasOpenrouter = configs.some((c) => providerOfModel(c.llmModel) === "openrouter");
-  const hasClaudeCode = configs.some((c) => providerOfModel(c.llmModel) === "claude-code");
+  const hasOpenrouter = configs.some((c) => (c.provider ?? providerOfModel(c.llmModel)) === "openrouter");
+  const hasClaudeCode = configs.some((c) => (c.provider ?? providerOfModel(c.llmModel)) === "claude-code");
   const builtinAiActive =Boolean(builtinAi) && !configs.some((c) => c.isActive);
   const [showForm, setShowForm] = useState(configs.length === 0 && !builtinAi);
   const [pendingDelete, setPendingDelete] = useState<ILlmConfig | null>(null);
@@ -273,7 +274,7 @@ export default function LlmSettingsCard({ user }: { user: IUser }) {
   // The saved config whose model is being changed; null when adding a new one.
   const [editing, setEditing] = useState<ILlmConfig | null>(null);
   const [keyName, setKeyName] = useState("");
-  const [providerId, setProviderId] = useState<LlmProvider>(PROVIDER_GROUPS[0].id);
+  const [providerId, setProviderId] = useState<KeyProvider>(PROVIDER_GROUPS[0].id);
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [loaded, setLoaded] = useState<LoadedModels | null>(null);

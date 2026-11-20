@@ -1,20 +1,20 @@
 import axios from "axios"; // use plain axios for login (no interceptor)
 import { API_URL, webApi } from "@/services/axios";
-import { ILlmModel, IUser, LlmProvider } from "@/models/user";
+import { ILlmModel, IUser } from "@/models/user";
+import type { ApiBody } from "@/services/api-types";
 
 // Login (no interceptor)
 export async function login(email: string, password: string) {
-  const res = await axios.post(`${API_URL}/auth/login`, {
-    email,
-    password,
-  });
+  const body: ApiBody<"LoginDto"> = { email, password };
+  const res = await axios.post(`${API_URL}/auth/login`, body);
   localStorage.setItem("token", res.data.data);
   return res.data;
 }
 
 /** Signs in (or up) with a Firebase ID token from Google's popup (no interceptor). */
 export async function loginWithGoogle(idToken: string) {
-  const res = await axios.post(`${API_URL}/auth/google`, { idToken });
+  const body: ApiBody<"GoogleLoginDto"> = { idToken };
+  const res = await axios.post(`${API_URL}/auth/google`, body);
   localStorage.setItem("token", res.data.data);
   return res.data;
 }
@@ -26,7 +26,7 @@ export async function profile() {
 }
 
 /** Registers and signs the user in (the API returns a token on success). */
-export async function register(data: { name: string; email: string; password: string }) {
+export async function register(data: ApiBody<"RegisterDto">) {
   const res = await axios.post(`${API_URL}/auth/register`, data);
   const token = res.data?.data;
   if (typeof token !== "string") {
@@ -36,40 +36,28 @@ export async function register(data: { name: string; email: string; password: st
   return res.data;
 }
 
-export async function resetPassword(data: {
-  email: string;
-  currentPassword: string;
-  password: string;
-}) {
+export async function resetPassword(data: ApiBody<"ResetPasswordDto">) {
   const res = await axios.post(`${API_URL}/auth/reset-password`, data);
   return res.data;
 }
 
-/**
- * Where the API key comes from: a key typed in the form, or the saved key of
- * an existing config (by keyName) when only its model is being changed.
- */
-type LlmKeySource = { apiKey?: string; keyName?: string };
+// The key comes from the form (apiKey), or from a saved config (keyName) when
+// only its model is being changed.
 
 /** Test an API key + model without saving */
-export async function testLlmSettings(data: LlmKeySource & { model: string }) {
+export async function testLlmSettings(data: ApiBody<"TestLlmDto">) {
   const res = await webApi.post("/users/llm-settings/test", data);
   return res.data as { ok: boolean; error: string | null; provider?: string };
 }
 
 /** List the chat models the key can use, fetched live from the provider */
-export async function listLlmModels(data: LlmKeySource & { provider: LlmProvider }) {
+export async function listLlmModels(data: ApiBody<"ListLlmModelsDto">) {
   const res = await webApi.post("/users/llm-settings/models", data);
   return res.data as { ok: boolean; error: string | null; models: ILlmModel[] };
 }
 
 /** Add (or update) a named LLM config. Leave apiKey out to keep a saved config's key. */
-export async function addLlmConfig(data: {
-  keyName: string;
-  apiKey?: string;
-  model: string;
-  setActive?: boolean;
-}) {
+export async function addLlmConfig(data: ApiBody<"AddLlmConfigDto">) {
   const res = await webApi.post("/users/llm-configs", data);
   return res.data as IUser;
 }
@@ -82,7 +70,8 @@ export async function activateLlmConfig(keyName: string) {
 
 /** Redeem a one-time "XXXX-XXXX" code for the Pro plan */
 export async function redeemVoucher(code: string) {
-  const res = await webApi.post("/users/plan/redeem", { code });
+  const body: ApiBody<"RedeemVoucherDto"> = { code };
+  const res = await webApi.post("/users/plan/redeem", body);
   return res.data as IUser;
 }
 

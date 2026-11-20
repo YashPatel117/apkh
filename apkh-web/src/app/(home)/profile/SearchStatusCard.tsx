@@ -1,7 +1,7 @@
 "use client";
 
 import { Cpu, FolderOpen, TriangleAlert } from "lucide-react";
-import { activeAi, IUser, supportsSemanticSearch } from "@/models/user";
+import { activeAi, IUser, searchesByMeaning } from "@/models/user";
 import { useT } from "@/i18n";
 
 export default function SearchStatusCard({ user, totalNotes }: { user: IUser; totalNotes: number }) {
@@ -11,7 +11,7 @@ export default function SearchStatusCard({ user, totalNotes }: { user: IUser; to
   return (
     <section className="rounded-3xl border border-line bg-surface p-5 sm:p-6">
       <h2 className="font-semibold text-fg">{t("profile.searchStatus")}</h2>
-      {ai && (ai.kind === "builtin" || supportsSemanticSearch(ai.model, Boolean(user.builtinAi))) ? (
+      {ai && searchesByMeaning(ai) ? (
         <div className="mt-4 flex items-start gap-3 rounded-2xl bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
           <Cpu className="mt-0.5 size-4 shrink-0" />
           <div className="min-w-0 text-sm">

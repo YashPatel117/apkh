@@ -13,7 +13,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from services.file_extractor import ImageReader
-from services.llm import extract_image_content, is_openrouter_model, supports_vision
+from services.llm import extract_image_content
+from services.providers import is_openrouter_model, supports_vision
 from services.model_catalog import openrouter_accepts_images
 
 logger = logging.getLogger(__name__)
