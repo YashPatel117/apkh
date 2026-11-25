@@ -1,0 +1,45 @@
+{
+  "kitVersion": "1.0.0",
+  "configured": true,
+  "project": {
+    "name": "AI-Powered Personal Knowledge Hub (APKH)",
+    "description": "Personal notes app with AI search, chat and summaries over notes and attachments; sharing, imports, clipper and MCP access.",
+    "os": "windows",
+    "scripts": "powershell"
+  },
+  "stack": [
+    { "area": "api", "tech": "NestJS 11 + Mongoose 8 (MongoDB), Node 22", "folder": "apkh-api" },
+    { "area": "web", "tech": "Next.js 15 + React 19 + Redux Toolkit + Tailwind 4", "folder": "apkh-web" },
+    { "area": "search", "tech": "FastAPI 0.118 + LangChain 1.2, Python 3.11", "folder": "apkh-search" },
+    { "area": "storage", "tech": "Express 5 + MongoDB GridFS", "folder": "apkh-storage" },
+    { "area": "mcp", "tech": "MCP TypeScript SDK + zod", "folder": "apkh-mcp" },
+    { "area": "clipper", "tech": "Browser extension (Manifest V3, plain JS)", "folder": "apkh-clipper" },
+    { "area": "infra", "tech": "GitHub Actions + Hugging Face Space (Docker)", "folder": "deploy" }
+  ],
+  "contract": {
+    "type": "openapi",
+    "source": "apkh-api DTO classes (@nestjs/swagger + class-validator)",
+    "file": "apkh-api/openapi.json",
+    "generated": ["apkh-api/openapi.json", "apkh-web/src/services/api-schema.d.ts"],
+    "codegen": "pwsh scripts/codegen.ps1"
+  },
+  "checks": {
+    "full": "pwsh scripts/check.ps1",
+    "api": "cd apkh-api && npx eslint \"src/**/*.ts\" && npx tsc --noEmit && npm run build",
+    "web": "cd apkh-web && npx eslint && npx tsc --noEmit && npm run build",
+    "search": "cd apkh-search && python -m compileall -q main.py routes services && python -c \"import main\" (JWT_SECRET=ci-only BUILTIN_AI=off)",
+    "storage": "node --check apkh-storage/server.js",
+    "mcp": "cd apkh-mcp && npm run build"
+  },
+  "agents": [
+    { "name": "api", "owns": ["apkh-api/src/*/**", "apkh-api/scripts/**"], "model": "inherit", "readOnly": false },
+    { "name": "web-ui", "owns": ["apkh-web/src/app/*/**", "apkh-web/src/app/page.tsx", "apkh-web/src/app/globals.css", "apkh-web/src/components/**", "apkh-web/src/i18n/**", "apkh-web/public/**"], "model": "inherit", "readOnly": false },
+    { "name": "web-data", "owns": ["apkh-web/src/services/**", "apkh-web/src/store/**", "apkh-web/src/hooks/**", "apkh-web/src/context/**", "apkh-web/src/models/**", "apkh-web/src/lib/**"], "model": "inherit", "readOnly": false },
+    { "name": "search", "owns": ["apkh-search/routes/**", "apkh-search/services/**"], "model": "inherit", "readOnly": false },
+    { "name": "satellites", "owns": ["apkh-storage/server.js", "apkh-storage/scripts/**", "apkh-mcp/src/**", "apkh-mcp/scripts/**", "apkh-clipper/**"], "model": "inherit", "readOnly": false },
+    { "name": "reviewer", "owns": [], "model": "inherit", "readOnly": true },
+    { "name": "security-reviewer", "owns": [], "model": "inherit", "readOnly": true }
+  ],
+  "skills": ["roadmap-ideas"],
+  "commands": ["feature", "plan", "fix", "review"]
+}

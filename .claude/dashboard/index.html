@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent activity</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e4e3df;
+    --hover: #f0efeb; --sel: #ecebe6; --err: #c4352b; --ok: #2f7d4f; --run: #b26b00;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --panel: #1f1f1d; --ink: #ecebe6; --muted: #9a9a93; --line: #33332f;
+      --hover: #282825; --sel: #2f2f2b; --err: #ef6b5f; --ok: #5cc28a; --run: #f0a93b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .live.on i { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+  .live.off i { background: var(--err); }
+  header .spacer { flex: 1; }
+  header label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+
+  .layout { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 49px); }
+  aside { border-right: 1px solid var(--line); overflow-y: auto; background: var(--panel); }
+  aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
+  .task { padding: 10px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .task:hover { background: var(--hover); }
+  .task.sel { background: var(--sel); box-shadow: inset 3px 0 0 var(--ink); }
+  .task .p { font-weight: 500; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+  .task .m { font-size: 12px; color: var(--muted); margin-top: 4px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .dots { display: inline-flex; gap: 3px; }
+  .dots b { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+  main { overflow-y: auto; padding: 20px 24px 60px; }
+  .empty { color: var(--muted); padding: 60px 0; text-align: center; }
+  .empty code { font-family: var(--mono); background: var(--panel); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--line); }
+  .title { font-size: 18px; font-weight: 600; margin: 0 0 4px; word-break: break-word; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; min-width: 110px; }
+  .stat .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .stat.bad .v { color: var(--err); }
+
+  section { margin-bottom: 26px; }
+  section > h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; border-top: 3px solid var(--c); cursor: pointer; }
+  .card.sel { outline: 2px solid var(--c); }
+  .card .n { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+  .badge { font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; }
+  .badge.running { color: var(--run); } .badge.done { color: var(--ok); } .badge.stalled, .badge.error { color: var(--err); } .badge.idle { color: var(--muted); }
+  .card .d { font-size: 12px; color: var(--muted); margin: 2px 0 8px; min-height: 1em; }
+  .card .now { font-family: var(--mono); font-size: 12px; background: var(--bg); border-radius: 4px; padding: 5px 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .row { display: flex; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+
+  .tl { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .tlrow { display: grid; grid-template-columns: 130px 1fr; align-items: center; height: 26px; }
+  .tlrow .l { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
+  .track { position: relative; height: 16px; }
+  .bar { position: absolute; top: 3px; height: 10px; border-radius: 3px; background: color-mix(in srgb, var(--c) 30%, transparent); }
+  .bar.running { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--c) 35%, transparent) 0 6px, color-mix(in srgb, var(--c) 18%, transparent) 6px 12px); }
+  .tick { position: absolute; top: 1px; width: 2px; height: 14px; background: var(--c); border-radius: 1px; }
+  .tick.w { height: 14px; width: 3px; }
+  .tick.e { background: var(--err); width: 3px; }
+  .axis { display: grid; grid-template-columns: 130px 1fr; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .axis div:last-child { display: flex; justify-content: space-between; }
+
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chip { font-size: 12px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; color: var(--ink); }
+  .chip.on { border-color: var(--c, var(--ink)); box-shadow: inset 0 0 0 1px var(--c, var(--ink)); }
+  .chip b { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c); margin-right: 5px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 12px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.t { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  td.a { white-space: nowrap; }
+  td.a b { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c); margin-right: 6px; }
+  td.x { font-family: var(--mono); word-break: break-all; }
+  td.x .err { color: var(--err); display: block; margin-top: 2px; }
+  td.s { white-space: nowrap; }
+  .ok { color: var(--ok); } .bad { color: var(--err); } .run { color: var(--run); }
+  .more { text-align: center; color: var(--muted); font-size: 12px; padding: 8px; }
+
+  .files { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .fgroup { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 8px; padding: 10px 12px; }
+  .fgroup h4 { margin: 0 0 6px; font-size: 13px; }
+  .fgroup ul { margin: 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 12px; }
+  .fgroup li { padding: 2px 0; word-break: break-all; }
+
+  .summary { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+  .summary h4 { margin: 0 0 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent activity</h1>
+  <span class="live" id="live"><i></i><span>connecting…</span></span>
+  <span class="spacer"></span>
+  <label><input type="checkbox" id="follow" checked> Follow latest task</label>
+</header>
+<div class="layout">
+  <aside><h2>Tasks</h2><div id="tasks"></div></aside>
+  <main id="main"></main>
+</div>
+
+<script>
+// Agents get stable colors from a fixed palette (by name). Order comes from
+// .claude/ownership.json (served at /api/config) so it matches your setup.
+const PALETTE = ['#3b74d6', '#d9822b', '#2f9e5b', '#c2549d', '#139a9a', '#7b61c9', '#b8a01e', '#d14b4b', '#5a8f3c', '#a0794a', '#4b6fb5', '#c06a2f'];
+const COLORS = { main: '#8a8a84' };
+let ORDER = ['main'];
+const STALL_MS = 10 * 60 * 1000;
+fetch('/api/config').then((r) => r.json()).then((cfg) => {
+  const names = Object.keys((cfg && cfg.agents) || {});
+  ORDER = ['main', ...names];
+  names.forEach((n, i) => { COLORS[n] = PALETTE[i % PALETTE.length]; });
+  render();
+}).catch(() => {});
+const FEED_LIMIT = 400;
+
+let offset = 0;
+const tasks = new Map();
+let selected = null;
+let laneFilter = null;  // lane key or null = all
+let follow = true;
+let lastChange = 0;
+
+function color(name) {
+  if (COLORS[name]) return COLORS[name];
+  let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return (COLORS[name] = PALETTE[h % PALETTE.length]);
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const t = (iso) => Date.parse(iso);
+function dur(ms) {
+  if (ms == null || ms < 0) return '–';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's';
+  return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+}
+function clock(iso) { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+function ago(iso) {
+  const d = Date.now() - t(iso);
+  if (d < 60000) return 'just now';
+  if (d < 3600000) return Math.floor(d / 60000) + 'm ago';
+  if (d < 86400000) return Math.floor(d / 3600000) + 'h ago';
+  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// ---------- model ----------
+function getTask(ev) {
+  let k = tasks.get(ev.task);
+  if (!k) {
+    k = { id: ev.task, session: ev.session, prompt: null, start: ev.ts, last: ev.ts, lanes: new Map(),
+          entries: [], lastStop: null, lastMain: null, typeCount: {}, meaningful: false };
+    tasks.set(ev.task, k);
+  }
+  return k;
+}
+function getLane(task, ev) {
+  const key = ev.agent === 'main' ? 'main' : (ev.agentId || ev.agent);
+  let l = task.lanes.get(key);
+  if (!l) {
+    const name = ev.agent === 'main' ? 'main' : (ev.agentType || ev.agent);
+    task.typeCount[name] = (task.typeCount[name] || 0) + 1;
+    l = { key, name, run: task.typeCount[name], start: ev.ts, end: null, last: ev.ts, tools: 0, errors: 0,
+          files: new Set(), current: null, summary: null, open: new Map(), description: null };
+    task.lanes.set(key, l);
+  }
+  return l;
+}
+
+function ingest(ev) {
+  if (!ev.task) return;
+  const task = getTask(ev);
+  if (t(ev.ts) > t(task.last)) task.last = ev.ts;
+
+  if (ev.event === 'SessionStart') return;
+  if (ev.event === 'UserPromptSubmit') { task.prompt = ev.prompt; task.start = ev.ts; task.meaningful = true; getLane(task, ev); return; }
+  task.meaningful = true;
+
+  const lane = getLane(task, ev);
+  lane.last = ev.ts;
+  if (ev.agent === 'main') task.lastMain = ev.ts;
+
+  switch (ev.event) {
+    case 'Stop':
+      task.lastStop = ev.ts; lane.summary = ev.summary || lane.summary; break;
+    case 'SubagentStart':
+      lane.start = ev.ts; break;
+    case 'SubagentStop':
+      lane.end = ev.ts; lane.summary = ev.summary || lane.summary; lane.current = null; break;
+    case 'PreToolUse': {
+      const e = { ts: ev.ts, lane: lane.key, tool: ev.tool, detail: ev.detail, end: null, ok: null, error: null };
+      if (ev.spawn) { e.spawn = ev.spawn; pendingSpawn(task, ev.spawn); }
+      task.entries.push(e);
+      lane.open.set(ev.toolUseId || ev.tool + '|' + ev.ts, e);
+      lane.current = e;
+      break;
+    }
+    case 'PostToolUse': {
+      let e = ev.toolUseId && lane.open.get(ev.toolUseId);
+      if (!e) for (const [k, v] of lane.open) if (v.tool === ev.tool) { e = v; lane.open.delete(k); break; }
+      else lane.open.delete(ev.toolUseId);
+      if (!e) { e = { ts: ev.ts, lane: lane.key, tool: ev.tool, detail: ev.detail }; task.entries.push(e); }
+      e.end = ev.ts; e.ok = ev.ok; e.error = ev.error; e.changed = ev.changed;
+      lane.tools++;
+      if (ev.ok === false) lane.errors++;
+      if (ev.changed) lane.files.add(ev.changed);
+      if (lane.current === e) lane.current = null;
+      break;
+    }
+  }
+}
+// remember the description the orchestrator gave each spawned agent
+function pendingSpawn(task, spawn) {
+  (task.spawns ||= []).push(spawn);
+}
+function laneDescription(task, lane) {
+  if (lane.description || !task.spawns) return lane.description;
+  const list = task.spawns.filter((s) => s.type === lane.name);
+  const s = list[lane.run - 1];
+  if (s) lane.description = s.description;
+  return lane.description;
+}
+
+function laneStatus(task, lane) {
+  const now = Date.now();
+  if (lane.key === 'main') {
+    if (task.lastStop && t(task.lastStop) >= t(lane.last)) return 'idle';
+    return now - t(lane.last) > STALL_MS ? 'stalled' : 'running';
+  }
+  if (lane.end) return lane.errors && !lane.files.size ? 'error' : 'done';
+  return now - t(lane.last) > STALL_MS ? 'stalled' : 'running';
+}
+function taskRunning(task) {
+  for (const l of task.lanes.values()) if (laneStatus(task, l) === 'running') return true;
+  return false;
+}
+function taskEnd(task) { return taskRunning(task) ? Date.now() : t(task.last); }
+function sortedLanes(task) {
+  return [...task.lanes.values()].sort((a, b) => {
+    const ia = ORDER.indexOf(a.name), ib = ORDER.indexOf(b.name);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.run - b.run || t(a.start) - t(b.start);
+  });
+}
+function laneLabel(task, l) {
+  const n = task.typeCount[l.name] > 1 ? `${l.name} #${l.run}` : l.name;
+  return l.key === 'main' ? 'main (orchestrator)' : n;
+}
+
+// ---------- render ----------
+function renderTasks() {
+  const list = [...tasks.values()].filter((k) => k.meaningful).sort((a, b) => t(b.start) - t(a.start));
+  const el = document.getElementById('tasks');
+  if (!list.length) { el.innerHTML = '<div class="task"><div class="m">No tasks yet.</div></div>'; return; }
+  el.innerHTML = list.map((k) => {
+    const lanes = sortedLanes(k).filter((l) => l.key !== 'main');
+    const running = taskRunning(k);
+    return `<div class="task ${k.id === selected ? 'sel' : ''}" data-id="${esc(k.id)}">
+      <div class="p">${esc(k.prompt || '(task without prompt)')}</div>
+      <div class="m">
+        ${running ? '<span class="badge running">running</span>' : ''}
+        <span>${ago(k.start)}</span><span>${dur(taskEnd(k) - t(k.start))}</span>
+        ${lanes.length ? `<span class="dots">${lanes.map((l) => `<b title="${esc(l.name)}" style="background:${color(l.name)}"></b>`).join('')}</span>` : ''}
+      </div></div>`;
+  }).join('');
+}
+
+function renderMain() {
+  const el = document.getElementById('main');
+  const task = tasks.get(selected);
+  if (!task) {
+    el.innerHTML = `<div class="empty">No activity recorded yet.<br><br>Run a task in Claude Code (for example <code>/feature …</code>) and it will appear here live.</div>`;
+    return;
+  }
+  const lanes = sortedLanes(task);
+  const end = taskEnd(task), start = t(task.start), span = Math.max(end - start, 1000);
+  const allTools = lanes.reduce((n, l) => n + l.tools, 0);
+  const errs = lanes.reduce((n, l) => n + l.errors, 0);
+  const files = new Set(); lanes.forEach((l) => l.files.forEach((f) => files.add(f)));
+  const subs = lanes.filter((l) => l.key !== 'main');
+  const running = taskRunning(task);
+
+  const cards = lanes.map((l) => {
+    const st = laneStatus(task, l);
+    const c = color(l.name);
+    const lEnd = l.end ? t(l.end) : (st === 'running' ? Date.now() : t(l.last));
+    const now = l.current ? `${l.current.tool} ${l.current.detail || ''}` : (st === 'running' ? 'thinking…' : (l.summary ? 'finished' : '—'));
+    return `<div class="card ${laneFilter === l.key ? 'sel' : ''}" style="--c:${c}" data-lane="${esc(l.key)}">
+      <div class="n"><span>${esc(laneLabel(task, l))}</span><span class="badge ${st}">${st}</span></div>
+      <div class="d">${esc(laneDescription(task, l) || '')}</div>
+      <div class="now" title="${esc(now)}">${esc(now)}</div>
+      <div class="row"><span>${dur(lEnd - t(l.start))}</span><span>${l.tools} tools</span><span>${l.files.size} files</span>${l.errors ? `<span class="bad">${l.errors} errors</span>` : ''}</div>
+    </div>`;
+  }).join('');
+
+  const pct = (ms) => Math.min(100, Math.max(0, ((ms - start) / span) * 100));
+  const timeline = lanes.map((l) => {
+    const st = laneStatus(task, l), c = color(l.name);
+    const ls = t(l.start), le = l.end ? t(l.end) : (st === 'running' ? Date.now() : t(l.last));
+    const ticks = task.entries.filter((e) => e.lane === l.key).map((e) =>
+      `<span class="tick ${e.ok === false ? 'e' : (e.changed ? 'w' : '')}" style="left:${pct(t(e.ts))}%" title="${esc(clock(e.ts) + '  ' + e.tool + '  ' + (e.detail || ''))}"></span>`).join('');
+    return `<div class="tlrow" style="--c:${c}"><div class="l">${esc(laneLabel(task, l))}</div>
+      <div class="track"><span class="bar ${st === 'running' ? 'running' : ''}" style="left:${pct(ls)}%;width:${Math.max(pct(le) - pct(ls), 0.4)}%"></span>${ticks}</div></div>`;
+  }).join('');
+
+  const chips = `<button class="chip ${laneFilter ? '' : 'on'}" data-lane="">All</button>` +
+    lanes.map((l) => `<button class="chip ${laneFilter === l.key ? 'on' : ''}" style="--c:${color(l.name)}" data-lane="${esc(l.key)}"><b></b>${esc(laneLabel(task, l))}</button>`).join('');
+
+  const laneByKey = new Map(lanes.map((l) => [l.key, l]));
+  const feedAll = task.entries.filter((e) => !laneFilter || e.lane === laneFilter);
+  const feed = feedAll.slice(-FEED_LIMIT).reverse();
+  const rows = feed.map((e) => {
+    const l = laneByKey.get(e.lane);
+    const s = e.end == null ? '<span class="run">running</span>' : (e.ok === false ? '<span class="bad">failed</span>' : `<span class="ok">${dur(t(e.end) - t(e.ts))}</span>`);
+    return `<tr><td class="t">${clock(e.ts)}</td><td class="a" style="--c:${color(l.name)}"><b></b>${esc(laneLabel(task, l))}</td>
+      <td>${esc(e.tool)}${e.changed ? ' ✎' : ''}</td><td class="x">${esc(e.detail || '')}${e.error ? `<span class="err">${esc(e.error)}</span>` : ''}</td><td class="s">${s}</td></tr>`;
+  }).join('');
+
+  const fileGroups = lanes.filter((l) => l.files.size).map((l) =>
+    `<div class="fgroup" style="--c:${color(l.name)}"><h4>${esc(laneLabel(task, l))} · ${l.files.size}</h4><ul>${[...l.files].sort().map((f) => `<li>${esc(f)}</li>`).join('')}</ul></div>`).join('');
+
+  const summaries = lanes.filter((l) => l.summary).map((l) =>
+    `<div class="summary" style="--c:${color(l.name)}"><h4>${esc(laneLabel(task, l))}</h4>${esc(l.summary)}</div>`).join('');
+
+  el.innerHTML = `
+    <div class="title">${esc(task.prompt || '(task without prompt)')}</div>
+    <div class="sub">${new Date(task.start).toLocaleString()} · session ${esc(task.session.slice(0, 8))}${running ? ' · <span class="run">running</span>' : ''}</div>
+    <div class="stats">
+      <div class="stat"><div class="v">${dur(end - start)}</div><div class="k">Duration</div></div>
+      <div class="stat"><div class="v">${subs.length}</div><div class="k">Sub-agents</div></div>
+      <div class="stat"><div class="v">${allTools}</div><div class="k">Tool calls</div></div>
+      <div class="stat"><div class="v">${files.size}</div><div class="k">Files changed</div></div>
+      <div class="stat ${errs ? 'bad' : ''}"><div class="v">${errs}</div><div class="k">Errors</div></div>
+    </div>
+    <section><h3>Agents</h3><div class="cards">${cards}</div></section>
+    <section><h3>Timeline</h3><div class="tl">${timeline}
+      <div class="axis"><div></div><div><span>${clock(task.start)}</span><span>${dur(span / 2)}</span><span>${running ? 'now' : clock(new Date(end).toISOString())}</span></div></div></div></section>
+    <section><h3>Activity</h3><div class="filters">${chips}</div>
+      <table><thead><tr><th>Time</th><th>Agent</th><th>Tool</th><th>Detail</th><th>Result</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="more">No tool calls yet.</td></tr>'}</tbody></table>
+      ${feedAll.length > FEED_LIMIT ? `<div class="more">Showing latest ${FEED_LIMIT} of ${feedAll.length}</div>` : ''}</section>
+    ${fileGroups ? `<section><h3>Files changed, by agent</h3><div class="files">${fileGroups}</div></section>` : ''}
+    ${summaries ? `<section><h3>Agent reports</h3>${summaries}</section>` : ''}`;
+}
+
+function render() { renderTasks(); renderMain(); }
+
+// ---------- events ----------
+document.getElementById('tasks').addEventListener('click', (e) => {
+  const row = e.target.closest('.task[data-id]'); if (!row) return;
+  selected = row.dataset.id; laneFilter = null;
+  const latest = latestTask();
+  follow = latest && latest.id === selected;
+  document.getElementById('follow').checked = follow;
+  render();
+});
+document.getElementById('main').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-lane]'); if (!b) return;
+  laneFilter = b.dataset.lane && laneFilter !== b.dataset.lane ? b.dataset.lane : null;
+  renderMain();
+});
+document.getElementById('follow').addEventListener('change', (e) => {
+  follow = e.target.checked;
+  if (follow) { const l = latestTask(); if (l) { selected = l.id; laneFilter = null; } render(); }
+});
+function latestTask() {
+  let best = null;
+  for (const k of tasks.values()) if (k.meaningful && (!best || t(k.start) > t(best.start))) best = k;
+  return best;
+}
+
+function setLive(ok) {
+  const el = document.getElementById('live');
+  el.className = 'live ' + (ok ? 'on' : 'off');
+  el.lastElementChild.textContent = ok ? 'live' : 'server not reachable';
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/api/events?from=' + offset, { cache: 'no-store' });
+    const data = await r.json();
+    setLive(true);
+    if (data.reset && offset > 0) { tasks.clear(); }
+    offset = data.offset;
+    if (data.events.length) {
+      data.events.forEach(ingest);
+      lastChange = Date.now();
+      if (follow) { const l = latestTask(); if (l) selected = l.id; }
+      if (!selected) { const l = latestTask(); if (l) selected = l.id; }
+      render();
+    }
+  } catch { setLive(false); }
+  setTimeout(poll, 1000);
+}
+// refresh durations/elapsed while something is running
+setInterval(() => { const k = tasks.get(selected); if (k && taskRunning(k)) render(); }, 2000);
+render();
+poll();
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+{
+  "agents": {
+    "api": ["apkh-api/src/*/**", "apkh-api/scripts/**"],
+    "web-ui": [
+      "apkh-web/src/app/*/**",
+      "apkh-web/src/app/page.tsx",
+      "apkh-web/src/app/globals.css",
+      "apkh-web/src/components/**",
+      "apkh-web/src/i18n/**",
+      "apkh-web/public/**"
+    ],
+    "web-data": [
+      "apkh-web/src/services/**",
+      "apkh-web/src/store/**",
+      "apkh-web/src/hooks/**",
+      "apkh-web/src/context/**",
+      "apkh-web/src/models/**",
+      "apkh-web/src/lib/**"
+    ],
+    "search": ["apkh-search/routes/**", "apkh-search/services/**"],
+    "satellites": [
+      "apkh-storage/server.js",
+      "apkh-storage/scripts/**",
+      "apkh-mcp/src/**",
+      "apkh-mcp/scripts/**",
+      "apkh-clipper/**"
+    ],
+    "reviewer": [],
+    "security-reviewer": []
+  },
+  "generated": [
+    "apkh-api/openapi.json",
+    "apkh-web/src/services/api-schema.d.ts",
+    "apkh-api/dist/**",
+    "apkh-web/.next/**",
+    "apkh-mcp/dist/**"
+  ]
+}

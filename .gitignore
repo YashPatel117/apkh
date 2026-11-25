@@ -1,0 +1,3 @@
+# agent-kit: local activity history
+.claude/activity/
+.claude/settings.local.json
